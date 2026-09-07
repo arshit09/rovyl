@@ -45,8 +45,14 @@ puts a window between you and your work.
 
 ## Install
 
+**Direct download** — [latest release](https://github.com/arshit09/rovyl/releases/latest).
+This is the build to install from this fork: it carries fixes that have not reached the
+Store package. Windows will warn about an unsigned installer; the app updates itself from
+this repository afterwards.
+
 **From the Microsoft Store** — [apps.microsoft.com](https://apps.microsoft.com/detail/9N03SVPMXSV1).
-Installs and updates automatically, no security warnings.
+Installs and updates automatically with no security warnings, but it is upstream's build,
+so it does not include the fixes made here.
 
 **From source** — see [Building](#building) below.
 
@@ -103,7 +109,7 @@ Requires **Windows 10 or 11** and **Node 20+**. Windows-only by design: the trig
 icon pipeline and the window handling all depend on Win32 behaviour.
 
 ```bash
-git clone https://github.com/HenryCauan/rovyl
+git clone https://github.com/arshit09/rovyl
 cd rovyl
 npm install
 npm start
@@ -151,7 +157,8 @@ window-handshake invariants. If it fails, the handshake was broken, not the test
 
 - **Microsoft Store** — [Rovyl](https://apps.microsoft.com/detail/9N03SVPMXSV1)
 - **Website and docs** — [rovyl-red.vercel.app](https://rovyl-red.vercel.app)
-- **Releases** — [github.com/HenryCauan/rovyl/releases](https://github.com/HenryCauan/rovyl/releases)
+- **Releases** — [github.com/arshit09/rovyl/releases](https://github.com/arshit09/rovyl/releases)
+- **Upstream** — [HenryCauan/rovyl](https://github.com/HenryCauan/rovyl)
 - **Privacy policy** — [rovyl-red.vercel.app/privacy](https://rovyl-red.vercel.app/privacy)
 
 ## License
