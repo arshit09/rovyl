@@ -1,13 +1,13 @@
 {
   "name": "rovyl",
   "private": true,
-  "version": "1.2.4",
+  "version": "1.2.5",
   "main": "backend/electron-main.js",
   "author": "HenryCa",
   "description": "Rovyl radial launcher",
   "repository": {
     "type": "git",
-    "url": "https://github.com/HenryCauan/rovyl.git"
+    "url": "https://github.com/arshit09/rovyl.git"
   },
   "scripts": {
     "dev": "vite",
@@ -75,7 +75,7 @@
     },
     "publish": {
       "provider": "github",
-      "owner": "HenryCauan",
+      "owner": "arshit09",
       "repo": "rovyl",
       "releaseType": "release"
     },
