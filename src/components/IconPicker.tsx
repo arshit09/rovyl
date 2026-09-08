@@ -1,6 +1,12 @@
 import React, { useState } from 'react';
 import { Search } from 'lucide-react';
-import { ICON_MAP, getIcon } from '../iconMap';
+import {
+  CURATED_ICON_MAP,
+  getIcon,
+  getLoadedFullIconMap,
+  listPickableIconNames,
+  loadFullIconMap,
+} from '../iconMap';
 import type { UIConfig } from '../types';
 import { getTranslation } from '../translations';
 import {
@@ -8,13 +14,54 @@ import {
   collectIconsForEnglishTokens,
 } from '../utils/iconPickerEnglishKeywords';
 
-// Get all icon names from the map, filtering out any internal lucide stuff
-const ALL_ICONS = Object.keys(ICON_MAP)
-  .filter(name => /^[A-Z]/.test(name) && (typeof ICON_MAP[name] === 'function' || (typeof ICON_MAP[name] === 'object' && ICON_MAP[name] !== null)))
-  .sort();
+/*
+ * The picker is the one place that genuinely needs every glyph, so it is the one place that pays
+ * for the full set — a separate chunk, fetched on mount. Until it lands the grid lists the curated
+ * names, which is enough to browse and pick without staring at a blank panel.
+ */
 
-const VALID_ICON_NAME_SET = new Set(ALL_ICONS);
-const RESOLVED_ENGLISH_KEYWORD_MAP = buildResolvedEnglishKeywordMap(VALID_ICON_NAME_SET);
+/** The pickable names for one icon source, plus the keyword index resolved against them. */
+type IconCatalogue = {
+  names: string[];
+  nameSet: Set<string>;
+  keywords: ReturnType<typeof buildResolvedEnglishKeywordMap>;
+};
+
+const catalogueCache = new WeakMap<Record<string, unknown>, IconCatalogue>();
+
+function buildCatalogue(map: Record<string, unknown>): IconCatalogue {
+  const cached = catalogueCache.get(map);
+  if (cached) return cached;
+  const names = listPickableIconNames(map as Parameters<typeof listPickableIconNames>[0]);
+  const nameSet = new Set(names);
+  const built: IconCatalogue = {
+    names,
+    nameSet,
+    keywords: buildResolvedEnglishKeywordMap(nameSet),
+  };
+  catalogueCache.set(map, built);
+  return built;
+}
+
+/**
+ * The name of the grid cell that draws the icon currently in use.
+ *
+ * A saved name is not necessarily one of the names in the grid: every release before the set was
+ * split listed Lucide's alias spellings too, so a config can hold `GlobeIcon`, `LucideGlobe` or
+ * `Grid3X3`. Matching on the string alone left such a picker with nothing highlighted while the
+ * button beside it drew the glyph — the panel contradicting itself about what is set. Matching on
+ * the component the name resolves to finds the cell whatever spelling was saved.
+ */
+function gridNameForSelection(
+  selected: string,
+  catalogue: IconCatalogue,
+  map: Record<string, unknown>,
+): string {
+  if (!selected || catalogue.nameSet.has(selected)) return selected;
+  const target = map[selected];
+  if (!target) return selected;
+  return catalogue.names.find((name) => map[name] === target) ?? selected;
+}
 
 export interface IconPickerProps {
   selectedIcon: string;
@@ -35,6 +82,31 @@ export const IconPicker: React.FC<IconPickerProps> = ({
   const compact = variant === 'compact';
   const [searchTerm, setSearchTerm] = useState('');
   const [visibleCount, setVisibleCount] = useState(compact ? 140 : 64);
+  const [iconSource, setIconSource] = useState<Record<string, unknown>>(
+    () => getLoadedFullIconMap() ?? CURATED_ICON_MAP,
+  );
+
+  React.useEffect(() => {
+    const loaded = getLoadedFullIconMap();
+    if (loaded) {
+      setIconSource(loaded);
+      return;
+    }
+    let alive = true;
+    loadFullIconMap().then(
+      (map) => { if (alive) setIconSource(map); },
+      () => { /* stays on the curated set; a later mount retries */ },
+    );
+    return () => { alive = false; };
+  }, []);
+
+  const catalogue = React.useMemo(() => buildCatalogue(iconSource), [iconSource]);
+  const { names: iconNames, keywords: keywordIndex } = catalogue;
+
+  const selectedGridName = React.useMemo(
+    () => gridNameForSelection(selectedIcon, catalogue, iconSource),
+    [selectedIcon, catalogue, iconSource],
+  );
 
   const searchTokens = React.useMemo(
     () => searchTerm.toLowerCase().trim().split(/\s+/).filter(Boolean),
@@ -42,14 +114,14 @@ export const IconPicker: React.FC<IconPickerProps> = ({
   );
 
   const filteredIcons = React.useMemo(() => {
-    if (searchTokens.length === 0) return ALL_ICONS;
+    if (searchTokens.length === 0) return iconNames;
 
-    const byName = ALL_ICONS.filter(icon => {
+    const byName = iconNames.filter(icon => {
       const n = icon.toLowerCase();
       return searchTokens.some(t => n.includes(t));
     });
 
-    const byKeyword = collectIconsForEnglishTokens(searchTokens, RESOLVED_ENGLISH_KEYWORD_MAP);
+    const byKeyword = collectIconsForEnglishTokens(searchTokens, keywordIndex);
     const seen = new Set<string>();
     const ordered: string[] = [];
     for (const i of byName) {
@@ -65,7 +137,7 @@ export const IconPicker: React.FC<IconPickerProps> = ({
       }
     }
     return ordered;
-  }, [searchTokens]);
+  }, [searchTokens, iconNames, keywordIndex]);
 
   const visibleIcons = React.useMemo(() =>
     filteredIcons.slice(0, visibleCount),
@@ -74,6 +146,21 @@ export const IconPicker: React.FC<IconPickerProps> = ({
   React.useEffect(() => {
     setVisibleCount(compact ? 140 : 64);
   }, [searchTerm, compact]);
+
+  /**
+   * `handleScroll` grows the window only up to the list length at the time of the event, so a user
+   * who reached the bottom of the 282 curated names while the chunk was still in flight would be
+   * stuck there: the list becomes 1,353 long, but with no overflow left there is no scroll delta
+   * to fire another event. Growing by a page when the catalogue grows restores that overflow.
+   */
+  const catalogueSize = iconNames.length;
+  const lastCatalogueSize = React.useRef(catalogueSize);
+  React.useEffect(() => {
+    if (catalogueSize > lastCatalogueSize.current) {
+      setVisibleCount((prev) => Math.min(prev + (compact ? 140 : 64), catalogueSize));
+    }
+    lastCatalogueSize.current = catalogueSize;
+  }, [catalogueSize, compact]);
 
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const { scrollTop, clientHeight, scrollHeight } = e.currentTarget;
@@ -134,7 +221,7 @@ export const IconPicker: React.FC<IconPickerProps> = ({
       >
         {visibleIcons.map(iconName => {
           const Icon = getIcon(iconName);
-          const isSelected = iconName === selectedIcon;
+          const isSelected = iconName === selectedGridName;
 
           return (
             <button

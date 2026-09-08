@@ -57,7 +57,8 @@ const MEDIA = [
 
 const VIDEO = ['Video', 'Film', 'Clapperboard', 'Videotape', 'Webcam', 'Camera'] as const;
 
-const PHOTO = ['Image', 'Camera', 'Aperture', 'ImageIcon', 'ScanLine'] as const;
+// `ImageIcon` used to sit here too — Lucide's alias for `Image`, already first in this list.
+const PHOTO = ['Image', 'Camera', 'Aperture', 'ScanLine'] as const;
 
 const MAIL = ['Mail', 'Inbox', 'Send', 'Mails', 'Forward'] as const;
 

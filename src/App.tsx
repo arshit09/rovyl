@@ -14,6 +14,7 @@ import { Minus, X, Maximize, Square, AlertTriangle, ArrowLeft, ArrowRight, Panel
 import type { Language } from './translations';
 import { motion, AnimatePresence } from 'framer-motion';
 import { isLikelyWebUrl, resolveWebsiteIconFields } from './siteFavicon';
+import { preloadIconsByName } from './iconMap';
 
 /** Settings is the largest UI surface; radial-only sessions never need to parse or retain it. */
 const PrecisionSettings = React.lazy(() =>
@@ -23,6 +24,23 @@ const PrecisionSettings = React.lazy(() =>
 );
 
 const LS_MAIN_DISCOVERY_DONE = 'zenith_main_discovery_done';
+
+/** Every Lucide glyph name a config can put on screen: shortcuts, folders, workspaces, centre button. */
+function* iterateItemIconNames(items: AppItem[]): Generator<string | undefined> {
+  for (const item of items) {
+    yield item.iconName;
+    if (item.children?.length) yield* iterateItemIconNames(item.children);
+  }
+}
+
+function* iterateConfigIconNames(config: UIConfig, apps: AppItem[]): Generator<string | undefined> {
+  yield config.centerButton?.iconName;
+  yield* iterateItemIconNames(apps);
+  for (const workspace of config.workspaces ?? []) {
+    yield workspace.pickerIconName;
+    yield* iterateItemIconNames(workspace.apps ?? []);
+  }
+}
 
 /** Favicons remotos não devem ser apagados pelo cache-bust de ícones de .exe nem healing via getFileIcon. */
 function isRemoteIconUrl(u: string | undefined): boolean {
@@ -452,6 +470,15 @@ export default function App() {
   const targetWorkspaceIndexRef = useRef(config.activeWorkspaceIndex);
   targetWorkspaceIndexRef.current = config.activeWorkspaceIndex;
   const switchDebounceTimer = useRef<NodeJS.Timeout | null>(null);
+
+  /**
+   * A config that only names curated glyphs never pays for the full Lucide chunk; one that does
+   * — because the user picked something else in the icon picker — fetches it here, well before the
+   * wheel opens, so the right glyph is already on screen at the first paint.
+   */
+  useEffect(() => {
+    preloadIconsByName(iterateConfigIconNames(config, apps));
+  }, [config, apps]);
 
   /**
    * Sem radial nem painel não há nada para desenhar: o HWND é encolhido ao canto. Deixá-lo em `small`

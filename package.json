@@ -11,14 +11,16 @@
   },
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build && node scripts/verify-radial-windowing.mjs && node scripts/generate-win-icon.mjs && node scripts/generate-appx-assets.mjs",
+    "build": "tsc && vite build && node scripts/verify-radial-windowing.mjs && node scripts/verify-renderer-budget.mjs && node scripts/generate-win-icon.mjs && node scripts/generate-appx-assets.mjs",
     "electron": "wait-on tcp:5173 && cross-env NODE_ENV=development node scripts/launch-electron.js",
     "start": "node scripts/start-local-runtime.cjs",
     "start:runtime": "concurrently -k \"npm run dev\" \"npm run electron\"",
     "dist": "npm run build && node scripts/run-electron-builder.mjs",
     "test:win32-launch": "node --test backend/win32-launch.test.cjs",
     "test:persistence-shape": "node scripts/persistence-normalize-smoke.mjs",
+    "test:icon-map": "node scripts/icon-map-smoke.mjs",
     "verify:radial-windowing": "node scripts/verify-radial-windowing.mjs",
+    "verify:renderer-budget": "node scripts/verify-renderer-budget.mjs",
     "release": "node scripts/release.mjs",
     "release:check": "node scripts/release.mjs --check",
     "dist:store": "npm run build && node scripts/run-electron-builder.mjs --win appx --publish never"

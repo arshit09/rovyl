@@ -1,6 +1,7 @@
 # Rovyl — improvement backlog
 
-Audit of the current tree (v1.2.5). Grouped by impact. Nothing here is started.
+Audit of the current tree (v1.2.5). Grouped by impact. Checked items are done and note what
+changed; the rest is untouched.
 
 ---
 
@@ -39,10 +40,14 @@ Audit of the current tree (v1.2.5). Grouped by impact. Nothing here is started.
 
 ## 3. Performance / RAM / CPU
 
-- [ ] **The whole lucide icon set is in the critical chunk.** `src/iconMap.ts:1` does
-  `import * as icons from "lucide-react"`, and `RadialMenu` imports `getIcon` — so ~1,500 icons ship
-  in the bundle the wheel needs. Largest single win on `index-*.js` (currently 671 KB). Fix: curated
-  static map for wheel icons, lazy full map behind the icon picker.
+- [x] **The whole lucide icon set is in the critical chunk.** `src/iconMap.ts:1` did
+  `import * as icons from "lucide-react"`, and `RadialMenu` imports `getIcon` — so ~1,350 icons
+  (4,059 exports, with Lucide's aliases) shipped in the bundle the wheel needs.
+  **Done:** 282 curated glyphs stay static, the rest moved to an async chunk fetched by the icon
+  picker or by a config that names one. `index-*.js` 671.9 → 315.5 KB. The barrel cannot be
+  dynamically imported while anything imports it statically (`INEFFECTIVE_DYNAMIC_IMPORT`), so the
+  lazy set is a `virtual:lucide-icon-set` module of deep paths. Guarded by
+  `scripts/verify-renderer-budget.mjs` (in `npm run build`) and `npm run test:icon-map`.
 - [ ] **All three font families load eagerly** (`src/main.tsx:3-5`) including cyrillic, greek,
   vietnamese and latin-ext subsets (~280 KB woff2) for an English-only UI. Load only used subsets;
   defer fonts the wheel does not need.
