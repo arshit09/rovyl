@@ -86,8 +86,16 @@ changed; the rest is untouched.
   target (its keys are AUMIDs, which no filename encodes) but its values are references.
   `icon-cache.json` 144,360 → 664 B. Migration of existing entries is deferred 3 s so it cannot
   delay the first window.
-- [ ] **No `localStorage` quota handling.** At ~5 MB writes start throwing; the only guard is a
+- [x] **No `localStorage` quota handling.** At ~5 MB writes start throwing; the only guard is a
   `console.warn`.
+  **Done:** `src/persistenceMirror.ts`. Two failures were worse than the item said. The debounced
+  save wrote the three keys *unguarded* and only then called `saveFullConfig`, so a quota throw on
+  the cache skipped the write to disk — the authoritative one. And a write that failed on the third
+  key left a torn mirror, a new `zenith_user` beside a stale `zenith_config`, which the fallback
+  hydration reads as one blob. Now it is all three keys or none: on failure the mirror is cleared
+  (which is also what frees the room a retry needs) and reported once through `savePersistenceLog`.
+  Nine assertions in `npm run test:persistence-mirror`. The §3 icon work also took each key from
+  ~456 KB to ~12.5 KB, so reaching the quota at all is now unlikely.
 - [ ] **`dist/folder.svg` is 596 KB** for a folder glyph. Replace.
 - [ ] **8 ms cursor poll during hold** (`MMB_CURSOR_POLL_MS`, `electron-main.js:4539`) sends IPC at
   125 Hz. Coalesce to rAF cadence, or skip sends when the resolved slice has not changed.

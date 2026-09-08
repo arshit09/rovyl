@@ -15,6 +15,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { isLikelyWebUrl, resolveWebsiteIconFields } from './siteFavicon';
 import { preloadIconsByName } from './iconMap';
 import { isStoredIconRef } from './iconRef';
+import { mirrorPersistenceToLocalStorage } from './persistenceMirror';
 
 /** Settings is the largest UI surface; radial-only sessions never need to parse or retain it. */
 const PrecisionSettings = React.lazy(() =>
@@ -1408,9 +1409,7 @@ export default function App() {
       const fullData = sanitizeFullPersistenceForDisk({ user, apps, config });
       if (!fullData) return;
 
-      localStorage.setItem('zenith_user', JSON.stringify(user));
-      localStorage.setItem('zenith_apps', JSON.stringify(apps));
-      localStorage.setItem('zenith_config', JSON.stringify(config));
+      mirrorPersistenceToLocalStorage({ user, apps, config });
 
       if (!persistenceSaveBlockedRef.current && window.electron?.saveFullConfig) {
         const wsCount = fullData.config?.workspaces?.length ?? 0;
@@ -1440,13 +1439,7 @@ export default function App() {
         config: d.config,
       });
       if (!fullData) return;
-      try {
-        localStorage.setItem('zenith_user', JSON.stringify(d.user));
-        localStorage.setItem('zenith_apps', JSON.stringify(d.apps));
-        localStorage.setItem('zenith_config', JSON.stringify(d.config));
-      } catch (e) {
-        console.warn('localStorage flush failed', e);
-      }
+      mirrorPersistenceToLocalStorage(d);
       if (persistenceSaveBlockedRef.current) {
         return;
       }
@@ -1482,13 +1475,7 @@ export default function App() {
       });
       try {
         if (!fullData) return;
-        try {
-          localStorage.setItem('zenith_user', JSON.stringify(d.user));
-          localStorage.setItem('zenith_apps', JSON.stringify(d.apps));
-          localStorage.setItem('zenith_config', JSON.stringify(d.config));
-        } catch (e) {
-          console.warn('localStorage flush failed', e);
-        }
+        mirrorPersistenceToLocalStorage(d);
         if (persistenceSaveBlockedRef.current) return;
         if (window.electron?.saveFullConfig) {
           const r = await window.electron.saveFullConfig(fullData);
