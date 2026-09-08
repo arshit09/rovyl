@@ -27,7 +27,15 @@ const copyDirectory = (name) => {
   fs.cpSync(source, destination, { recursive: true, force: true });
 };
 
-for (const file of ['package.json', 'package-lock.json', 'index.html', 'tsconfig.json', 'vite.config.mjs']) {
+// Root files the runtime needs a copy of. `src`/`public` stream in below; these three are also
+// kept live, because letting them drift behind the source tree is not merely stale. A `src` file
+// synced ahead of the `vite.config.mjs` that defines what it imports fails to resolve outright:
+// that is how adding the `virtual:lucide-icon-set` plugin killed a running session with a
+// "Failed to resolve import" overlay, from an edit that was correct in the repository.
+const RUNTIME_FILES = ['package.json', 'package-lock.json', 'index.html', 'tsconfig.json', 'vite.config.mjs'];
+const LIVE_SYNCED_FILES = new Set(['index.html', 'tsconfig.json', 'vite.config.mjs']);
+
+for (const file of RUNTIME_FILES) {
   copyFile(file);
 }
 
@@ -77,6 +85,35 @@ for (const directory of ['src', 'public']) {
     }
   }));
 }
+
+// Vite absorbs each of these on its own — it restarts for its own config file and reloads for the
+// rest — so copying is the whole job. The two package files are deliberately not live-synced: a
+// dependency change needs `npm ci`, which only the startup path above can run.
+const rootSyncTimers = new Map();
+const warnedDependencyDrift = new Set();
+watchers.push(fs.watch(projectRoot, (_event, relativeName) => {
+  if (!relativeName) return;
+  const name = String(relativeName);
+  if (!LIVE_SYNCED_FILES.has(name)) {
+    if (RUNTIME_FILES.includes(name) && !warnedDependencyDrift.has(name)) {
+      warnedDependencyDrift.add(name);
+      console.warn(`[Zenith] ${name} mudou — reinicie \`npm start\` para reinstalar as dependências.`);
+    }
+    return;
+  }
+  // Editors save by rename, so one save arrives as a burst of events with the file briefly gone.
+  clearTimeout(rootSyncTimers.get(name));
+  rootSyncTimers.set(name, setTimeout(() => {
+    rootSyncTimers.delete(name);
+    if (!fs.existsSync(path.join(projectRoot, name))) return;
+    try {
+      copyFile(name);
+      console.log(`[Zenith] ${name} sincronizado.`);
+    } catch (error) {
+      console.warn(`[Zenith] Não foi possível sincronizar ${name}: ${error.message}`);
+    }
+  }, 100));
+}));
 
 const child = spawn(npmCommand, [...npmPrefixArgs, 'run', 'start:runtime'], {
   cwd: runtimeRoot,
