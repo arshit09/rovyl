@@ -10,8 +10,33 @@ const {
   shell,
   dialog,
   session,
+  protocol,
 } = require("electron");
 const { autoUpdater } = require("electron-updater");
+const { createIconStore, ICON_SCHEME } = require("./icon-store.cjs");
+
+/**
+ * Icons are files in userData, served to `<img>` over this scheme — see `backend/icon-store.cjs`
+ * for why they stopped being base64 in the config.
+ *
+ * `file://` URLs would not do. Production loads `dist/index.html` off disk and a `file://`
+ * subresource works there, but dev loads `http://localhost:5173`, where Chromium refuses it — the
+ * wheel would have icons in the packaged app and none while developing it. A registered scheme
+ * behaves the same in both.
+ *
+ * Registration has to happen here, at module scope: `registerSchemesAsPrivileged` throws if it runs
+ * after `app.whenReady`, and a throw here is a launch that never happens.
+ */
+try {
+  protocol.registerSchemesAsPrivileged([
+    {
+      scheme: ICON_SCHEME,
+      privileges: { standard: true, secure: true, supportFetchAPI: false, corsEnabled: false },
+    },
+  ]);
+} catch (e) {
+  console.error("[IconStore] registerSchemesAsPrivileged failed:", e.message);
+}
 const path = require("path");
 const { exec, spawn, execFile, execFileSync } = require("child_process");
 const os = require("os");
@@ -2739,8 +2764,86 @@ app.whenReady().then(async () => {
     }
   };
 
+  /**
+   * Serves `rovyl-icon://icon/<sha256>.<ext>` out of userData/icons. Registered on the default
+   * session, which is the one the window uses — it sets no `partition`, and a partitioned session
+   * would need its own registration.
+   *
+   * The filename is validated by `refToFilename` BEFORE it is joined to a path, so a crafted URL
+   * cannot walk out of the store directory; anything that is not 64 lowercase hex plus a known
+   * image extension is refused outright rather than sanitised.
+   */
+  try {
+    protocol.handle(ICON_SCHEME, async (request) => {
+      try {
+        const parsed = new URL(request.url);
+        if (parsed.host !== iconStore.host) return new Response(null, { status: 404 });
+        const filename = iconStore.refToFilename(`${ICON_SCHEME}://${iconStore.host}${parsed.pathname}`);
+        if (!filename) return new Response(null, { status: 400 });
+        const bytes = await fs.promises.readFile(path.join(iconStore.dir, filename));
+        return new Response(bytes, {
+          status: 200,
+          headers: {
+            "content-type": iconStore.mimeForFilename(filename),
+            /** Honest only because the name IS the hash of the contents: it can never go stale. */
+            "cache-control": "public, max-age=31536000, immutable",
+          },
+        });
+      } catch {
+        /** A missing file is a missing icon: 404 lets <img onError> fall back to the glyph. */
+        return new Response(null, { status: 404 });
+      }
+    });
+    iconStore.ensureDir();
+  } catch (e) {
+    diagLog(`[IconStore] protocol.handle failed: ${e.message}`);
+  }
+
   loadSettings();
   loadIconCache();
+
+  /**
+   * Collect icon files nothing points at any more, once, a minute after launch.
+   *
+   * Roots are scraped from the RAW TEXT of every config file rather than from parsed objects, for
+   * three reasons that each cost icons if ignored: the workspace tree is mirrored under
+   * `workspaces`, `config.workspaces` and `apps`, so a shape-aware walker can miss a copy; a
+   * quarantined `.broken-*.json` exists precisely so a user can recover from it, and recovering
+   * without icons would be a hollow recovery, but it is by definition unparseable; and raw text
+   * stays correct when the persistence shape changes again.
+   *
+   * Deliberately not scanned: the three `localStorage` mirrors, which live inside Chromium's
+   * LevelDB. The seven-day grace inside `sweep` covers the window in which they could disagree
+   * with disk, and the worst outcome is one glyph instead of one icon.
+   */
+  setTimeout(() => {
+    void (async () => {
+      try {
+        const userData = app.getPath("userData");
+        const roots = new Set();
+        for (const name of fs.readdirSync(userData)) {
+          if (!name.startsWith("config-v2.json")) continue;
+          try {
+            iconStore.collectRefFilenames(fs.readFileSync(path.join(userData, name), "utf-8"), roots);
+          } catch (e) {
+            /** Unreadable root file: bail out entirely rather than sweep against a partial set. */
+            diagLog(`[IconStore] sweep aborted, could not read ${name}: ${e.message}`);
+            return;
+          }
+        }
+        for (const entry of iconCache.values()) {
+          const value = entry && typeof entry === "object" ? entry.data : entry;
+          const filename = iconStore.refToFilename(value);
+          if (filename) roots.add(filename);
+        }
+        const result = await iconStore.sweep({ rootFilenames: roots });
+        if (result.deleted) diagLog(`[IconStore] swept ${result.deleted} unreferenced icons`);
+      } catch (e) {
+        diagLog(`[IconStore] sweep failed: ${e.message}`);
+      }
+    })();
+  }, 60_000).unref?.();
+
   if (currentSettings.openAtLogin !== undefined) {
     syncLoginItemSettings(currentSettings.openAtLogin);
   }
@@ -2829,6 +2932,13 @@ app.whenReady().then(async () => {
         } catch (e) {
           diagLog(`[Persist] win32 command normalize (clone) failed: ${e.message}`);
         }
+      }
+
+      /** Same net as the async writer above, for the synchronous shutdown path. */
+      try {
+        iconStore.externalizeBlob(toWrite);
+      } catch (e) {
+        diagLog(`[IconStore] externalize before write (sync): ${e.message}`);
       }
 
       const json = JSON.stringify(toWrite, null, 2);
@@ -2923,6 +3033,18 @@ app.whenReady().then(async () => {
         } catch (e) {
           diagLog(`[Persist] win32 command normalize (clone) failed: ${e.message}`);
         }
+      }
+
+      /**
+       * Net, not the main mechanism: the read path already hands the renderer references, so a
+       * `data:` URL reaching here means something produced one that never went through the store.
+       * Externalising is idempotent — identical bytes hash to the name they already have — so on
+       * the normal path this walk changes nothing and writes nothing.
+       */
+      try {
+        iconStore.externalizeBlob(toWrite);
+      } catch (e) {
+        diagLog(`[IconStore] externalize before write: ${e.message}`);
       }
 
       const json = JSON.stringify(toWrite, null, 2);
@@ -3053,9 +3175,55 @@ app.whenReady().then(async () => {
     return saveFullConfigToDiskAsync(payload);
   };
 
+  /**
+   * Moves legacy `data:` icons out of the config file on disk, before it is read.
+   *
+   * On the read path and not the write path on purpose. Converting on write would shrink the file
+   * but leave the renderer holding the base64 in React state, still mirroring it into three
+   * `localStorage` keys on every debounced save — which is most of what the backlog item measures.
+   * Converting here means the very first hydration after upgrade hands the renderer references.
+   *
+   * It runs OUTSIDE the try below, whose catch renames `config-v2.json` to `.broken-<ts>.json`: a
+   * throw in here would quarantine a perfectly healthy config. It catches everything itself, and
+   * its worst outcome is "still fat", never "config gone".
+   */
+  const migrateConfigIconsToStore = (configPath) => {
+    try {
+      if (!fs.existsSync(configPath)) return 0;
+      const raw = fs.readFileSync(configPath, "utf-8");
+      const hasInline = raw.includes("data:image");
+      /**
+       * References are re-checked on every load, not just on the first migration. Dropping one
+       * whose file has gone is the only thing that lets the renderer heal it: to the healing pass
+       * any non-empty `customIconUrl` reads as "this one has an icon", so a dead reference would
+       * sit there as a broken image forever. Costs one stat per distinct reference per launch.
+       */
+      if (!hasInline && !raw.includes(`${iconStore.scheme}://`)) return 0;
+      const blob = JSON.parse(raw);
+      const rollback = `${configPath}.pre-icons.bak`;
+      /** Only worth keeping for the one-way conversion; a reference-only config is already small. */
+      if (hasInline && !fs.existsSync(rollback)) fs.copyFileSync(configPath, rollback);
+      const { changed, converted, dropped, failed } = iconStore.externalizeBlob(blob);
+      if (!changed) return 0;
+      /** Not `${configPath}.tmp` — that name belongs to the config writer and to import. */
+      const temp = `${configPath}.icons.tmp`;
+      fs.writeFileSync(temp, JSON.stringify(blob, null, 2), "utf-8");
+      fs.renameSync(temp, configPath);
+      diagLog(
+        `[IconStore] config rewrite: ${converted} icons stored, ${dropped} dangling dropped, ${failed} unreadable kept — ${raw.length}B -> ${fs.statSync(configPath).size}B`,
+      );
+      return converted + dropped;
+    } catch (e) {
+      diagLog(`[IconStore] config migration skipped: ${e.message}`);
+      return 0;
+    }
+  };
+
   ipcMain.handle("get-full-config", () => {
     const configPath = path.join(app.getPath("userData"), "config-v2.json");
     const bakPath = `${configPath}.bak`;
+
+    migrateConfigIconsToStore(configPath);
 
     const quarantineUnreadablePrimary = (err) => {
       try {
@@ -3233,9 +3401,46 @@ app.whenReady().then(async () => {
         iconCache: fs.existsSync(iconCachePath) ? JSON.parse(fs.readFileSync(iconCachePath, "utf-8")) : null,
       };
 
+      /**
+       * Put the bytes back inline before writing the backup.
+       *
+       * A backup is a file a user copies to another machine, so it has to be self-contained —
+       * references to `userData/icons` on the machine it came from would import as a wheel with
+       * no icons. Inlining also keeps the file byte-identical to the v1.0 format an older build
+       * knows how to read, so `import-config` needs no change at all: an imported backup lands on
+       * disk with `data:` URLs, and the read-path migration converts them on the next load.
+       */
+      let iconsMissing = 0;
+      try {
+        if (backup.config) iconsMissing += iconStore.inlineBlob(backup.config).missing;
+        const cachedIcons = backup.iconCache && backup.iconCache.icons;
+        if (cachedIcons) {
+          for (const [key, entry] of Object.entries(cachedIcons)) {
+            const value = entry && typeof entry === "object" ? entry.data : entry;
+            if (!iconStore.isIconRef(value)) continue;
+            const dataUrl = iconStore.readAsDataUrl(value);
+            if (dataUrl) cachedIcons[key] = { ...(typeof entry === "object" ? entry : {}), data: dataUrl };
+            else {
+              delete cachedIcons[key];
+              iconsMissing += 1;
+            }
+          }
+        }
+      } catch (e) {
+        diagLog(`[Backup] inline icons: ${e.message}`);
+      }
+
       fs.writeFileSync(result.filePath, JSON.stringify(backup, null, 2));
-      diagLog(`[Backup] Configuration exported to ${result.filePath}`);
-      return { success: true };
+      /**
+       * Say so when an icon could not be read back. This is the one artefact that leaves the
+       * machine, so it is the one place a silently dropped icon is not self-healing — on the
+       * machine it is restored to, the bytes simply are not there to re-inline from.
+       */
+      diagLog(
+        `[Backup] Configuration exported to ${result.filePath}` +
+          (iconsMissing ? ` (${iconsMissing} icon(s) unreadable, exported without them)` : ""),
+      );
+      return iconsMissing ? { success: true, iconsMissing } : { success: true };
     } catch (e) {
       console.error("Export failed:", e);
       diagLog(`[ERROR] Export failed: ${e.message}`);
@@ -6390,6 +6595,26 @@ ipcMain.on("quit-app", () => {
       diagLog("[Reset] Deleted icon-cache.json");
     }
 
+    /**
+     * The icon bytes themselves, and the one-shot rollback copy the migration leaves behind.
+     * `custom-icons/` is deliberately untouched: those are files the user chose, not extracted
+     * ones, and nothing in this change writes there.
+     */
+    try {
+      fs.rmSync(iconStore.dir, { recursive: true, force: true });
+      /**
+       * And every config that could point back into it. Leaving `config-v2.json.bak` behind meant
+       * a factory reset destroyed the icon files while keeping the file that names them: the next
+       * launch would fall back to that `.bak` and restore a wheel of broken images.
+       */
+      for (const name of ["config-v2.json.bak", "config-v2.json.pre-icons.bak", "config-v2.json.icons.tmp"]) {
+        fs.rmSync(path.join(app.getPath("userData"), name), { force: true });
+      }
+      diagLog("[Reset] Deleted the icon store and every config that referenced it");
+    } catch (e) {
+      diagLog(`[Reset] icon store: ${e.message}`);
+    }
+
     // Clear both pre-rebrand profiles so a factory reset cannot migrate stale data back.
     try {
       const appData = app.getPath("appData");
@@ -6521,6 +6746,15 @@ ipcMain.handle("remove-managed-custom-icon", async (_, urlOrPath) => {
 const iconCachePath = path.join(app.getPath("userData"), "icon-cache.json");
 let iconCache = new Map();
 
+/**
+ * Where icon bytes actually live. `icon-cache.json` keeps its name and its job — remembering which
+ * icon belongs to which target, keyed by things no filename encodes (an AUMID like
+ * `Microsoft.VisualStudioCode` is a key, not a path) — but its values become ~85-byte references
+ * instead of ~21 kB of base64 each, so it stops being a multi-megabyte string blob held for the
+ * life of the process.
+ */
+const iconStore = createIconStore(path.join(app.getPath("userData"), "icons"));
+
 // Bump whenever extract-icon.ps1 changes how icons are produced, so cached
 // entries rendered by the old pipeline are dropped instead of outliving it.
 const ICON_PIPELINE_VERSION = 7;
@@ -6567,6 +6801,42 @@ function stripStaleNativeIcons(configFilePath) {
   return removed;
 }
 
+/**
+ * Moves cache entries written before the icon store into it, off the startup path.
+ *
+ * Deferred rather than inline in `loadIconCache` because the cap is 600 entries and each is a
+ * SHA-256 plus a synchronous write of ~21 kB — up to half a second of blocked main process, and
+ * `loadIconCache` runs before the window is created. Nothing needs it to have finished: an
+ * unmigrated entry is still a `data:` URL, which every consumer already accepts.
+ */
+const scheduleIconCacheMigration = () => {
+  setTimeout(() => {
+    let migrated = 0;
+    for (const [key, entry] of iconCache) {
+      const value = entry && typeof entry === "object" ? entry.data : entry;
+      if (typeof value !== "string" || !value.startsWith("data:")) continue;
+      try {
+        const ref = iconStore.putDataUrl(value);
+        if (ref) {
+          iconCache.set(key, { ...(entry && typeof entry === "object" ? entry : {}), data: ref });
+          migrated += 1;
+        }
+      } catch (e) {
+        diagLog(`[IconCache] migrate ${key}: ${e.message}`);
+      }
+    }
+    if (migrated) {
+      /**
+       * `markIconCacheDirty`, not the bare flag: `scheduleIconCacheSave` is what arms the write
+       * timer, and raising `iconCacheDirty` alone would leave the migration in memory only — the
+       * same fat file would be re-migrated on every launch, forever.
+       */
+      markIconCacheDirty();
+      diagLog(`[IconCache] Moved ${migrated} inline icons into the store`);
+    }
+  }, 3000).unref?.();
+};
+
 const loadIconCache = () => {
   try {
     if (fs.existsSync(iconCachePath)) {
@@ -6578,6 +6848,13 @@ const loadIconCache = () => {
           if (!oldest) break;
           iconCache.delete(oldest);
         }
+        /**
+         * Entries written before the icon store hold a `data:` URL. Move the bytes into the store
+         * and keep the reference — not by discarding them and bumping ICON_PIPELINE_VERSION, which
+         * would mean re-running PowerShell extraction (about a second each) for icons already in
+         * hand, and would make every existing backup import as iconless.
+         */
+        scheduleIconCacheMigration();
         diagLog(`[IconCache] Loaded ${iconCache.size} icons from disk`);
       } else {
         iconCache = new Map();
@@ -6613,15 +6890,31 @@ const markIconCacheDirty = () => {
   scheduleIconCacheSave();
 };
 
+/**
+ * Remembers which icon belongs to a target, and returns the string the caller should hand to the
+ * renderer — a `rovyl-icon://` reference, not the ~21 kB of base64 it was given.
+ *
+ * This is the point where base64 stops travelling. Everything downstream — React state, the three
+ * `localStorage` mirrors, `config-v2.json` and its `.bak` — carries 85 bytes instead.
+ */
 const rememberFileIcon = (filePath, data) => {
+  let stored = data;
+  try {
+    const ref = iconStore.putDataUrl(data);
+    if (ref) stored = ref;
+  } catch (e) {
+    /** Storing failed: keep the inline icon rather than lose it. The config writer retries. */
+    diagLog(`[IconStore] could not store icon for ${filePath}: ${e.message}`);
+  }
   iconCache.delete(filePath);
-  iconCache.set(filePath, { data });
+  iconCache.set(filePath, { data: stored });
   while (iconCache.size > ICON_CACHE_MAX_ENTRIES) {
     const oldest = iconCache.keys().next().value;
     if (!oldest) break;
     iconCache.delete(oldest);
   }
   markIconCacheDirty();
+  return stored;
 };
 
 const saveIconCache = ({ sync = false } = {}) => {
@@ -6762,6 +7055,18 @@ function fetchUrlBodyBuffer(targetUrl, maxBytes = 524288, redirectDepth = 0) {
 }
 
 /** Evita <img src=https://…> no renderer (muitas vezes bloqueado); devolve data URL. */
+/** Sniffed MIME to the extension the icon store will serve it back under. */
+const faviconExtensionForMime = (mime) =>
+  ({
+    "image/png": "png",
+    "image/jpeg": "jpg",
+    "image/gif": "gif",
+    "image/webp": "webp",
+    "image/bmp": "bmp",
+    "image/x-icon": "ico",
+    "image/vnd.microsoft.icon": "ico",
+  })[String(mime).toLowerCase()] || "png";
+
 ipcMain.handle("get-website-favicon-data-url", async (_event, pageUrl) => {
   try {
     let hostname;
@@ -6776,7 +7081,10 @@ ipcMain.handle("get-website-favicon-data-url", async (_event, pageUrl) => {
     if (!hostname) return null;
     const hostKey = hostname.toLowerCase();
     if (faviconDataUrlCache.has(hostKey)) {
-      return faviconDataUrlCache.get(hostKey);
+      const cached = faviconDataUrlCache.get(hostKey);
+      /** Same rule as the native cache: a reference whose file is gone must miss, not be served. */
+      if (!iconStore.isIconRef(cached) || iconStore.exists(cached)) return cached;
+      faviconDataUrlCache.delete(hostKey);
     }
 
     const candidates = [
@@ -6788,10 +7096,21 @@ ipcMain.handle("get-website-favicon-data-url", async (_event, pageUrl) => {
       const buf = await fetchUrlBodyBuffer(u);
       if (!buf || buf.length < 16) continue;
       const mime = sniffImageMimeFromBuffer(buf);
-      const dataUrl = `data:${mime};base64,${buf.toString("base64")}`;
-      rememberFavicon(hostKey, dataUrl);
-      diagLog(`[Favicon] ${hostname} ok (${mime}, ${buf.length}b)`);
-      return dataUrl;
+      /**
+       * Straight into the store, so a web shortcut's icon costs the same 85 bytes in the config as
+       * a native one. `sniffImageMimeFromBuffer` reads the magic bytes, so the extension follows
+       * the content rather than a server's content-type header.
+       */
+      let stored = null;
+      try {
+        stored = iconStore.putBuffer(buf, faviconExtensionForMime(mime));
+      } catch (e) {
+        diagLog(`[Favicon] could not store ${hostname}: ${e.message}`);
+      }
+      const value = stored || `data:${mime};base64,${buf.toString("base64")}`;
+      rememberFavicon(hostKey, value);
+      diagLog(`[Favicon] ${hostname} ok (${mime}, ${buf.length}b)${stored ? " stored" : " inline"}`);
+      return value;
     }
     diagLog(`[Favicon] no image for ${hostname}`);
     return null;
@@ -6846,8 +7165,17 @@ ipcMain.handle("get-file-icon", async (event, filePath) => {
     if (iconCache.has(filePath)) {
       const cached = iconCache.get(filePath);
       if (cached && cached.data) {
-        // diagLog(`[IconRequest] Cache Hit: ${filePath}`);
-        return cached.data;
+        /**
+         * A reference whose file is gone has to miss, not hand back a broken image: to the
+         * renderer's healing pass any non-empty string reads as "this one has an icon", so a dead
+         * reference would sit there forever instead of being re-extracted.
+         */
+        if (!iconStore.isIconRef(cached.data) || iconStore.exists(cached.data)) {
+          // diagLog(`[IconRequest] Cache Hit: ${filePath}`);
+          return cached.data;
+        }
+        iconCache.delete(filePath);
+        markIconCacheDirty();
       }
     }
 
@@ -6958,8 +7286,7 @@ async function extractIconUncached(filePath) {
 
     if (iconData) {
       diagLog(`[IconRequest] Success via PowerShell for ${filePath}`);
-      rememberFileIcon(filePath, iconData);
-      return iconData;
+      return rememberFileIcon(filePath, iconData);
     }
 
     // 3. Last resort, file paths only. An AUMID means nothing to getFileIcon —
@@ -6974,8 +7301,7 @@ async function extractIconUncached(filePath) {
       const icon = await app.getFileIcon(resolvedPath, { size: "large" });
       const dataUrl = icon.toDataURL();
       diagLog(`[IconRequest] Final fallback success for ${resolvedPath}`);
-      rememberFileIcon(filePath, dataUrl);
-      return dataUrl;
+      return rememberFileIcon(filePath, dataUrl);
     } catch (e) {
       diagLog(`[IconRequest] All extraction methods failed for ${filePath}. Error: ${e.message}`);
       return null;

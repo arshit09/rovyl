@@ -24,6 +24,7 @@ export interface AppItem {
   label: string;
   iconName: string;
   iconSource?: "lucide" | "native"; // New property: 'lucide' for vector, 'native' for custom/extracted image
+  /** `rovyl-icon://` reference to a file in userData, an `https:` favicon, or a legacy `data:` URL. */
   customIconUrl?: string; // Supports base64 images or URLs
   direction?: string;
   command: string;

@@ -150,10 +150,26 @@ export const NativeAppIcon: React.FC<{
     return () => { alive = false; observer.disconnect(); };
   }, [path]);
 
+  /**
+   * `iconUrl` names a file the main process keeps in userData, so it can fail to load — a profile
+   * copied by hand, an icon collected while its reference was still in flight. Without the error
+   * arm the chip would be blank rather than showing the placeholder glyph beside it.
+   */
+  const [failed, setFailed] = React.useState(false);
+  React.useEffect(() => setFailed(false), [iconUrl]);
+
   return (
     <span ref={hostRef} className={className} style={{ width: size, height: size }} aria-hidden>
-      {iconUrl
-        ? <img src={iconUrl} alt="" draggable={false} style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+      {iconUrl && !failed
+        ? (
+          <img
+            src={iconUrl}
+            alt=""
+            draggable={false}
+            onError={() => setFailed(true)}
+            style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+          />
+        )
         : fallback}
     </span>
   );

@@ -69,13 +69,23 @@ changed; the rest is untouched.
   315.5 → 148.8 KB; critical JS 548.1 → 385.2 KB. The table itself is still on disk because three
   dead components import it — deleting those, and it, is §2/§6. Guarded: the build fails if any
   locale's text reappears in any emitted chunk.
-- [ ] **Base64 icons stored in JSON.** `config-v2.json` is 456 KB here, rewritten (plus a `.bak`) on
+- [x] **Base64 icons stored in JSON.** `config-v2.json` is 456 KB here, rewritten (plus a `.bak`) on
   every debounced change and mirrored into three `localStorage` keys on the same tick
   (`src/App.tsx:1378-1380`) — ~1.4 MB serialised per settings tweak, scaling with shortcut count.
   Fix: write icons as PNG files in userData, store paths.
-- [ ] **`icon-cache.json` is parsed synchronously at startup** and held as a `Map` of base64 strings
+  **Done:** `backend/icon-store.cjs` keeps icon bytes in `userData/icons/<sha256>.<ext>` and
+  `customIconUrl` holds an 85-byte `rovyl-icon://` reference, served over a registered scheme.
+  Measured on this profile: `config-v2.json` 456,139 → 12,755 B, so config + `.bak` per save went
+  912 KB → 25.5 KB and each `localStorage` mirror shrank with it. Twenty-three fields were only
+  nine distinct icons — content addressing makes the mirroring free. Conversion happens on the
+  read path, so the renderer never holds the base64 at all.
+- [x] **`icon-cache.json` is parsed synchronously at startup** and held as a `Map` of base64 strings
   capped at 600 entries (`electron-main.js:6521-6527`) — a permanently resident, potentially
   multi-MB string blob. Same fix: files on disk, let Chromium cache and decode lazily.
+  **Done** with the same store: the map keeps its job of remembering which icon belongs to which
+  target (its keys are AUMIDs, which no filename encodes) but its values are references.
+  `icon-cache.json` 144,360 → 664 B. Migration of existing entries is deferred 3 s so it cannot
+  delay the first window.
 - [ ] **No `localStorage` quota handling.** At ~5 MB writes start throwing; the only guard is a
   `console.warn`.
 - [ ] **`dist/folder.svg` is 596 KB** for a folder glyph. Replace.

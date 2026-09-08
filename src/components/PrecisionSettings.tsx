@@ -1320,15 +1320,55 @@ function itemFallbackIcon(item: AppItem) {
   return item.iconName || 'AppWindow';
 }
 
-function WorkspaceItemIcon({ item }: { item: AppItem }) {
+/**
+ * An item's bitmap icon, falling back to its Lucide glyph when the bitmap will not load.
+ *
+ * The fallback is not decoration. `customIconUrl` names a file the main process keeps in userData,
+ * and there are ordinary ways for the file to be gone — a profile copied by hand, a downgrade to a
+ * build that does not serve the scheme, an icon collected while its reference was still in flight.
+ * The wheel already handles this (`RadialMenu` swaps to the glyph on `onError`); these two call
+ * sites chose between image and glyph in the *parent*, so an image that failed rendered nothing at
+ * all rather than the glyph.
+ */
+function ItemBitmapOrGlyph({
+  item,
+  className,
+  displayScale,
+  glyphSize,
+  glyphStroke,
+}: {
+  item: AppItem;
+  className: string;
+  displayScale: number;
+  glyphSize: number;
+  glyphStroke: number;
+}) {
+  const [failed, setFailed] = React.useState(false);
+  React.useEffect(() => setFailed(false), [item.customIconUrl]);
   const Icon = getIcon(itemFallbackIcon(item));
+  if (item.customIconUrl && !failed) {
+    return (
+      <SmartIcon
+        src={item.customIconUrl}
+        className={className}
+        displayScale={displayScale}
+        onError={() => setFailed(true)}
+      />
+    );
+  }
+  return <Icon size={glyphSize} strokeWidth={glyphStroke} />;
+}
+
+function WorkspaceItemIcon({ item }: { item: AppItem }) {
   return (
     <span className="zs-workspace-app-icon" aria-hidden>
-      {item.customIconUrl ? (
-        <SmartIcon src={item.customIconUrl} className="zs-workspace-native-icon" displayScale={0.78} />
-      ) : (
-        <Icon size={17} strokeWidth={1.8} />
-      )}
+      <ItemBitmapOrGlyph
+        item={item}
+        className="zs-workspace-native-icon"
+        displayScale={0.78}
+        glyphSize={17}
+        glyphStroke={1.8}
+      />
     </span>
   );
 }
@@ -1350,7 +1390,6 @@ function WorkspaceWheelPreview({ workspace, accent }: { workspace: Workspace; ac
       <span className="zs-ws-preview-hub" style={{ background: accent }} />
       {items.map((item, index) => {
         const angle = ((index * (360 / items.length)) - 90) * (Math.PI / 180);
-        const Icon = getIcon(itemFallbackIcon(item));
         return (
           <span
             key={item.id}
@@ -1359,11 +1398,13 @@ function WorkspaceWheelPreview({ workspace, accent }: { workspace: Workspace; ac
               transform: `translate(${(radius * Math.cos(angle)).toFixed(1)}px, ${(radius * Math.sin(angle)).toFixed(1)}px)`,
             }}
           >
-            {item.customIconUrl ? (
-              <SmartIcon src={item.customIconUrl} className="zs-ws-preview-img" displayScale={0.82} />
-            ) : (
-              <Icon size={12} strokeWidth={1.9} />
-            )}
+            <ItemBitmapOrGlyph
+              item={item}
+              className="zs-ws-preview-img"
+              displayScale={0.82}
+              glyphSize={12}
+              glyphStroke={1.9}
+            />
           </span>
         );
       })}

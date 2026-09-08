@@ -1,4 +1,5 @@
 import type { AppItem } from "./types";
+import { isStoredIconRef } from "./iconRef";
 
 /** Command string is a http(s) URL (saved web shortcuts). */
 export function isLikelyWebUrl(command: string | undefined): boolean {
@@ -37,8 +38,9 @@ export function websiteIconFieldsFromUrl(
 }
 
 /**
- * Preferência: IPC no Electron devolve data URL (compatível com <img>).
- * Fallback: URL remota (unavatar) para ambientes sem bridge.
+ * Preferred: the Electron IPC, which stores the bytes and returns a `rovyl-icon://` reference
+ * (older builds returned an inline `data:` URL; both are accepted, both work in `<img src>`).
+ * Fallback: the remote unavatar URL, for environments with no bridge.
  */
 export async function resolveWebsiteIconFields(
   urlString: string,
@@ -51,10 +53,14 @@ export async function resolveWebsiteIconFields(
       typeof window !== "undefined" &&
       window.electron?.getWebsiteFaviconDataUrl;
     if (fetchFn) {
-      const dataUrl = await fetchFn(trimmed);
-      if (dataUrl && typeof dataUrl === "string" && dataUrl.startsWith("data:")) {
+      const resolved = await fetchFn(trimmed);
+      if (
+        resolved &&
+        typeof resolved === "string" &&
+        (isStoredIconRef(resolved) || resolved.startsWith("data:"))
+      ) {
         return {
-          customIconUrl: dataUrl,
+          customIconUrl: resolved,
           iconSource: "native",
           iconName: "Globe",
         };

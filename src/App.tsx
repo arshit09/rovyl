@@ -14,6 +14,7 @@ import { Minus, X, Maximize, Square, AlertTriangle, ArrowLeft, ArrowRight, Panel
 import { motion, AnimatePresence } from 'framer-motion';
 import { isLikelyWebUrl, resolveWebsiteIconFields } from './siteFavicon';
 import { preloadIconsByName } from './iconMap';
+import { isStoredIconRef } from './iconRef';
 
 /** Settings is the largest UI surface; radial-only sessions never need to parse or retain it. */
 const PrecisionSettings = React.lazy(() =>
@@ -738,7 +739,14 @@ export default function App() {
                   iconFields = null;
                 }
                 const url = iconFields?.customIconUrl;
-                if (url?.startsWith('data:')) {
+                /**
+                 * A stored reference counts as a resolved icon, exactly as an inline `data:` URL
+                 * did. Without this the branch below scores a successful upgrade as a failure:
+                 * an item already holding an `https://unavatar.io/...` placeholder has a truthy
+                 * `iconStr`, so it would fall through to the failure arm and burn its retry.
+                 * `data:` stays accepted — the `.bak` fallback path still hands them over.
+                 */
+                if (isStoredIconRef(url) || url?.startsWith('data:')) {
                   newItem = { ...newItem, ...iconFields };
                   hasUpdates = true;
                 } else if (!iconStr && url) {
