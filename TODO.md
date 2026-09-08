@@ -102,8 +102,20 @@ changed; the rest is untouched.
   shrink, so only noticing it could. `feTurbulence` generates the same grain procedurally. Rendered
   both revisions in Chromium and compared: 1 pixel in 262,144 differs by more than 8/255, mean
   difference 0.23. A 120 KB per-asset ceiling in `verify-renderer-budget` keeps the next one out.
-- [ ] **8 ms cursor poll during hold** (`MMB_CURSOR_POLL_MS`, `electron-main.js:4539`) sends IPC at
+- [x] **8 ms cursor poll during hold** (`MMB_CURSOR_POLL_MS`, `electron-main.js:4539`) sends IPC at
   125 Hz. Coalesce to rAF cadence, or skip sends when the resolved slice has not changed.
+  **Measured, and deliberately left alone.** The rAF coalescing this asks for is already there:
+  `RadialMenu`'s `handleMouseMove` records `lastPointerRef` synchronously and defers the highlight
+  to `requestAnimationFrame`, so React work is already capped at the display rate — a 50,000-event
+  benchmark produced zero frame callbacks. What is left costs, per tick:
+  `screen.getCursorScreenPoint()` 2.3 µs, `webContents.send` 7.5 µs, the synthesised `mousemove`
+  5.2 µs — **0.22% of one core, and only between MIDDLE_DOWN and MIDDLE_UP** in hold mode. Main
+  already skips the send when the cursor has not moved, and the poll only runs while the wheel is
+  open in hold mode.
+  Halving the rate is the one change that would help, and it is the wrong trade: the same samples
+  feed `lastPointerRef`, which is what the release reads to decide the slice, so an 8 ms staler
+  point is ~16 px of travel on a fast flick — enough to cross a boundary. On the 239 Hz display
+  this fork was debugged against, 125 Hz is already slower than the frame rate.
 - [ ] **Only settings is code-split.** Split out the icon picker, installed-app scanner and
   workspace editor so they are not in first paint.
 - [ ] **`App.tsx`: 33 `useState` + 32 `useEffect` in one 2,838-line component.** Every wheel open
