@@ -245,6 +245,13 @@ export const DEFAULT_UI_CONFIG: UIConfig = {
   workspaceSwitchMode: 'picker',
   appearanceTheme: 'black',
   radialSelectionMode: 'angle',
+  /**
+   * Desligado por omissão: com isto ligado, parar o rato sobre um ícone LANÇA-O. Mudar o
+   * comportamento por baixo de quem já usa a roda seria transformar um gesto neutro (mirar) num
+   * gesto destrutivo. Quem quer, liga nas definições.
+   */
+  radialInstantActivate: 'off',
+  radialInstantDwellMs: 400,
   enableMouseTrigger: true,
   mouseTriggerMode: 'click',
   mouseTriggerButton: 'middle',

@@ -131,6 +131,20 @@ export interface UIConfig {
    * 'cursor' — so acende quando o ponteiro esta mesmo sobre o icone.
    */
   radialSelectionMode?: 'angle' | 'cursor';
+  /**
+   * Executar sem clique: manter a mira num alvo durante `radialInstantDwellMs` lança-o.
+   *
+   * 'swipe' está RESERVADO e é lido como 'off' em todo o lado. O gesto de atirar o ponteiro para
+   * fora de um raio exige que ele comece no centro da roda, e isso não é verdade aqui: a roda
+   * nasce no centro do monitor enquanto o cursor fica onde estava, e a janela do radial é uma
+   * caixa (~988px), portanto um cursor num canto do ecrã não gera sequer um `mousemove`. Fazê-lo
+   * funcionar obrigaria a teleportar o cursor a partir do processo principal — ou seja, mexer no
+   * hook de rato, que já parou todo o input do sistema uma vez. O valor fica declarado para que
+   * uma implementação futura não precise de migrar configs.
+   */
+  radialInstantActivate?: 'off' | 'swipe' | 'dwell';
+  /** Milissegundos de mira contínua no mesmo alvo antes de executar. Preso a [250, 1200]. */
+  radialInstantDwellMs?: number;
   openAtLogin?: boolean; // New: Start app at login
   enableMouseTrigger: boolean;
   /** click: clique MMB abre e deixa o radial aberto; hold: segurar abre e soltar executa a seleção. */

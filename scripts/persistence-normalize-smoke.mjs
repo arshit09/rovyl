@@ -26,11 +26,20 @@ const flat = {
   ],
   globalShortcut: "Alt+Y",
   language: "pt",
+  radialInstantActivate: "dwell",
+  radialInstantDwellMs: 550,
 };
 const outFlat = normalizeFullPersistenceBlob(flat);
 assert.ok(outFlat.config);
 assert.equal(outFlat.config.globalShortcut, "Alt+Y");
 assert.equal(outFlat.config.workspaces.length, 1);
+/**
+ * Um ficheiro plano antigo não enumera chaves de UIConfig: tudo o que não seja uma chave de topo
+ * cai em `config`. Sem esta asserção, um campo novo podia ser silenciosamente descartado na
+ * leitura e ler-se como "as definições não guardaram".
+ */
+assert.equal(outFlat.config.radialInstantActivate, "dwell");
+assert.equal(outFlat.config.radialInstantDwellMs, 550);
 
 assert.equal(normalizeFullPersistenceBlob({}), null);
 assert.equal(normalizeFullPersistenceBlob({ config: { workspaces: [] } }), null);

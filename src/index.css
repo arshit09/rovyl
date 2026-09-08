@@ -896,6 +896,28 @@
   will-change: transform, opacity;
 }
 
+/* Anel de progresso da mira sustentada (executar sem clique).
+   É CSS e não React de propósito: o arco é o único sinal de que um temporizador está a correr,
+   por isso desenha-o durante exatamente o gesto em que a roda tem de continuar a responder ao
+   rato. Um arco animado em React custava um commit por frame na main thread, justamente aí.
+   O `key` do <svg> reinicia a animação ao trocar de alvo — não há estado a repor.
+   Deliberadamente NÃO suprimido em `prefers-reduced-motion`: sem o arco, um lançamento por
+   tempo passa a acontecer sem aviso nenhum, que é pior do que o movimento. */
+@keyframes zn-dwell-arc {
+  from {
+    stroke-dashoffset: 1;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+.zn-dwell-arc {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: zn-dwell-arc var(--zn-dwell-ms, 400ms) linear forwards;
+}
+
 /* Modo normal: expansão progressiva, com desaceleração longa o bastante para a
    troca de workspace/pasta não parecer um corte seco. */
 .zn-radial-slice {

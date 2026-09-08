@@ -1,6 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import {
+  DWELL_MS_MAX,
+  DWELL_MS_MIN,
+  DWELL_MS_STEP,
+  clampDwellMs,
+} from '../constants/radialDwell';
+import {
   ArrowDownToLine,
   ArrowUpFromLine,
   Check,
@@ -483,6 +489,30 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
           current: config.radialSelectionMode === 'cursor' ? 'cursor' : 'angle',
           onChange: (value) => update('radialSelectionMode', value as UIConfig['radialSelectionMode']),
         },
+        {
+          key: 'instant', group: 'Wheel', title: 'Launch without clicking',
+          description: 'Hover a target and hold your aim there — it opens by itself.',
+          /**
+           * Interruptor, não segmentado. Todo o binário deste painel é `bool`; um segmentado é
+           * sempre uma escolha entre pares com nome (Picker/Keys, Click/Hold, Direction/Pointer) e
+           * nenhum deles tem um "Off". Aqui os dois lados não são pares: com isto ligado o clique
+           * continua a funcionar exatamente como antes, portanto o que existe é a ausência de uma
+           * funcionalidade — que é precisamente o que o interruptor diz.
+           *
+           * A comparação com `'dwell'` coage também `'swipe'`, reservado no tipo e não implementado.
+           */
+          kind: 'bool',
+          enabled: config.radialInstantActivate === 'dwell',
+          onToggle: () =>
+            update(
+              'radialInstantActivate',
+              config.radialInstantActivate === 'dwell' ? 'off' : 'dwell',
+            ),
+        },
+        range('dwellMs', 'Wheel', 'Hover time', 'How long a target must stay aimed before it opens.',
+          clampDwellMs(config.radialInstantDwellMs), DWELL_MS_MIN, DWELL_MS_MAX,
+          (value) => update('radialInstantDwellMs', value), (value) => `${Math.round(value)} ms`,
+          DWELL_MS_STEP),
         {
           key: 'labels', group: 'Wheel', title: 'Persistent labels',
           description: 'Keep every target name visible.',

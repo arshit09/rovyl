@@ -11,6 +11,7 @@ import {
   isWorkspacePickItem,
   parseWorkspacePickIndex,
 } from '../utils/workspaceRadial';
+import { DWELL_MS_MIN, clampDwellMs } from '../constants/radialDwell';
 
 // PERF FIX #3: Module-level weather cache — persists across menu open/close cycles
 // Prevents a new HTTP fetch on every menu open; refreshes only after 10 minutes or location change
@@ -207,6 +208,45 @@ interface RadialMenuProps {
   updateReady?: boolean;
 }
 
+/**
+ * Executar sem clique ("mira sustentada"): parar sobre um alvo durante `dwellMs` lança-o.
+ *
+ * O atraso de armar conta-se a partir do PRIMEIRO PAINT da roda, não de `openingTimeRef`. Esse é
+ * escrito dentro do `flushSync` de `openMenu`, antes de o main revelar o HWND — e a revelação tem
+ * um fallback de 120ms (240ms a restaurar de minimizado). Medido de lá, o atraso podia expirar com
+ * a roda ainda invisível e cada tile ainda `pointer-events: none`: o utilizador levava com um
+ * lançamento antes de ver o que quer que fosse.
+ *
+ * `INSTANT_ARM_DISPLACEMENT_PX` é deslocamento OBSERVADO desde uma referência posta por um
+ * `mousemove` anterior — nunca `hasMoved`, que mede a distância ao CENTRO da roda e portanto já
+ * está verdadeiro assim que o ponteiro está parado longe do centro, que é o caso perigoso.
+ */
+const INSTANT_ARM_DELAY_MS = 120;
+const INSTANT_ARM_DISPLACEMENT_PX = 24;
+/** Absorve o clique reflexo que chega logo a seguir a um lançamento por tempo. */
+const INSTANT_QUARANTINE_MS = 300;
+/**
+ * Assentar antes de contar.
+ *
+ * Sem isto o temporizador media "há quanto tempo estou nesta cunha", não "há quanto tempo estou
+ * parado num alvo" — e em modo ângulo uma cunha não tem limite de distância. Num nível com UM
+ * item a cunha é o plano todo: atravessar a zona morta arrancava o relógio e 400ms depois lançava,
+ * fizesse o ponteiro o que fizesse pelo caminho.
+ *
+ * A contagem só começa quando o ponteiro fica dentro de `DWELL_SETTLE_PX` durante
+ * `DWELL_SETTLE_MS`. Enquanto se move, o que se reagenda é este `setTimeout` — não há um commit
+ * do React por frame, que é o que uma reposição direta do arco custaria.
+ */
+const DWELL_SETTLE_PX = 10;
+const DWELL_SETTLE_MS = 90;
+/**
+ * Já a contar, a tolerância é outra — e maior. As duas fases medem coisas diferentes: assentar
+ * pergunta "a mão parou?", contar pergunta "a mão continua neste alvo?". Com um só raio, e ainda
+ * medido a partir da última amostra em MOVIMENTO, uma contagem de 1.1s herdava um orçamento quase
+ * gasto e um arrastar lento ficava preso num ciclo — o arco a aparecer e a morrer sem nunca abrir.
+ */
+const DWELL_HOLD_PX = 26;
+
 interface RadialMenuItemProps {
   app: AppItem;
   index: number;
@@ -226,6 +266,13 @@ interface RadialMenuItemProps {
   bloom: boolean;
   /** Small chip inside the label pill (workspace number, "recentes"…). Omitted when the slice has no hint. */
   shortcutHint?: string;
+  /**
+   * Duração do arco de mira sustentada. Definido SÓ no tile que tem o temporizador a correr —
+   * `undefined` em todos os outros, para que o `React.memo` deles não seja invalidado a cada dwell.
+   */
+  dwellMs?: number;
+  /** Id da tentativa. Mudar remonta o `<svg>` e é isso que reinicia a animação CSS. */
+  dwellKey?: number;
   onClick: (app: AppItem) => void;
 }
 
@@ -269,6 +316,33 @@ function getSlicePresence(distance: number | null) {
  * com rebarba e pontos irregulares. Com escala do Windows a 125/150% o erro nem sequer é de meio
  * pixel CSS, por isso não basta arredondar — tem de se dividir pelo `devicePixelRatio`.
  */
+/**
+ * Retângulo arredondado que COMEÇA no topo, ao centro.
+ *
+ * O caminho implícito de um `<rect>` arranca no fim do arco superior esquerdo, ou seja deslocado
+ * para a direita pelo raio do canto — o anel de progresso começava a encher num ponto arbitrário
+ * da aresta de cima, e o desvio mudava com o tamanho do ícone porque o raio também muda. Um
+ * relógio que não começa às doze lê-se como um erro.
+ */
+export function roundedRectPathFromTop(size: number, inset: number, radius: number): string {
+  const near = inset;
+  const far = size - inset;
+  const mid = size / 2;
+  const r = Math.max(0, Math.min(radius, (far - near) / 2));
+  return [
+    `M ${mid} ${near}`,
+    `L ${far - r} ${near}`,
+    `A ${r} ${r} 0 0 1 ${far} ${near + r}`,
+    `L ${far} ${far - r}`,
+    `A ${r} ${r} 0 0 1 ${far - r} ${far}`,
+    `L ${near + r} ${far}`,
+    `A ${r} ${r} 0 0 1 ${near} ${far - r}`,
+    `L ${near} ${near + r}`,
+    `A ${r} ${r} 0 0 1 ${near + r} ${near}`,
+    'Z',
+  ].join(' ');
+}
+
 export function snapToDevicePixel(value: number): number {
   const ratio = typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1;
   return Math.round(value * ratio) / ratio;
@@ -302,6 +376,8 @@ const RadialMenuItem = React.memo(({
   folderStackLength,
   bloom,
   shortcutHint,
+  dwellMs,
+  dwellKey,
   onClick,
 }: RadialMenuItemProps) => {
   const Icon = getIcon(app.iconName);
@@ -362,6 +438,17 @@ const RadialMenuItem = React.memo(({
   }, [iconPending, app.command]);
   const presence = getSlicePresence(angularDistance);
   const activeForeground = getReadableForeground(hoverColor);
+  /**
+   * Anel concêntrico com o tile. O que tem de ser concêntrico é a LINHA MÉDIA do traço, não a sua
+   * aresta exterior: o retângulo está encolhido 1.25 de cada lado (metade dos 2.5 de traço), por
+   * isso a linha média corre 5.75px por fora do tile e o raio certo é 18 + 5.75, não 18 + 7.
+   * O limite também se mede contra o lado REAL do retângulo — contra a caixa do SVG, um ícone no
+   * mínimo caía no recorte silencioso do browser, que é exatamente o que este limite evita.
+   */
+  const dwellRingSize = actualIconSize + 14;
+  const dwellRingInset = (dwellRingSize - actualIconSize) / 2 - 1.25;
+  const dwellRingRadius = Math.min(18 + dwellRingInset, (dwellRingSize - 2.5) / 2);
+  const dwellRingPath = roundedRectPathFromTop(dwellRingSize, 1.25, dwellRingRadius);
 
   return (
     <div
@@ -390,6 +477,72 @@ const RadialMenuItem = React.memo(({
       }}
     >
       <div className="relative flex items-center justify-center -translate-x-1/2 -translate-y-1/2">
+        {/*
+          Arco de mira sustentada. Só aparece em `startDwell`, a partir de uma mira RESOLVIDA DE
+          NOVO nesse instante, e tanto o `startDwell` como o `fireDwell` revalidam a terna
+          `{nível, índice, id}` — um antes de desenhar, o outro antes de abrir. É por isso que o
+          que o anel mostra e o que vai executar não podem divergir: acender um ícone e abrir outro
+          é o que o comentário do `resolveAimAtPoint` chama o pior defeito possível num lançador.
+
+          `pathLength={1}` normaliza o perímetro: o traço anima de 1 para 0 sem aritmética nenhuma
+          sobre o comprimento real do caminho, que muda com o tamanho do ícone.
+        */}
+        {dwellMs != null && (
+          <svg
+            key={dwellKey}
+            /**
+             * `z-10`, por baixo do tile. O anel corre inteiramente FORA do quadrado do tile, por
+             * isso nada dele se perde — e por cima passava a cortar o selo de pasta, que vive no
+             * `z-30` de dentro do invólucro e é maior do que a folga entre o tile e o anel.
+             */
+            className="absolute pointer-events-none z-10"
+            /**
+             * Centragem explícita. Um filho absoluto de um contentor flex herda a posição estática
+             * do alinhamento do flex, o que já o centraria — mas depender disso deixa o anel a
+             * meio tile de distância se alguém trocar `justify-center` por outra coisa.
+             */
+            style={{ left: '50%', top: '50%', transform: 'translate(-50%, -50%)' }}
+            width={dwellRingSize}
+            height={dwellRingSize}
+            viewBox={`0 0 ${dwellRingSize} ${dwellRingSize}`}
+            shapeRendering="geometricPrecision"
+            aria-hidden
+          >
+            {/*
+              Três camadas, pela mesma razão que o tile tem contorno duplo: o anel corre FORA da
+              placa opaca do tile, portanto o que está por trás dele é o escurecimento e, através
+              dele, um wallpaper que não controlamos. Sozinho, branco a 18% não se lê sobre fundo
+              claro — e um anel de progresso invisível é a única coisa que avisa que algo está
+              prestes a abrir sozinho.
+
+              Invólucro escuro OPACO por baixo (o mesmo papel do `0 0 0 1px rgba(0,0,0,.5)` do
+              tile), depois a pista, depois o arco. A pista pode ser translúcida porque já tem o
+              invólucro por baixo — não é o alfa a fazer de canal de desênfase.
+            */}
+            <path
+              d={dwellRingPath}
+              fill="none"
+              stroke="rgba(0,0,0,0.55)"
+              strokeWidth={4.5}
+            />
+            <path
+              d={dwellRingPath}
+              fill="none"
+              stroke="rgba(255,255,255,0.30)"
+              strokeWidth={2.5}
+            />
+            <path
+              className="zn-dwell-arc"
+              d={dwellRingPath}
+              fill="none"
+              stroke={hoverColor}
+              strokeWidth={2.5}
+              pathLength={1}
+              style={{ ['--zn-dwell-ms' as string]: `${dwellMs}ms` }}
+            />
+          </svg>
+        )}
+
         {/* WRAPPER FOR BADGE & MASKED CONTENT */}
         <div
           className={`relative z-20 ${bloom ? 'pointer-events-auto cursor-pointer' : 'pointer-events-none cursor-default'}`}
@@ -560,8 +713,17 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const [isCenterActive, setIsCenterActive] = useState(false);
   const [hasMoved, setHasMoved] = useState(false);
-  /** Impede que o mouseup do MMB usado para fechar confirme o app/workspace sob o cursor. */
-  const toggleClosePendingRef = useRef(false);
+  /**
+   * "Esta roda começou a fechar". Escrito SINCRONAMENTE por todos os caminhos de cancelamento —
+   * Escape, botão direito, menu de contexto e o evento de toggle do trigger — antes do `onClose`.
+   *
+   * Existe porque `!stateRef.current.isOpen` chega tarde: passa por `onClose` → `setIsMenuOpen`
+   * do App → batching do React → render. Um clique não sofre com isso (o listener já foi
+   * desmontado), mas um temporizador de mira sustentada sobrevive a essa janela e dispararia
+   * contra uma roda que o utilizador acabou de mandar embora. Antes disto a ref existia mas nunca
+   * era lida: descrevia uma proteção que não estava lá.
+   */
+  const closingRef = useRef(false);
   const isCenterActiveRef = useRef(isCenterActive);
   const openingTimeRef = useRef<number>(0);
   /**
@@ -571,9 +733,76 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
    */
   const [bloom, setBloom] = useState(false);
 
+  /**
+   * Motor da mira sustentada.
+   *
+   * Regra de desenho que governa tudo o que está aqui: ARMAR É UM FACTO OBSERVADO. O gesto só
+   * passa a poder executar depois de um `mousemove` REAL cair a mais de `INSTANT_ARM_DISPLACEMENT_PX`
+   * de uma referência posta por um `mousemove` real anterior. Nada é inferido do estado da roda,
+   * porque o estado perigoso — ponteiro parado longe do centro, com uma fatia já acesa — é
+   * indistinguível de uma mira deliberada se não se olhar para o movimento.
+   */
+  const levelGenRef = useRef(0);
+  const dwellArmedRef = useRef(false);
+  const dwellBaselineRef = useRef<{ x: number; y: number } | null>(null);
+  const dwellTimerRef = useRef<number | null>(null);
+  const dwellTargetRef = useRef<{ gen: number; index: number; itemId: string } | null>(null);
+  /** Alvo à espera de que a mão assente; ainda não conta nem desenha nada. */
+  const dwellPendingRef = useRef<{ gen: number; index: number; itemId: string } | null>(null);
+  const dwellSettleTimerRef = useRef<number | null>(null);
+  /** Ponto onde a tentativa atual começou — é contra ele que se mede se o ponteiro parou. */
+  const dwellAnchorRef = useRef<{ x: number; y: number } | null>(null);
+  const dwellStartedAtRef = useRef(0);
+  const paintReadyAtRef = useRef<number | null>(null);
+  const quarantineUntilRef = useRef(0);
+  const dwellSeqRef = useRef(0);
+  /**
+   * O efeito de interação regista os listeners uma vez por abertura, e o motor está definido
+   * depois dele (precisa do `handleAppClick`). Uma ref é o que liga os dois sem inverter a ordem
+   * do ficheiro nem recriar listeners a cada render.
+   */
+  const armAndTrackDwellRef = useRef<
+    (point: { x: number; y: number }, aim: { isCenter: boolean; index: number | null }) => void
+  >(() => {});
+  /** Um commit por início/cancelamento de arco. Zero por frame: a animação é CSS. */
+  const [dwellTick, setDwellTick] = useState<{ index: number; key: number } | null>(null);
+
   useEffect(() => {
     isCenterActiveRef.current = isCenterActive;
   }, [isCenterActive]);
+
+  /** Mata o temporizador e o arco. NÃO desarma: estar no hub cancela a contagem, não o gesto. */
+  const cancelDwell = useCallback(() => {
+    if (dwellTimerRef.current !== null) {
+      window.clearTimeout(dwellTimerRef.current);
+      dwellTimerRef.current = null;
+    }
+    if (dwellSettleTimerRef.current !== null) {
+      window.clearTimeout(dwellSettleTimerRef.current);
+      dwellSettleTimerRef.current = null;
+    }
+    dwellPendingRef.current = null;
+    dwellAnchorRef.current = null;
+    /** O commit só acontece se havia mesmo um arco no ecrã — chamadas repetidas não custam nada. */
+    if (dwellTargetRef.current !== null) {
+      dwellTargetRef.current = null;
+      setDwellTick(null);
+    }
+  }, []);
+
+  /** Volta ao estado em que executar exige um deslocamento novo e observado. */
+  const disarmDwell = useCallback(() => {
+    cancelDwell();
+    dwellArmedRef.current = false;
+    dwellBaselineRef.current = null;
+  }, [cancelDwell]);
+
+  /** Reposição total — abrir e fechar. */
+  const resetDwell = useCallback(() => {
+    disarmDwell();
+    paintReadyAtRef.current = null;
+    quarantineUntilRef.current = 0;
+  }, [disarmDwell]);
 
   // Folder Navigation State
   // Seeded with the root level, not the raw app list: in picker mode the two
@@ -581,10 +810,44 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
   const [currentLevelApps, setCurrentLevelApps] = useState<AppItem[]>(() => getRootRadialApps(config, apps));
   const [folderStack, setFolderStack] = useState<{ label: string, apps: AppItem[] }[]>([]);
   const [isLoadingRecents, setIsLoadingRecents] = useState(false);
+  /**
+   * Uma busca de MRU em curso não muda o nível: as fatias do nível ANTERIOR continuam à vista e o
+   * efeito de mudança de nível não corre, portanto nada desarma sozinho. Enquanto o hub roda,
+   * ninguém executa nada por tempo — o utilizador já escolheu e está à espera.
+   */
+  const isLoadingRecentsRef = useRef(isLoadingRecents);
+  isLoadingRecentsRef.current = isLoadingRecents;
 
   const menuRef = useRef<HTMLDivElement>(null);
   const configRef = useRef(config);
   configRef.current = config;
+  /**
+   * O tempo que o utilizador escolheu conta a partir do momento em que a mão para. A fase de
+   * assentar já gastou `DWELL_SETTLE_MS` desse orçamento, portanto o relógio visível — e o arco —
+   * duram o resto: o número nas definições continua a ser o tempo total até abrir.
+   *
+   * O piso segue `DWELL_MS_MIN`, não um número solto: assim continua honesto se algum dia o mínimo
+   * das definições descer abaixo da fase de assentar.
+   */
+  const dwellMsRef = useRef(0);
+  dwellMsRef.current = clampDwellMs(config.radialInstantDwellMs);
+  const dwellRunMsRef = useRef(0);
+  dwellRunMsRef.current = Math.max(
+    Math.max(0, DWELL_MS_MIN - DWELL_SETTLE_MS),
+    dwellMsRef.current - DWELL_SETTLE_MS,
+  );
+  /**
+   * O efeito de interação depende só de `[isOpen]`, portanto captura os seus callbacks uma vez por
+   * abertura — o que muda com as definições tem de lá chegar por ref, não por closure.
+   *
+   * `swipe` é lido como desligado de propósito: o valor está reservado no tipo, não implementado.
+   * MMB em modo segurar fica de fora porque já executa ao largar, e a sua mira vem da sondagem do
+   * main (`mmb-cursor`), cujo primeiro ponto é onde o botão foi premido — alimentar um
+   * temporizador com isso seria disparar num tique da sonda, não numa intenção.
+   */
+  const dwellEnabledRef = useRef(false);
+  dwellEnabledRef.current =
+    config.radialInstantActivate === 'dwell' && triggerSource !== 'mmb';
   const radialHoverColor = normalizeHoverColor(config.radialHoverColor);
   const radialHoverForeground = getReadableForeground(radialHoverColor);
   const iconSizePx = config.iconSize || 64;
@@ -622,13 +885,25 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
   useLayoutEffect(() => {
     if (!isOpen) {
       setBloom(false);
+      paintReadyAtRef.current = null;
       return;
     }
     setBloom(false);
+    /**
+     * Marco de "a roda está mesmo à vista". As dependências deste efeito incluem
+     * `currentLevelApps`, portanto a janela de assentamento de `INSTANT_ARM_DELAY_MS` é reganha a
+     * cada NÍVEL e não só a cada abertura — que é exatamente a garantia de que uma execução por
+     * tempo precisa quando uma pasta troca as fatias debaixo de um ponteiro parado.
+     */
+    paintReadyAtRef.current = null;
+    cancelDwell();
     if (!animationReady) return;
-    const raf = requestAnimationFrame(() => setBloom(true));
+    const raf = requestAnimationFrame(() => {
+      paintReadyAtRef.current = Date.now();
+      setBloom(true);
+    });
     return () => cancelAnimationFrame(raf);
-  }, [isOpen, currentLevelApps, animationReady]);
+  }, [isOpen, currentLevelApps, animationReady, cancelDwell]);
 
   /** Lista vazia: manter foco visual no centro (volta / centro) — antes o rato não atualizava o hub. */
   useEffect(() => {
@@ -653,6 +928,10 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
   useLayoutEffect(() => {
     if (isOpen) {
       openingTimeRef.current = Date.now();
+      /** Abertura nova: nada herdado do gesto anterior pode executar seja o que for. */
+      resetDwell();
+      closingRef.current = false;
+      levelGenRef.current += 1;
       setHasMoved(false);
       setIsCenterActive(false);
       setFolderStack([]);
@@ -718,7 +997,7 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
    */
   const logRadialConfirm = useCallback(
     (
-      origin: 'click' | 'mmb-release',
+      origin: 'click' | 'mmb-release' | 'dwell',
       point: { x: number; y: number } | null,
       aim: { isCenter: boolean; index: number | null },
     ) => {
@@ -727,10 +1006,23 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
         ? Math.round(Math.hypot(point.x - position.x, point.y - position.y))
         : -1;
       const label = aim.index !== null ? currentLevelApps[aim.index]?.label ?? '?' : '—';
+      /**
+       * Execução por tempo não tem gesto humano a que se agarrar num relato — sem estes campos,
+       * um "abriu o que eu não apontei" é impossível de distinguir de um clique mal-apontado.
+       */
+      const dwellForensics =
+        origin === 'dwell'
+          ? ` base=${
+              dwellBaselineRef.current
+                ? `${Math.round(dwellBaselineRef.current.x)},${Math.round(dwellBaselineRef.current.y)}`
+                : 'null'
+            } espera=${Date.now() - dwellStartedAtRef.current}ms nivel=${levelGenRef.current} ` +
+            `alvo=${dwellTargetRef.current?.itemId ?? '?'}`
+          : '';
       window.electron?.savePersistenceLog?.(
         `[RadialConfirm] ${origin} ponto=${point ? `${Math.round(point.x)},${Math.round(point.y)}` : 'null'} ` +
           `centro=${Math.round(position.x)},${Math.round(position.y)} dist=${distance} zonaMorta=${Math.round(deadZoneRadius)} ` +
-          `→ ${aim.isCenter ? 'CENTRO' : `fatia ${aim.index} (${label})`}`,
+          `→ ${aim.isCenter ? 'CENTRO' : `fatia ${aim.index} (${label})`}${dwellForensics}`,
       );
     },
     [],
@@ -738,6 +1030,8 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
 
   /** Ação do centro: voltar um nível dentro de uma pasta, fechar na raiz. */
   const handleCenterActivate = useCallback(() => {
+    /** Clique reflexo logo a seguir a uma execução por tempo — e o hub já mudou de nível. */
+    if (Date.now() < quarantineUntilRef.current) return;
     const { folderStack, currentLevelApps: _ignored, apps, config, onClose } = stateRef.current;
     if (folderStack.length > 0) {
       const newStack = folderStack.slice(0, -1);
@@ -869,12 +1163,24 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
    */
   useLayoutEffect(() => {
     if (!isOpen) return;
+    /**
+     * Entrar ou sair de um nível desarma a execução sem clique, sem exceção: voltar a armar custa
+     * sempre `INSTANT_ARM_DISPLACEMENT_PX` de deslocamento novo e observado. É isto que impede uma
+     * execução por tempo de cascatear por pastas encadeadas — e cobre também as trocas de nível
+     * que ninguém gesticulou: o `setConfig` atrasado da mudança de workspace com a roda do rato, e
+     * uma promessa de MRU a resolver depois de o utilizador já ter navegado para outro lado.
+     *
+     * `lastPointerRef` fica intocado de propósito: a reavaliação abaixo é o que faz o nível novo
+     * chegar já com a fatia sob o cursor acesa.
+     */
+    levelGenRef.current += 1;
+    disarmDwell();
     /** Mudar de nível é navegar, não confirmar: o gesto seguinte tem de voltar a valer. */
     gestureConsumedRef.current = false;
     const aim = resolveAimAtPoint(lastPointerRef.current);
     setIsCenterActive(aim.isCenter);
     setActiveIndex(aim.isCenter ? null : aim.index);
-  }, [isOpen, currentLevelApps, folderStack.length, resolveAimAtPoint]);
+  }, [isOpen, currentLevelApps, folderStack.length, resolveAimAtPoint, disarmDwell]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -901,6 +1207,8 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
       const MOVEMENT_BUFFER = 15;
 
       if (currentLevelApps.length === 0) {
+        /** Nível vazio: não há fatia nenhuma para executar, e `resolveAimAtPoint` devolve índice nulo. */
+        cancelDwell();
         if (!hasMoved && distance > MOVEMENT_BUFFER) {
           setHasMoved(true);
         }
@@ -920,6 +1228,8 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
       }
 
       if (distance < deadZoneRadius) {
+        /** Voltar ao hub é o gesto de desistir: mata a contagem, mas não o direito de recomeçar. */
+        cancelDwell();
         if (activeIndex !== null) setActiveIndex(null);
         if (!stateRef.current.isCenterActive) setIsCenterActive(true);
         rafId = null;
@@ -936,6 +1246,15 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
        */
       const aim = resolveAimAtPoint({ x: e.clientX, y: e.clientY });
       if (activeIndex !== aim.index) setActiveIndex(aim.index);
+
+      /**
+       * Alimentado com o MESMO objeto `aim` que acabou de escrever o realce, no mesmo tique — daí
+       * o alvo candidato nunca poder ser outro que não o que está aceso. Ainda assim, quem desenha
+       * o anel e quem executa voltam a resolver a mira por sua conta (`startDwell`, `fireDwell`):
+       * entre marcar um alvo e abri-lo passa quase meio segundo, e nesse intervalo o nível pode
+       * mudar por baixo de um ponteiro que não se mexeu.
+       */
+      armAndTrackDwellRef.current({ x: e.clientX, y: e.clientY }, aim);
 
       rafId = null;
     };
@@ -954,12 +1273,19 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
        * MMB é tratado exclusivamente pelo IPC `mmb-release` no modo segurar e pelo main no modo
        * clique. Aceitá-lo também aqui fazia o mesmo gesto confirmar a fatia e alternar o modal.
        */
-      if (e.button === 1) {
-        toggleClosePendingRef.current = false;
-        return;
-      }
+      if (e.button === 1) return;
       if (e.button !== 0) return;
+      /** Clique reflexo a chegar depois de uma execução por tempo já ter mudado o que está à vista. */
+      if (Date.now() < quarantineUntilRef.current) return;
       if (gestureConsumedRef.current || !stateRef.current.isOpen) return;
+      /**
+       * Mesma regra do `handleAppClick`: um clique é uma escolha, e o que estava a ser contado
+       * deixou de valer. Este caminho tem a sua própria cópia do ramo de recentes assíncrono — em
+       * modo ângulo é ELE o caminho normal, porque a fatia é o alvo mesmo com o cursor longe do
+       * ícone — e durante essa espera o nível não muda, portanto nada mais desarmaria: o arco
+       * continuava a encher sobre um tile que já não vai abrir nada.
+       */
+      disarmDwell();
       gestureConsumedRef.current = true;
       const { folderStack, apps, currentLevelApps, onClose, config } = stateRef.current;
 
@@ -1096,22 +1422,49 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
         }
     };
 
+    /**
+     * Cancelar nunca pode executar nada. `closingRef` é escrito aqui, síncrono, porque o sinal
+     * "isto está a fechar" só chega ao estado do React depois de `onClose` → `setIsMenuOpen` →
+     * batching → render, e um temporizador de mira sustentada sobrevive a essa janela inteira:
+     * dispararia contra uma roda que o utilizador já mandou embora.
+     */
     const handleMouseDown = (e: MouseEvent) => {
       if (e.button === 2) {
         e.preventDefault();
         e.stopPropagation();
+        closingRef.current = true;
+        cancelDwell();
         stateRef.current.onClose(null);
       }
     };
 
     const handleContextMenu = (e: MouseEvent) => {
       e.preventDefault();
+      closingRef.current = true;
+      cancelDwell();
       onClose(null);
     };
 
+    /** Ver `handleMouseDown`: o trigger a alternar para fechado é um cancelamento como os outros. */
     const handleToggleClose = () => {
-      toggleClosePendingRef.current = true;
+      closingRef.current = true;
+      cancelDwell();
     };
+
+    /**
+     * O ponteiro saiu da janela, ou a janela perdeu o foco.
+     *
+     * Isto é a ÚNICA defesa contra um alvo abandonado, e tem de ser dirigida por eventos. A janela
+     * do radial é uma caixa (~988px), não o ecrã: o ponteiro sai dela facilmente e, a partir daí,
+     * `lastPointerRef` fica congelado num ponto que em modo ângulo ainda resolve para uma fatia
+     * perfeitamente válida. Comparar carimbos de tempo não serve — uma mão parada também não
+     * produz eventos, e estar parado é o gesto.
+     */
+    const handleWindowBlur = () => disarmDwell();
+    const handleDocumentMouseOut = (e: MouseEvent) => {
+      if (e.relatedTarget === null) disarmDwell();
+    };
+    const handleDocumentMouseLeave = () => disarmDwell();
 
     const handleWheel = (e: WheelEvent) => {
       if (!onWorkspaceSwitch) return;
@@ -1147,9 +1500,16 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
     window.addEventListener('contextmenu', handleContextMenu);
     window.addEventListener('zenith-radial-toggle-close', handleToggleClose);
     window.addEventListener('wheel', handleWheel, { passive: false });
+    window.addEventListener('blur', handleWindowBlur);
+    document.addEventListener('mouseout', handleDocumentMouseOut);
+    document.addEventListener('mouseleave', handleDocumentMouseLeave);
 
     return () => {
       if (rafId !== null) cancelAnimationFrame(rafId);
+      cancelDwell();
+      window.removeEventListener('blur', handleWindowBlur);
+      document.removeEventListener('mouseout', handleDocumentMouseOut);
+      document.removeEventListener('mouseleave', handleDocumentMouseLeave);
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
       window.removeEventListener('mousedown', handleMouseDown);
@@ -1179,6 +1539,9 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
       // diagLog(`[RadialMenu.tsx] KeyDown detected: ${e.key}, Ctrl: ${e.ctrlKey}, Alt: ${e.altKey}, Shift: ${e.shiftKey}`);
       if (e.key === 'Escape') {
         e.preventDefault();
+        /** Ver `handleMouseDown`: cancelar tem de calar o temporizador antes de o React desmontar. */
+        closingRef.current = true;
+        cancelDwell();
         onClose(null);
         return;
       }
@@ -1426,6 +1789,28 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
   }, [isOpen, config.showBattery, config.showWeather, config.weatherLocation]);
 
   const handleAppClick = React.useCallback((app: AppItem) => {
+    /**
+     * Este é o caminho do clique real num ícone: o tile trava a propagação, portanto o
+     * `handleMouseUp` da janela — que também tem esta guarda — nunca chega a vê-lo.
+     *
+     * A quarentena é para o clique treinado que o utilizador dá ~200ms DEPOIS de uma execução por
+     * tempo já ter descido um nível: sem ela, esse clique executa o que quer que tenha calhado na
+     * mesma direção no nível novo. O motor de dwell chama esta função por ref e só marca a
+     * quarentena DEPOIS — a guarda nunca bloqueia a sua própria execução, só um clique humano
+     * seguinte.
+     */
+    if (Date.now() < quarantineUntilRef.current) return;
+    /**
+     * Desarmar aqui, e não só na mudança de nível.
+     *
+     * Todos os ramos abaixo trocam o nível de forma síncrona — e é o efeito de nível que desarma —
+     * MENOS a busca de recentes, que só liga o spinner e espera pelo IPC. Nesse intervalo o nível é
+     * o mesmo, a geração é a mesma e nada desarma: um temporizador já a contar sobre este mesmo
+     * tile chegava ao fim e empilhava a pasta uma segunda vez, e o gesto continuava armado para
+     * lançar o que quer que o ponteiro apanhasse enquanto o utilizador esperava pela pasta que
+     * pediu. Um clique é uma escolha; o que estava a ser contado deixou de valer.
+     */
+    disarmDwell();
     const cfg = configRef.current;
     if (isWorkspacePickItem(app)) {
       const idx = parseWorkspacePickIndex(app.id);
@@ -1496,7 +1881,162 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
     } else {
       onClose(app.id, app);
     }
-  }, [onClose, onWorkspaceSwitch]);
+  }, [onClose, onWorkspaceSwitch, disarmDwell]);
+
+  /** `handleAppClick` não é estável; o motor tem de chamar sempre a versão do render atual. */
+  const handleAppClickRef = useRef(handleAppClick);
+  handleAppClickRef.current = handleAppClick;
+
+  /**
+   * Motor da mira sustentada — três regras que não se leem do código.
+   *
+   * 1. O alvo é a TERNA `{ nível, índice, id }`, nunca só o índice. Uma troca de workspace com a
+   *    roda do rato, ou um MRU a resolver tarde, substitui o nível debaixo de um ponteiro parado e
+   *    mantém o índice: um temporizador preso ao índice completava e lançava o item N de um nível
+   *    que o utilizador nunca chegou a apontar.
+   * 2. Ao disparar, a mira é RESOLVIDA DE NOVO e comparada com a do arco. Não coincidindo,
+   *    recomeça-se em vez de executar — a decisão é sempre do ponteiro de agora.
+   * 3. A frescura mede-se contra o carimbo do evento cru: um ponteiro fora da janela do radial não
+   *    produz eventos nenhuns, e em modo ângulo um ponto congelado continua a resolver para uma
+   *    fatia perfeitamente válida.
+   */
+  const fireDwell = useCallback(() => {
+    dwellTimerRef.current = null;
+    const target = dwellTargetRef.current;
+    if (!target) return;
+    if (!dwellEnabledRef.current) return void cancelDwell();
+    if (closingRef.current || !stateRef.current.isOpen) return void cancelDwell();
+    if (paintReadyAtRef.current === null) return void cancelDwell();
+    if (target.gen !== levelGenRef.current) return void cancelDwell();
+
+    /**
+     * NÃO há verificação de "há quanto tempo não chega um `mousemove`". Parece a defesa óbvia
+     * contra um ponteiro que saiu da janela do radial e deixou `lastPointerRef` congelado num
+     * ponto que, em modo ângulo, continua a resolver para uma fatia — mas é a defesa errada: uma
+     * mão parada não produz eventos nenhuns, e estar parado é EXATAMENTE o gesto. Com essa
+     * verificação o arco fechava e nada executava, sempre. Sair da janela é um evento
+     * (`mouseout` com `relatedTarget` nulo, `mouseleave`, `blur`) e é aí que está tratado.
+     */
+    const aim = resolveAimAtPoint(lastPointerRef.current);
+    if (aim.isCenter || aim.index === null || aim.index !== target.index) return void cancelDwell();
+    const item = stateRef.current.currentLevelApps[aim.index];
+    if (!item || item.id !== target.itemId) return void cancelDwell();
+    if (gestureConsumedRef.current) return void cancelDwell();
+
+    gestureConsumedRef.current = true;
+    logRadialConfirm('dwell', lastPointerRef.current, aim);
+    cancelDwell();
+    dwellArmedRef.current = false;
+    dwellBaselineRef.current = null;
+    /**
+     * A quarentena é marcada DEPOIS de executar, nunca antes: `handleAppClick` abre com a mesma
+     * guarda, e marcá-la primeiro fazia esta chamada bloquear-se a si própria — o dwell contava,
+     * o arco fechava e não acontecia rigorosamente nada. Ela existe para o clique HUMANO seguinte.
+     */
+    handleAppClickRef.current(item);
+    quarantineUntilRef.current = Date.now() + INSTANT_QUARANTINE_MS;
+  }, [cancelDwell, disarmDwell, resolveAimAtPoint, logRadialConfirm]);
+
+  /**
+   * A mão assentou. Só agora a contagem visível arranca — e é o único ponto em que o arco aparece.
+   */
+  const startDwell = useCallback(() => {
+    dwellSettleTimerRef.current = null;
+    const pending = dwellPendingRef.current;
+    if (!pending) return;
+    if (!dwellEnabledRef.current) return void cancelDwell();
+    if (closingRef.current || !stateRef.current.isOpen) return void cancelDwell();
+    if (paintReadyAtRef.current === null) return void cancelDwell();
+    if (isLoadingRecentsRef.current) return void cancelDwell();
+    if (pending.gen !== levelGenRef.current) return void cancelDwell();
+
+    /** Reavaliar: entre agendar e assentar, o nível pode ter mudado por baixo do ponteiro. */
+    const aim = resolveAimAtPoint(lastPointerRef.current);
+    if (aim.isCenter || aim.index === null || aim.index !== pending.index) return void cancelDwell();
+    const item = stateRef.current.currentLevelApps[aim.index];
+    if (!item || item.id !== pending.itemId) return void cancelDwell();
+
+    /**
+     * Reancorar no ponto em que a mão está AGORA. A âncora anterior é a última amostra em
+     * movimento, até 90ms velha: mantê-la fazia a contagem começar já com o orçamento gasto.
+     */
+    if (lastPointerRef.current) dwellAnchorRef.current = lastPointerRef.current;
+    dwellPendingRef.current = null;
+    dwellTargetRef.current = pending;
+    dwellStartedAtRef.current = Date.now();
+    dwellSeqRef.current += 1;
+    setDwellTick({ index: pending.index, key: dwellSeqRef.current });
+    dwellTimerRef.current = window.setTimeout(fireDwell, dwellRunMsRef.current);
+  }, [cancelDwell, fireDwell, resolveAimAtPoint]);
+
+  const armAndTrackDwell = useCallback(
+    (point: { x: number; y: number }, aim: { isCenter: boolean; index: number | null }) => {
+      if (!dwellEnabledRef.current) return void cancelDwell();
+      if (closingRef.current || !stateRef.current.isOpen) return void cancelDwell();
+      /** A roda ainda não passou por um paint: nenhum tile está clicável, nada pode executar. */
+      if (paintReadyAtRef.current === null) return void cancelDwell();
+      if (isLoadingRecentsRef.current) return void cancelDwell();
+
+      /** A primeira amostra depois de abrir ou de mudar de nível só serve para pôr a referência. */
+      if (dwellBaselineRef.current === null) {
+        dwellBaselineRef.current = point;
+        return;
+      }
+
+      if (!dwellArmedRef.current) {
+        if (Date.now() - paintReadyAtRef.current < INSTANT_ARM_DELAY_MS) return;
+        const baseline = dwellBaselineRef.current;
+        if (Math.hypot(point.x - baseline.x, point.y - baseline.y) < INSTANT_ARM_DISPLACEMENT_PX) {
+          return;
+        }
+        dwellArmedRef.current = true;
+      }
+
+      /** O hub nunca executa por tempo: voltar ao centro é o gesto de desistir. */
+      if (aim.isCenter || aim.index === null) return void cancelDwell();
+      const level = stateRef.current.currentLevelApps;
+      /**
+       * Um único item em modo ângulo: a fatia é o plano inteiro, e não há direção nenhuma que
+       * aponte para outra coisa. Apontar deixa de ser escolher, portanto nada aqui pode contar como
+       * intenção — é o caso do nível de recurso do MRU vazio, que existe precisamente para nunca
+       * lançar a IDE-mãe sozinho. Em modo cursor o teste é sobre o ícone e continua a valer.
+       */
+      if (level.length === 1 && stateRef.current.config.radialSelectionMode !== 'cursor') {
+        return void cancelDwell();
+      }
+      const item = level[aim.index];
+      if (!item) return void cancelDwell();
+
+      const next = { gen: levelGenRef.current, index: aim.index, itemId: item.id };
+      const running = dwellTargetRef.current ?? dwellPendingRef.current;
+      const anchor = dwellAnchorRef.current;
+      const sameTarget =
+        !!running &&
+        running.gen === next.gen &&
+        running.index === next.index &&
+        running.itemId === next.itemId;
+      /** A contar já: tolerância de manter (larga). Ainda a assentar: tolerância de parar (curta). */
+      const holdRadius = dwellTargetRef.current !== null ? DWELL_HOLD_PX : DWELL_SETTLE_PX;
+      const stillSettled =
+        anchor !== null && Math.hypot(point.x - anchor.x, point.y - anchor.y) <= holdRadius;
+
+      /** Mesmo alvo e mão quieta: a contagem em curso continua — o tremor não a faz recomeçar. */
+      if (sameTarget && stillSettled) return;
+
+      /**
+       * Ainda em movimento, ou alvo novo: recomeça daqui. Enquanto o ponteiro anda, o que se
+       * reagenda é só este `setTimeout`; o `cancelDwell` acima já não faz commit nenhum depois do
+       * primeiro, por isso arrastar o rato pela roda não custa uma renderização por frame.
+       */
+      cancelDwell();
+      dwellAnchorRef.current = point;
+      dwellPendingRef.current = next;
+      dwellSettleTimerRef.current = window.setTimeout(startDwell, DWELL_SETTLE_MS);
+    },
+    [cancelDwell, startDwell],
+  );
+
+  armAndTrackDwellRef.current = armAndTrackDwell;
 
   /**
    * A janela Electron é maior que o menu para que gestos largos continuem a receber eventos do rato.
@@ -1796,6 +2336,9 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
                     folderStackLength={folderStack.length}
                     bloom={isOpen && bloom}
                     shortcutHint={shortcutHint}
+                    /** `undefined` em todos os outros tiles — o `React.memo` deles não é invalidado. */
+                    dwellMs={dwellTick && dwellTick.index === index ? dwellRunMsRef.current : undefined}
+                    dwellKey={dwellTick && dwellTick.index === index ? dwellTick.key : undefined}
                     onClick={handleAppClick}
                   />
                 );

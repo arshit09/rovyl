@@ -89,6 +89,77 @@ The centre's dead zone is `max(activationThreshold, hub box diagonal)`, and the 
 carries a square hit target, because `border-radius` clips hit-testing and a click in the
 circle's corner would otherwise fall through to a slice.
 
+## Launching without a click
+
+`radialInstantActivate: 'dwell'` makes the wheel launch whatever you hold your aim on for
+`radialInstantDwellMs`. It is off by default, and deliberately so: it turns aiming — a neutral
+act — into a destructive one, which is not a thing to switch on under someone who did not ask.
+
+The whole engine lives in `RadialMenu.tsx` and touches nothing outside the renderer. Five rules
+carry it, and all five exist because the obvious version is wrong:
+
+1. **Arming is observed, never inferred.** A dwell may only start after a real `mousemove` lands
+   more than 24 px from a baseline set by an earlier real `mousemove`. The tempting rail is
+   `hasMoved`, and it does not work: it measures distance from the wheel *centre*, so it is
+   already true whenever the pointer sits still far from the centre — exactly the state that must
+   not launch anything.
+2. **The arming delay is measured from the first paint,** not from `openingTimeRef`. The latter is
+   written inside `openMenu`'s `flushSync`, before the main process reveals the window — whose
+   fallback is 120 ms, or 240 ms restoring from minimised. Measured from there, the delay can
+   expire while the wheel is still invisible.
+3. **The target is `{ level, index, itemId }`, never the index alone.** A workspace switch on the
+   scroll wheel, or an MRU fetch resolving late, replaces the level under a parked pointer and
+   keeps the index. Every level change bumps the generation and disarms, so re-arming always costs
+   a fresh 24 px — which is also what stops a dwell cascading through nested folders.
+4. **Cancelling has to be synchronous.** `closingRef` is set by Escape, right-click and the trigger
+   toggle before `onClose`, because `isOpen` only becomes false after React has batched and
+   rendered — a window a click cannot outlive but a timer can.
+5. **The clock measures a settled pointer, not an occupied wedge.** Starting it the moment the aim
+   resolves measures "how long since you entered this slice", which in `angle` mode has no distance
+   limit at all — and on a one-item level the slice is the whole plane, so crossing the dead zone
+   in any direction would launch 400 ms later regardless of what the pointer did in between. The
+   count therefore only begins once the pointer has stayed within 10 px for 90 ms. While it is
+   moving, the thing being rescheduled is a bare `setTimeout`, not React state, so dragging across
+   the wheel does not cost a commit per frame. A one-item level in `angle` mode refuses dwell
+   outright — `buildRecentsEmptyFallback` exists so the parent IDE is never launched on its own.
+
+A click also disarms the engine, and that matters in exactly one place. Every branch of
+`handleAppClick` changes the level synchronously — which is what normally disarms — except the MRU
+fetch, which only starts a spinner and awaits IPC. Without an explicit disarm, a timer already
+counting on the tile you just clicked would push the same folder a second time, and the gesture
+would stay live to launch whatever the pointer drifted onto while you waited.
+
+There is deliberately **no "how long since the last `mousemove`" check**, and the omission looks
+like one until you try it. It is the obvious guard against a pointer that has left the wheel's
+box — the window is ~988 px, not the screen, and once the pointer is outside it `lastPointerRef`
+freezes on a point that in `angle` mode still resolves to a perfectly good slice. But a still hand
+emits no events either, and being still *is* the gesture: with that check the ring fills and
+nothing ever launches. Leaving the window is an event — `mouseout` with a null `relatedTarget`,
+`mouseleave`, `blur` — and that is where it is handled.
+
+After a dwell fires, a 300 ms quarantine swallows the next click. Without it the user's trained
+click lands ~200 ms later, on a wheel that has already descended a level, and launches whatever
+happens to sit in the same direction.
+
+The progress arc is CSS on `stroke-dashoffset`, restarted by remounting the `<svg>` through its
+`key`. It is three stacked paths, not one, for the same reason the tile has a double contour: the
+ring runs *outside* the tile's opaque plate, so the only thing behind it is the scrim and then a
+wallpaper nobody controls. An opaque dark casing carries the light track, which carries the arc.
+The path starts at top-centre — an `<svg>` `<rect>` begins its implicit path at the end of the
+top-left corner arc, so the ring filled from an offset that moved with the icon size, and a clock
+that does not start at twelve reads as a bug. It appears only once the pointer has settled, from an aim re-resolved at that moment, and
+both the moment it is drawn and the moment it launches re-check `{ level, index, itemId }` — nearly
+half a second separates the two, and the level can change under a pointer that never moved. That is
+why the ring and the thing that launches cannot disagree, which is the defect `resolveAimAtPoint`
+exists to prevent.
+
+`'swipe'` is declared in the union and implemented nowhere; every read coerces it to `'off'`. The
+gesture needs the pointer to start at the wheel centre, and it does not: the wheel opens at the
+centre of the primary display while the cursor stays where it was, and the radial window is a box
+(~988 px), so a cursor in a screen corner produces no `mousemove` at all. Making it work means
+warping the cursor from the main process — that is, editing the mouse hook, which has already
+stopped all system input once.
+
 ## Icons
 
 `extract-icon.ps1` produces a normalised 256px PNG data URL. Order matters:
