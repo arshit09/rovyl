@@ -96,7 +96,12 @@ changed; the rest is untouched.
   (which is also what frees the room a retry needs) and reported once through `savePersistenceLog`.
   Nine assertions in `npm run test:persistence-mirror`. The §3 icon work also took each key from
   ~456 KB to ~12.5 KB, so reaching the quota at all is now unlikely.
-- [ ] **`dist/folder.svg` is 596 KB** for a folder glyph. Replace.
+- [x] **`dist/folder.svg` is 596 KB** for a folder glyph. Replace.
+  **Done:** 596,000 → 11,154 B. 98.3% of it was a 500×500 PNG of random noise, inlined as base64 and
+  tiled at 10–12% opacity as a grain overlay — noise being precisely what a compressor cannot
+  shrink, so only noticing it could. `feTurbulence` generates the same grain procedurally. Rendered
+  both revisions in Chromium and compared: 1 pixel in 262,144 differs by more than 8/255, mean
+  difference 0.23. A 120 KB per-asset ceiling in `verify-renderer-budget` keeps the next one out.
 - [ ] **8 ms cursor poll during hold** (`MMB_CURSOR_POLL_MS`, `electron-main.js:4539`) sends IPC at
   125 Hz. Coalesce to rAF cadence, or skip sends when the resolved slice has not changed.
 - [ ] **Only settings is code-split.** Split out the icon picker, installed-app scanner and

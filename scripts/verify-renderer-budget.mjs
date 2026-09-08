@@ -51,6 +51,15 @@ const UNSHIPPED_FONT_SUBSETS = ["cyrillic", "greek", "vietnamese"];
  * devDependencies installed — makes the output *smaller*, so the ceiling above would wave it
  * through. Naming them is what turns that into a failed build.
  */
+/**
+ * Ceiling for a single static asset in `dist/`, in bytes.
+ *
+ * `folder.svg` was 596 kB: a 500x500 PNG of random noise, inlined as base64 for a 12%-opacity grain
+ * overlay. Noise is exactly what a compressor cannot shrink, so nothing downstream could have saved
+ * it — only noticing it could. The biggest asset now is `icon.png` at 59 kB.
+ */
+const MAX_STATIC_ASSET_BYTES = 120 * 1024;
+
 const REQUIRED_FONT_FACES = [
   "inter-latin-wght-normal",
   "inter-latin-ext-wght-normal",
@@ -222,6 +231,19 @@ for (const styleSheet of assetNames.filter((name) => name.endsWith(".css"))) {
       `${styleSheet} still points at node_modules — a url() in src/fonts.css or src/fonts-display.css did not resolve, and Vite only warned about it`,
     );
   }
+}
+
+/** Everything Vite copies from `public/` verbatim, where an oversized asset hides most easily. */
+const staticAssets = readdirSync(distDir)
+  .filter((name) => /\.(svg|png|jpg|jpeg|gif|webp|ico|json|txt)$/i.test(name))
+  .map((name) => ({ name, size: statSync(join(distDir, name)).size }))
+  .filter((entry) => entry.size > MAX_STATIC_ASSET_BYTES);
+if (staticAssets.length) {
+  problems.push(
+    `static assets over the ${(MAX_STATIC_ASSET_BYTES / 1024).toFixed(0)} kB ceiling: ${staticAssets
+      .map((a) => `${a.name} (${(a.size / 1024).toFixed(1)} kB)`)
+      .join(", ")}`,
+  );
 }
 
 if (problems.length) {
