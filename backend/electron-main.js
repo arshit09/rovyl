@@ -1386,6 +1386,16 @@ function showMenuAtCursor(source = "shortcut") {
   // Resize before IPC so the first renderer paint is already monitor-sized (send() is async; windowed→radial looked like "dashboard size").
   updateWindowSize("fullscreen", radialCenter);
 
+  /**
+   * Estacionar o ponteiro ANTES do `open-menu`: a primeira amostra que o renderer usar já tem de
+   * ser a do centro, senão o gesto nasce a apontar para onde a mão por acaso estava.
+   *
+   * MMB em modo segurar fica de fora — esse gesto executa ao largar e a mira dele vem da sondagem
+   * do main, que arranca no ponto onde o botão foi premido. Mover o cursor por baixo dele seria
+   * confirmar uma fatia que ninguém escolheu.
+   */
+  if (source !== "mmb") captureRadialCursor(radialCenter);
+
   // Do NOT setOpacity(0) here — on Windows + transparent BrowserWindow it often leaves the compositor
   // without a fresh web frame (user sees through / "nothing", while hit-testing still works).
 
@@ -1690,6 +1700,94 @@ function writeRadialMouseBlocker(command) {
   }
 }
 
+/**
+ * Ranhura propria para os `WARP`.
+ *
+ * `pendingRadialMouseBlockCommand` guarda UM comando, e o primeiro radial de uma sessao manda o
+ * `BLOCK` enquanto o PowerShell ainda arranca: um warp a partilhar a ranhura apagava-o e o
+ * bloqueio de cliques fora da roda desaparecia nessa abertura. Aqui o ultimo warp ganhar e
+ * correto por natureza — estacionar e depois devolver ao sitio so interessa pelo destino final.
+ */
+let pendingRadialCursorCommand = null;
+
+/**
+ * NAO chama `ensureRadialMouseBlocker`: o helper ja esta de pe sempre que isto importa, porque
+ * `updateWindowSize("fullscreen")` o arranca antes de a roda existir. Se ele morreu, ou estamos a
+ * sair, ressuscita-lo aqui deixava um PowerShell orfao — que e exatamente o que impede o
+ * instalador de substituir a pasta. Sem processo, o comando fica na ranhura e sai no proximo READY.
+ */
+function writeRadialCursorCommand(command) {
+  if (!radialMouseBlocker || !radialMouseBlockerReady || !radialMouseBlocker.stdin?.writable) {
+    pendingRadialCursorCommand = command;
+    return;
+  }
+  pendingRadialCursorCommand = null;
+  try {
+    radialMouseBlocker.stdin.write(`${command}\n`);
+  } catch (e) {
+    diagLog(`[RadialBlocker] cursor falhou: ${e.message}`);
+  }
+}
+
+/**
+ * Execucao sem clique: o ponteiro e escondido e o gesto passa a ser uma DIRECAO.
+ *
+ * Esconder e CSS, e CSS so pinta por cima da nossa janela — a caixa do radial e ~988px, nao o
+ * monitor. Por isso o cursor e estacionado no centro da roda ao abrir: fica dentro da janela (logo
+ * invisivel, logo a gerar `mousemove`) e o gesto arranca do zero em vez de ja valer a fatia do
+ * lado onde a mao por acaso estava. Ao fechar volta exatamente ao ponto de onde saiu — quem abriu
+ * a roda sobre um campo de texto encontra-o la.
+ */
+let radialCursorCaptureWanted = false;
+let radialCursorParked = false;
+let radialCursorRestorePoint = null;
+let radialCursorParkPoint = null;
+
+function captureRadialCursor(center) {
+  if (process.platform !== "win32") return;
+  if (!radialCursorCaptureWanted || !center) return;
+  if (!radialCursorParked) {
+    try {
+      radialCursorRestorePoint = screen.getCursorScreenPoint();
+    } catch (e) {
+      radialCursorRestorePoint = null;
+    }
+    radialCursorParked = true;
+  }
+  radialCursorParkPoint = { x: Math.round(center.x), y: Math.round(center.y) };
+  writeRadialCursorCommand(`WARP ${radialCursorParkPoint.x} ${radialCursorParkPoint.y}`);
+}
+
+/** Reencosta ao centro sem terminar a captura — o gesto acumula deltas, portanto nao sente o salto. */
+function reparkRadialCursor() {
+  if (!radialCursorParked || !radialCursorParkPoint) return;
+  writeRadialCursorCommand(`WARP ${radialCursorParkPoint.x} ${radialCursorParkPoint.y}`);
+}
+
+/**
+ * Quem sabe se a execucao sem clique esta ligada e o renderer, que tem o UIConfig. O main so
+ * precisa do sim/nao, e recebe-o sempre que a definicao muda — nunca a meio de uma abertura.
+ */
+ipcMain.on("set-radial-cursor-capture", (_event, enabled) => {
+  radialCursorCaptureWanted = !!enabled;
+  if (!radialCursorCaptureWanted) releaseRadialCursor();
+});
+
+/** O ponteiro afastou-se da caixa do radial: reencostar antes de sair dela e voltar a aparecer. */
+ipcMain.on("park-radial-cursor", () => {
+  reparkRadialCursor();
+});
+
+function releaseRadialCursor() {
+  if (!radialCursorParked) return;
+  radialCursorParked = false;
+  radialCursorParkPoint = null;
+  const restore = radialCursorRestorePoint;
+  radialCursorRestorePoint = null;
+  if (!restore) return;
+  writeRadialCursorCommand(`WARP ${Math.round(restore.x)} ${Math.round(restore.y)}`);
+}
+
 function ensureRadialMouseBlocker() {
   if (process.platform !== "win32" || radialMouseBlocker) return;
   radialMouseBlockerReady = false;
@@ -1724,6 +1822,11 @@ function ensureRadialMouseBlocker() {
       pendingRadialMouseBlockCommand = null;
       writeRadialMouseBlocker(command);
     }
+    if (pendingRadialCursorCommand) {
+      const command = pendingRadialCursorCommand;
+      pendingRadialCursorCommand = null;
+      writeRadialCursorCommand(command);
+    }
   });
   child.stderr.on("data", (data) => {
     diagLog(`[RadialBlocker] ${data.toString().trim()}`);
@@ -1732,6 +1835,11 @@ function ensureRadialMouseBlocker() {
     if (radialMouseBlocker === child) {
       radialMouseBlocker = null;
       radialMouseBlockerReady = false;
+      /** Sem processo não há como devolver o cursor: não guardar uma restauração que nunca chega. */
+      radialCursorParked = false;
+      radialCursorParkPoint = null;
+      radialCursorRestorePoint = null;
+      pendingRadialCursorCommand = null;
     }
   });
 }
@@ -2019,6 +2127,7 @@ function updateWindowSize(mode, anchorScreenPoint) {
     }
   } else if (mode === "windowed") {
     clearRadialMouseBlocking();
+    releaseRadialCursor();
     panelOverlayActive = false;
     panelOverlayKeptWindow = false;
     if (mainWindow.isFullScreen()) {
@@ -2077,6 +2186,7 @@ function updateWindowSize(mode, anchorScreenPoint) {
     }
   } else if (mode === "small") {
     clearRadialMouseBlocking();
+    releaseRadialCursor();
     panelOverlayActive = false;
     panelOverlayKeptWindow = false;
     lastWindowHitShapeKey = "__empty__";
@@ -5857,6 +5967,7 @@ ipcMain.on("hide-window", () => {
   if (!mainWindow || mainWindow.isDestroyed()) return;
 
   clearRadialMouseBlocking();
+  releaseRadialCursor();
   if (nativeWindowSizeMode === "small") {
     windowBuriedPassive = false;
     try {
@@ -6045,6 +6156,8 @@ ipcMain.on("install-update-now", () => {
   diagLog("[Update] Instalação pedida pelo utilizador");
   updateInstallInProgress = true;
 
+  /** O ponteiro pode estar estacionado no centro da roda: devolvê-lo enquanto o helper vive. */
+  releaseRadialCursor();
   /**
    * Parar os helpers ANTES de sair. O `will-quit` também os para, mas o `quitAndInstall` corre o
    * instalador assim que o processo termina, e um PowerShell órfão com um ficheiro da pasta de
@@ -7398,6 +7511,8 @@ app.on("window-all-closed", (e) => {
 });
 
 app.on("will-quit", () => {
+  /** O ponteiro pode estar estacionado no centro da roda: devolvê-lo enquanto o helper vive. */
+  releaseRadialCursor();
   /** Primeiro os helpers: enquanto viverem, o instalador não consegue tocar na pasta. */
   stopMouseHookForShutdown();
   stopRadialMouseBlocker();

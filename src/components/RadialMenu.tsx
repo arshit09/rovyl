@@ -11,7 +11,7 @@ import {
   isWorkspacePickItem,
   parseWorkspacePickIndex,
 } from '../utils/workspaceRadial';
-import { DWELL_MS_MIN, clampDwellMs } from '../constants/radialDwell';
+import { clampDwellMs, directionCommitPx } from '../constants/radialDwell';
 
 // PERF FIX #3: Module-level weather cache — persists across menu open/close cycles
 // Prevents a new HTTP fetch on every menu open; refreshes only after 10 minutes or location change
@@ -246,6 +246,42 @@ const DWELL_SETTLE_MS = 90;
  * gasto e um arrastar lento ficava preso num ciclo — o arco a aparecer e a morrer sem nunca abrir.
  */
 const DWELL_HOLD_PX = 26;
+/**
+ * Abaixo disto o arco nao e informacao, e um flash: apareceria e morreria dentro do mesmo par de
+ * frames. Com a espera opcional (0ms) isso passou a ser um caso REAL e nao teorico, portanto a
+ * contagem curta executa sem desenhar nada — o feedback dessa escolha e a propria app a abrir.
+ */
+const DWELL_ARC_MIN_MS = 90;
+/**
+ * Mira por direcao — o modo em que a execucao sem clique vive.
+ *
+ * O ponteiro esta escondido e estacionado no centro da roda, portanto a fatia sai do VETOR que a
+ * mao desenhou desde ai, nao da posicao onde o cursor por acaso ja estava. O vetor e acumulado a
+ * partir dos deltas de cada `mousemove`, o que o torna imune ao ponto de partida — que era
+ * exatamente o defeito: abrir a roda com o rato em baixo acendia o item de baixo ao primeiro
+ * tremor, e a mira sustentada lancava-o sem ninguem ter escolhido nada.
+ *
+ * O vetor e limitado a um multiplo da sensibilidade porque isto e uma DIRECAO, nao uma posicao:
+ * sem teto, virar do topo para o fundo depois de um gesto largo obrigava a desfazer o caminho
+ * todo. Com teto, inverter custa sempre mais ou menos o mesmo.
+ *
+ * O fator nao e livre: o que sobra acima do limiar (1.5x ele) e a folga que separa "comprometido"
+ * de "de volta ao centro", e tem de ser maior que `DWELL_HOLD_PX` -- senao um tremor que a mira
+ * sustentada ainda aceita como mao parada ja desfazia a direcao, e o arco morria sozinho.
+ */
+const DIRECTION_CLAMP_FACTOR = 2.5;
+/**
+ * O `SetCursorPos` do estacionamento chega ao DOM como um `mousemove` normal — e como um salto de
+ * centenas de pixeis, que somado ao vetor apontaria para o lado oposto ao do gesto. Enquanto um
+ * estacionamento esta pendente, a amostra que aterra no centro (ou que salta mais do que uma mao
+ * consegue num evento) e a do teleporte: serve de nova referencia e o seu delta e deitado fora.
+ */
+const PARK_LANDING_PX = 28;
+const PARK_JUMP_PX = 120;
+/** Sem aterragem nenhuma — Windows sem helper, outro sistema — o gesto volta ao normal. */
+const PARK_TIMEOUT_MS = 400;
+/** Folga ate a borda da janela; passar disto pede um reencosto antes de o cursor sair (e reaparecer). */
+const PARK_STRAY_MARGIN_PX = 140;
 
 interface RadialMenuItemProps {
   app: AppItem;
@@ -767,6 +803,22 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
   /** Um commit por início/cancelamento de arco. Zero por frame: a animação é CSS. */
   const [dwellTick, setDwellTick] = useState<{ index: number; key: number } | null>(null);
 
+  /**
+   * Estado da mira por direção. `gestureVectorRef` é o deslocamento acumulado desde o centro —
+   * o ponteiro virtual que a roda mira; `gestureSampleRef` é a última posição REAL, só para
+   * calcular o delta seguinte. Zero em ambos significa "ainda não há direção": nada aceso.
+   */
+  const gestureVectorRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
+  const gestureSampleRef = useRef<{ x: number; y: number } | null>(null);
+  /** Instante em que se pediu um estacionamento; `0` quando não há nenhum por aterrar. */
+  const gestureParkAtRef = useRef(0);
+
+  const resetDirectionGesture = useCallback((expectPark: boolean) => {
+    gestureVectorRef.current = { x: 0, y: 0 };
+    gestureSampleRef.current = null;
+    gestureParkAtRef.current = expectPark ? Date.now() : 0;
+  }, []);
+
   useEffect(() => {
     isCenterActiveRef.current = isCenterActive;
   }, [isCenterActive]);
@@ -822,32 +874,49 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
   const configRef = useRef(config);
   configRef.current = config;
   /**
-   * O tempo que o utilizador escolheu conta a partir do momento em que a mão para. A fase de
-   * assentar já gastou `DWELL_SETTLE_MS` desse orçamento, portanto o relógio visível — e o arco —
-   * duram o resto: o número nas definições continua a ser o tempo total até abrir.
+   * O tempo escolhido é o TOTAL até abrir, e é repartido entre as duas fases: assentar a mão e
+   * depois contar. Assentar leva `DWELL_SETTLE_MS`, mas nunca mais do que o orçamento inteiro —
+   * daí o `min`.
    *
-   * O piso segue `DWELL_MS_MIN`, não um número solto: assim continua honesto se algum dia o mínimo
-   * das definições descer abaixo da fase de assentar.
+   * Antes havia aqui um piso, porque o mínimo das definições (250ms) era maior que a fase de
+   * assentar e nenhuma repartição podia dar negativo. Com a espera opcional isso deixou de ser
+   * verdade: a 0ms um piso significaria a roda a prometer "instantâneo" e a esperar 90ms na mesma,
+   * e a 50ms significaria esperar 90. Repartir em vez de aplicar um piso mantém o número das
+   * definições honesto em todo o intervalo — a zero, as duas fases medem zero e a direção executa
+   * assim que se compromete.
    */
   const dwellMsRef = useRef(0);
   dwellMsRef.current = clampDwellMs(config.radialInstantDwellMs);
+  const dwellSettleMsRef = useRef(0);
+  dwellSettleMsRef.current = Math.min(DWELL_SETTLE_MS, dwellMsRef.current);
   const dwellRunMsRef = useRef(0);
-  dwellRunMsRef.current = Math.max(
-    Math.max(0, DWELL_MS_MIN - DWELL_SETTLE_MS),
-    dwellMsRef.current - DWELL_SETTLE_MS,
-  );
+  dwellRunMsRef.current = Math.max(0, dwellMsRef.current - dwellSettleMsRef.current);
   /**
+   * O interruptor da execução sem clique liga as DUAS metades do mesmo gesto: mirar por direção
+   * com o ponteiro escondido, e executar ao fim do tempo de mira. Uma só expressão para as duas,
+   * porque uma roda que esconde o cursor e continua a mirar por posição não tem como ser usada.
+   *
    * O efeito de interação depende só de `[isOpen]`, portanto captura os seus callbacks uma vez por
    * abertura — o que muda com as definições tem de lá chegar por ref, não por closure.
    *
    * `swipe` é lido como desligado de propósito: o valor está reservado no tipo, não implementado.
    * MMB em modo segurar fica de fora porque já executa ao largar, e a sua mira vem da sondagem do
    * main (`mmb-cursor`), cujo primeiro ponto é onde o botão foi premido — alimentar um
-   * temporizador com isso seria disparar num tique da sonda, não numa intenção.
+   * temporizador com isso seria disparar num tique da sonda, não numa intenção. É também por isso
+   * que o main não estaciona o cursor nesse caminho.
    */
-  const dwellEnabledRef = useRef(false);
-  dwellEnabledRef.current =
+  const directionMode =
     config.radialInstantActivate === 'dwell' && triggerSource !== 'mmb';
+  const directionModeRef = useRef(false);
+  directionModeRef.current = directionMode;
+  const dwellEnabledRef = useRef(false);
+  dwellEnabledRef.current = directionMode;
+  /** Deslocamento que uma direção precisa para acender a fatia desse lado. */
+  const directionCommitRef = useRef(0);
+  directionCommitRef.current = directionCommitPx(config.radialInstantSensitivity);
+  /** A janela do radial: é dela que sai o raio a partir do qual o cursor real é reencostado. */
+  const viewportSizeRef = useRef(viewportSize);
+  viewportSizeRef.current = viewportSize;
   const radialHoverColor = normalizeHoverColor(config.radialHoverColor);
   const radialHoverForeground = getReadableForeground(radialHoverColor);
   const iconSizePx = config.iconSize || 64;
@@ -989,6 +1058,17 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
   );
 
   /**
+   * Raio a partir do qual a mira deixa de ser "centro" e passa a ser uma fatia.
+   *
+   * Por direção quem manda é a sensibilidade, e não a zona de cancelamento: a zona morta é o
+   * tamanho do BOTÃO do meio — mede um alvo de clique, e num gesto sem clique nem sequer há
+   * ponteiro para lá acertar. Mantê-la aqui tornava a sensibilidade alta indistinguível da média,
+   * porque nada acenderia antes dos ~60px do hub.
+   */
+  const aimGateRef = useRef(deadZoneRadius);
+  aimGateRef.current = directionMode ? directionCommitRef.current : deadZoneRadius;
+
+  /**
    * Diagnóstico da confirmação. Fica no log de persistência (`rovyl-persistence.log`) e diz, para
    * cada gesto que executa algo, de onde veio a decisão: ponto, centro assumido, distância, zona
    * morta e o item escolhido. Sem isto, um "abriu o que eu não cliquei" é impossível de atribuir.
@@ -999,7 +1079,8 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
       point: { x: number; y: number } | null,
       aim: { isCenter: boolean; index: number | null },
     ) => {
-      const { position, deadZoneRadius, currentLevelApps } = stateRef.current;
+      const { position, currentLevelApps } = stateRef.current;
+      const deadZoneRadius = aimGateRef.current;
       const distance = point
         ? Math.round(Math.hypot(point.x - position.x, point.y - position.y))
         : -1;
@@ -1079,8 +1160,97 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
     };
   }, [isOpen, position, activeIndex, onClose, currentLevelApps, config, isCenterActive, hasMoved, folderStack, apps, actualMenuRadius, actualIconSize, deadZoneRadius]);
 
-  /** Última posição REAL do ponteiro, escrita no próprio evento — sem passar por render. */
+  /**
+   * Ponto que a roda MIRA, escrito no próprio evento — sem passar por render. Por direção é o
+   * ponteiro virtual (centro + vetor do gesto); nos outros modos é a posição real do cursor.
+   */
   const lastPointerRef = useRef<{ x: number; y: number } | null>(null);
+  /**
+   * Onde a MÃO está, sempre real. A mira sustentada pergunta "a mão parou?", e por direção o
+   * ponteiro virtual satura no teto do vetor: continuar a empurrar deixava-o imóvel e a contagem
+   * concluía que a mão tinha assentado quando ela ainda ia a meio do gesto.
+   */
+  const lastAnchorPointRef = useRef<{ x: number; y: number } | null>(null);
+
+  /**
+   * Traduz uma amostra real no ponto que a roda deve mirar.
+   *
+   * Fora do modo por direção é a identidade. Dentro dele acumula o delta desta amostra no vetor do
+   * gesto, corta o salto do estacionamento e pede um reencosto antes de o cursor sair da janela —
+   * fora dela não há `mousemove` nenhum e o ponteiro voltaria a ser desenhado.
+   */
+  const trackAimPoint = useCallback(
+    (point: { x: number; y: number }): { x: number; y: number } => {
+      if (!directionModeRef.current) return point;
+      const { position } = stateRef.current;
+      const previous = gestureSampleRef.current;
+      gestureSampleRef.current = point;
+
+      const virtual = () => ({
+        x: position.x + gestureVectorRef.current.x,
+        y: position.y + gestureVectorRef.current.y,
+      });
+
+      if (gestureParkAtRef.current !== 0) {
+        /**
+         * A UMA amostra que aterra no centro — ou que salta mais do que uma mão consegue num só
+         * evento — é o teleporte. Serve de referência nova e o delta dela morre aqui; a seguinte
+         * já é gesto. Descartar tudo até à aterragem comia o arranque do movimento, que é
+         * precisamente onde a sensibilidade alta se joga.
+         */
+        const landed =
+          Math.hypot(point.x - position.x, point.y - position.y) <= PARK_LANDING_PX ||
+          (!!previous && Math.hypot(point.x - previous.x, point.y - previous.y) >= PARK_JUMP_PX);
+        if (landed) {
+          gestureParkAtRef.current = 0;
+          return virtual();
+        }
+        /** Nenhuma aterragem — sem helper, ou noutro sistema: o gesto segue sem estacionamento. */
+        if (Date.now() - gestureParkAtRef.current > PARK_TIMEOUT_MS) {
+          gestureParkAtRef.current = 0;
+        } else {
+          return virtual();
+        }
+      }
+
+      if (previous) {
+        const next = {
+          x: gestureVectorRef.current.x + (point.x - previous.x),
+          y: gestureVectorRef.current.y + (point.y - previous.y),
+        };
+        /**
+         * Teto do vetor. Só a direção conta — o ponteiro virtual nunca precisa de alcançar o anel
+         * de ícones, porque por direção a mira é o setor e não o ícone.
+         */
+        const clamp = directionCommitRef.current * DIRECTION_CLAMP_FACTOR;
+        const length = Math.hypot(next.x, next.y);
+        gestureVectorRef.current =
+          length > clamp
+            ? { x: (next.x / length) * clamp, y: (next.y / length) * clamp }
+            : next;
+      }
+
+      /**
+       * O cursor real continua a andar mesmo depois de o vetor saturar. Reencostá-lo ao centro
+       * mantém-no dentro da janela — que é a única superfície onde o conseguimos esconder — e o
+       * gesto nem dá por isso, porque só soma deltas.
+       */
+      if (gestureParkAtRef.current === 0 && window.electron?.parkRadialCursor) {
+        const { width, height } = viewportSizeRef.current;
+        const strayRadius = Math.max(
+          160,
+          Math.min(width, height) / 2 - PARK_STRAY_MARGIN_PX,
+        );
+        if (Math.hypot(point.x - position.x, point.y - position.y) > strayRadius) {
+          gestureParkAtRef.current = Date.now();
+          window.electron.parkRadialCursor();
+        }
+      }
+
+      return virtual();
+    },
+    [],
+  );
   /**
    * Uma abertura confirma uma vez. Entre o `onClose` e o render que desmonta os listeners há uma
    * janela em que outro `mouseup` (ou o release do MMB a chegar logo a seguir ao clique) ainda é
@@ -1099,13 +1269,13 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
    */
   const resolveAimAtPoint = useCallback(
     (point: { x: number; y: number } | null): { isCenter: boolean; index: number | null } => {
-      const { position, currentLevelApps, deadZoneRadius, config, actualMenuRadius, actualIconSize } =
+      const { position, currentLevelApps, config, actualMenuRadius, actualIconSize } =
         stateRef.current;
       if (!point) return { isCenter: true, index: null };
 
       const deltaX = point.x - position.x;
       const deltaY = point.y - position.y;
-      if (Math.hypot(deltaX, deltaY) < deadZoneRadius) {
+      if (Math.hypot(deltaX, deltaY) < aimGateRef.current) {
         return { isCenter: true, index: null };
       }
       if (currentLevelApps.length === 0) return { isCenter: false, index: null };
@@ -1119,8 +1289,14 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
        * cursor a centenas de píxeis dele — rápido para quem já sabe onde as coisas estão, e
        * desconcertante para quem não sabe. Aqui nada acende fora do raio do ícone, e largar sem
        * estar sobre nenhum não abre nada.
+       *
+       * Não se aplica à execução sem clique, e essa exceção é a funcionalidade inteira: não há
+       * ponteiro no ecrã para pousar em cima de nada. Aí a roda é uma torta de setores IGUAIS — com
+       * dois itens, meio ecrã cada; com quatro, um quadrante cada — e apontar para o lado certo
+       * basta, por muito longe que a mão vá. Deixar a definição de mira decidir aqui punha o
+       * utilizador a caçar um ícone com um cursor que ele não consegue ver.
        */
-      if (config.radialSelectionMode === 'cursor') {
+      if (config.radialSelectionMode === 'cursor' && !directionModeRef.current) {
         const hitRadius = Math.max(actualIconSize * 0.85, 22);
         let nearest: number | null = null;
         let nearestDistance = Infinity;
@@ -1175,10 +1351,21 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
     disarmDwell();
     /** Mudar de nível é navegar, não confirmar: o gesto seguinte tem de voltar a valer. */
     gestureConsumedRef.current = false;
+    /**
+     * Por direção o nível novo tem de nascer neutro. A direção que abriu a pasta continuava a
+     * apontar para o mesmo lado lá dentro, e a mira sustentada abria de imediato o item desse
+     * lado — uma pasta encadeava-se na seguinte sem ninguém escolher nada. Zerar o vetor faz o
+     * mesmo que a regra de armar já fazia por posição: exigir movimento NOVO.
+     */
+    if (directionModeRef.current) {
+      resetDirectionGesture(false);
+      lastPointerRef.current = null;
+      lastAnchorPointRef.current = null;
+    }
     const aim = resolveAimAtPoint(lastPointerRef.current);
     setIsCenterActive(aim.isCenter);
     setActiveIndex(aim.isCenter ? null : aim.index);
-  }, [isOpen, currentLevelApps, folderStack.length, resolveAimAtPoint, disarmDwell]);
+  }, [isOpen, currentLevelApps, folderStack.length, resolveAimAtPoint, disarmDwell, resetDirectionGesture]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -1189,19 +1376,31 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
      * resolve para o centro, ou seja, cancelar — o único padrão seguro.
      */
     lastPointerRef.current = null;
+    lastAnchorPointRef.current = null;
+    /**
+     * Por direção o main já mandou o cursor para o centro antes deste `open-menu`. A aterragem
+     * desse salto ainda vem a caminho como um `mousemove` — marcá-la como pendente é o que impede
+     * o vetor de a somar e apontar para o lado oposto ao da mão.
+     */
+    resetDirectionGesture(directionModeRef.current);
     gestureConsumedRef.current = false;
 
     let rafId: number | null = null;
-    let lastMouseEvent: MouseEvent | null = null;
 
     const processMouseMove = () => {
-      if (!lastMouseEvent) return;
-      const { position, config, currentLevelApps, hasMoved, activeIndex, deadZoneRadius } = stateRef.current;
+      rafId = null;
+      /**
+       * O ponto já foi resolvido no próprio evento: por direção, o vetor do gesto tem de somar
+       * TODAS as amostras, e um rAF coalesce-as. Aqui só se lê o resultado.
+       */
+      const aimPoint = lastPointerRef.current;
+      const anchorPoint = lastAnchorPointRef.current;
+      if (!aimPoint || !anchorPoint) return;
+      const { position, currentLevelApps, hasMoved, activeIndex } = stateRef.current;
 
-      const e = lastMouseEvent;
-      const deltaX = e.clientX - position.x;
-      const deltaY = e.clientY - position.y;
-      const distance = Math.sqrt(deltaX * deltaX + deltaY * deltaY);
+      const deltaX = aimPoint.x - position.x;
+      const deltaY = aimPoint.y - position.y;
+      const distance = Math.hypot(deltaX, deltaY);
       const MOVEMENT_BUFFER = 15;
 
       if (currentLevelApps.length === 0) {
@@ -1210,14 +1409,13 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
         if (!hasMoved && distance > MOVEMENT_BUFFER) {
           setHasMoved(true);
         }
-        if (distance < deadZoneRadius) {
+        if (distance < aimGateRef.current) {
           if (activeIndex !== null) setActiveIndex(null);
           if (!stateRef.current.isCenterActive) setIsCenterActive(true);
         } else {
           if (stateRef.current.isCenterActive) setIsCenterActive(false);
           if (activeIndex !== null) setActiveIndex(null);
         }
-        rafId = null;
         return;
       }
 
@@ -1225,12 +1423,11 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
         setHasMoved(true);
       }
 
-      if (distance < deadZoneRadius) {
+      if (distance < aimGateRef.current) {
         /** Voltar ao hub é o gesto de desistir: mata a contagem, mas não o direito de recomeçar. */
         cancelDwell();
         if (activeIndex !== null) setActiveIndex(null);
         if (!stateRef.current.isCenterActive) setIsCenterActive(true);
-        rafId = null;
         return;
       }
 
@@ -1242,7 +1439,7 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
        * Estavam duplicadas, e qualquer divergência entre as duas significa acender um ícone e
        * abrir outro — o pior defeito possível num lançador. Agora ambas passam por aqui.
        */
-      const aim = resolveAimAtPoint({ x: e.clientX, y: e.clientY });
+      const aim = resolveAimAtPoint(aimPoint);
       if (activeIndex !== aim.index) setActiveIndex(aim.index);
 
       /**
@@ -1252,15 +1449,14 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
        * entre marcar um alvo e abri-lo passa quase meio segundo, e nesse intervalo o nível pode
        * mudar por baixo de um ponteiro que não se mexeu.
        */
-      armAndTrackDwellRef.current({ x: e.clientX, y: e.clientY }, aim);
-
-      rafId = null;
+      armAndTrackDwellRef.current(anchorPoint, aim);
     };
 
     const handleMouseMove = (e: MouseEvent) => {
-      lastMouseEvent = e;
       /** Síncrono: o realce pode esperar pelo próximo frame, a confirmação não. */
-      lastPointerRef.current = { x: e.clientX, y: e.clientY };
+      const raw = { x: e.clientX, y: e.clientY };
+      lastAnchorPointRef.current = raw;
+      lastPointerRef.current = trackAimPoint(raw);
       if (rafId === null) {
         rafId = requestAnimationFrame(processMouseMove);
       }
@@ -1287,9 +1483,10 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
       gestureConsumedRef.current = true;
       const { folderStack, apps, currentLevelApps, onClose, config } = stateRef.current;
 
-      /** O alvo é onde o cursor está AGORA, não o que o último render chegou a registar. */
-      const aim = resolveAimAtPoint({ x: e.clientX, y: e.clientY });
-      logRadialConfirm('click', { x: e.clientX, y: e.clientY }, aim);
+      /** O alvo é onde a mira está AGORA, não o que o último render chegou a registar. */
+      const point = trackAimPoint({ x: e.clientX, y: e.clientY });
+      const aim = resolveAimAtPoint(point);
+      logRadialConfirm('click', point, aim);
       const selectedItemObj = aim.index !== null ? currentLevelApps[aim.index] : null;
 
       if (aim.isCenter) {
@@ -1958,12 +2155,15 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
      * Reancorar no ponto em que a mão está AGORA. A âncora anterior é a última amostra em
      * movimento, até 90ms velha: mantê-la fazia a contagem começar já com o orçamento gasto.
      */
-    if (lastPointerRef.current) dwellAnchorRef.current = lastPointerRef.current;
+    if (lastAnchorPointRef.current) dwellAnchorRef.current = lastAnchorPointRef.current;
     dwellPendingRef.current = null;
     dwellTargetRef.current = pending;
     dwellStartedAtRef.current = Date.now();
     dwellSeqRef.current += 1;
-    setDwellTick({ index: pending.index, key: dwellSeqRef.current });
+    /** Sem arco não há commit do React nenhum nesta contagem — só o `setTimeout` que executa. */
+    if (dwellRunMsRef.current >= DWELL_ARC_MIN_MS) {
+      setDwellTick({ index: pending.index, key: dwellSeqRef.current });
+    }
     dwellTimerRef.current = window.setTimeout(fireDwell, dwellRunMsRef.current);
   }, [cancelDwell, fireDwell, resolveAimAtPoint]);
 
@@ -1984,7 +2184,16 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
       if (!dwellArmedRef.current) {
         if (Date.now() - paintReadyAtRef.current < INSTANT_ARM_DELAY_MS) return;
         const baseline = dwellBaselineRef.current;
-        if (Math.hypot(point.x - baseline.x, point.y - baseline.y) < INSTANT_ARM_DISPLACEMENT_PX) {
+        /**
+         * Por direção, a prova de intenção é o próprio compromisso: uma fatia só acende depois de
+         * a mão andar o que a sensibilidade pede, e o vetor nasce a zero em cada abertura e em
+         * cada nível. Manter aqui um limiar FIXO maior que esse deixava a sensibilidade alta a
+         * acender sem nunca poder executar — a definição a prometer uma coisa e a roda a fazer outra.
+         */
+        const armDistance = directionModeRef.current
+          ? Math.min(INSTANT_ARM_DISPLACEMENT_PX, directionCommitRef.current)
+          : INSTANT_ARM_DISPLACEMENT_PX;
+        if (Math.hypot(point.x - baseline.x, point.y - baseline.y) < armDistance) {
           return;
         }
         dwellArmedRef.current = true;
@@ -1999,7 +2208,10 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
        * intenção — é o caso do nível de recurso do MRU vazio, que existe precisamente para nunca
        * lançar a IDE-mãe sozinho. Em modo cursor o teste é sobre o ícone e continua a valer.
        */
-      if (level.length === 1 && stateRef.current.config.radialSelectionMode !== 'cursor') {
+      if (
+        level.length === 1 &&
+        (directionModeRef.current || stateRef.current.config.radialSelectionMode !== 'cursor')
+      ) {
         return void cancelDwell();
       }
       const item = level[aim.index];
@@ -2029,7 +2241,7 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
       cancelDwell();
       dwellAnchorRef.current = point;
       dwellPendingRef.current = next;
-      dwellSettleTimerRef.current = window.setTimeout(startDwell, DWELL_SETTLE_MS);
+      dwellSettleTimerRef.current = window.setTimeout(startDwell, dwellSettleMsRef.current);
     },
     [cancelDwell, startDwell],
   );
@@ -2068,7 +2280,7 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
   return (
     <div
       data-zenith-radial-modal="true"
-      className={`fixed inset-0 z-[70] ${config.performanceMode ? 'zn-radial--fast' : ''} ${isOpen ? '' : 'zn-radial--closing'}`}
+      className={`fixed inset-0 z-[70] ${config.performanceMode ? 'zn-radial--fast' : ''} ${isOpen ? '' : 'zn-radial--closing'} ${directionMode ? 'zn-radial--nocursor' : ''}`}
       style={{
         /* Sem atraso ao fechar — senão o HUD do radial ficava visível por cima/atrás da ilha compacta. */
         visibility: isOpen ? 'visible' : 'hidden',

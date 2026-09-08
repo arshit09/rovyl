@@ -4,6 +4,7 @@ import {
   DWELL_MS_MAX,
   DWELL_MS_MIN,
   DWELL_MS_STEP,
+  clampDirectionSensitivity,
   clampDwellMs,
 } from '../constants/radialDwell';
 import {
@@ -455,6 +456,67 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
         },
         range('threshold', 'Position', 'Activation zone', 'Cursor distance required to confirm a target.',
           config.activationThreshold, 20, 120, (value) => update('activationThreshold', value), (value) => `${Math.round(value)} px`),
+        {
+          key: 'instant', group: 'Hands-free', title: 'Launch without clicking',
+          description:
+            'Hides the pointer and picks by direction — move toward a target and it opens by itself.',
+          /**
+           * Interruptor, não segmentado. Todo o binário deste painel é `bool`; um segmentado é
+           * sempre uma escolha entre pares com nome (Picker/Keys, Click/Hold, Direction/Pointer) e
+           * nenhum deles tem um "Off". Aqui os dois lados não são pares: com isto ligado o clique
+           * continua a funcionar exatamente como antes, portanto o que existe é a ausência de uma
+           * funcionalidade — que é precisamente o que o interruptor diz.
+           *
+           * Vive na Ativação e não na Aparência: isto decide COMO a roda é conduzida e executada —
+           * esconde o ponteiro e troca a mira por posição por uma mira por direção. Nada disto é
+           * aspeto, e ao lado do gatilho é onde alguém o procura.
+           *
+           * A comparação com `'dwell'` coage também `'swipe'`, reservado no tipo e não implementado.
+           */
+          kind: 'bool',
+          enabled: config.radialInstantActivate === 'dwell',
+          onToggle: () =>
+            update(
+              'radialInstantActivate',
+              config.radialInstantActivate === 'dwell' ? 'off' : 'dwell',
+            ),
+        },
+        /**
+         * As duas afinações só existem enquanto o gesto existe. Deixá-las visíveis com ele
+         * desligado é oferecer controlos que não controlam nada — e a sensibilidade, sozinha na
+         * lista, não diz de que é que é sensibilidade.
+         */
+        ...(config.radialInstantActivate === 'dwell'
+          ? [
+              {
+                key: 'instantSensitivity',
+                group: 'Hands-free',
+                title: 'Direction sensitivity',
+                description:
+                  'How far your hand must travel before that direction is chosen. High picks on the smallest movement.',
+                kind: 'segmented' as const,
+                current: clampDirectionSensitivity(config.radialInstantSensitivity),
+                choices: [
+                  { value: 'low', label: 'Low' },
+                  { value: 'medium', label: 'Medium' },
+                  { value: 'high', label: 'High' },
+                ],
+                onChange: (value: number | string) =>
+                  update('radialInstantSensitivity', value as UIConfig['radialInstantSensitivity']),
+              },
+              range('dwellMs', 'Hands-free', 'Hover time',
+                'How long a target must stay aimed before it opens. Drag to zero and the direction opens the moment it commits.',
+                clampDwellMs(config.radialInstantDwellMs), DWELL_MS_MIN, DWELL_MS_MAX,
+                (value) => update('radialInstantDwellMs', value),
+                /**
+                 * "0 ms" leria-se como um número entre outros — e o que zero faz não é esperar
+                 * menos, é não haver espera nenhuma. A palavra diz o comportamento; o resto da
+                 * escala continua a dizer o tempo.
+                 */
+                (value) => (Math.round(value) === 0 ? 'Instant' : `${Math.round(value)} ms`),
+                DWELL_MS_STEP),
+            ]
+          : []),
       ],
       appearance: [
         {
@@ -478,10 +540,18 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
         },
         {
           key: 'aim', group: 'Wheel', title: 'Targeting',
+          /**
+           * Com a execução sem clique ligada não há ponteiro no ecrã, portanto "mirar com o
+           * ponteiro" não é uma opção que possa existir — a roda passa sempre a setores por
+           * direção. Dizê-lo aqui é o mínimo: um segmentado que continua a mexer e não muda nada
+           * é pior que um desativado.
+           */
           description:
-            config.radialSelectionMode === 'cursor'
-              ? 'Only the icon under the pointer highlights. Release away from every icon to cancel.'
-              : 'Aim by direction: the slice you point toward highlights from anywhere on screen.',
+            config.radialInstantActivate === 'dwell'
+              ? 'Launch without clicking is on, so the wheel always aims by direction — each item owns an equal slice of the screen.'
+              : config.radialSelectionMode === 'cursor'
+                ? 'Only the icon under the pointer highlights. Release away from every icon to cancel.'
+                : 'Aim by direction: the slice you point toward highlights from anywhere on screen.',
           kind: 'segmented',
           choices: [
             { value: 'angle', label: 'Direction' },
@@ -490,30 +560,6 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
           current: config.radialSelectionMode === 'cursor' ? 'cursor' : 'angle',
           onChange: (value) => update('radialSelectionMode', value as UIConfig['radialSelectionMode']),
         },
-        {
-          key: 'instant', group: 'Wheel', title: 'Launch without clicking',
-          description: 'Hover a target and hold your aim there — it opens by itself.',
-          /**
-           * Interruptor, não segmentado. Todo o binário deste painel é `bool`; um segmentado é
-           * sempre uma escolha entre pares com nome (Picker/Keys, Click/Hold, Direction/Pointer) e
-           * nenhum deles tem um "Off". Aqui os dois lados não são pares: com isto ligado o clique
-           * continua a funcionar exatamente como antes, portanto o que existe é a ausência de uma
-           * funcionalidade — que é precisamente o que o interruptor diz.
-           *
-           * A comparação com `'dwell'` coage também `'swipe'`, reservado no tipo e não implementado.
-           */
-          kind: 'bool',
-          enabled: config.radialInstantActivate === 'dwell',
-          onToggle: () =>
-            update(
-              'radialInstantActivate',
-              config.radialInstantActivate === 'dwell' ? 'off' : 'dwell',
-            ),
-        },
-        range('dwellMs', 'Wheel', 'Hover time', 'How long a target must stay aimed before it opens.',
-          clampDwellMs(config.radialInstantDwellMs), DWELL_MS_MIN, DWELL_MS_MAX,
-          (value) => update('radialInstantDwellMs', value), (value) => `${Math.round(value)} ms`,
-          DWELL_MS_STEP),
         {
           key: 'labels', group: 'Wheel', title: 'Persistent labels',
           description: 'Keep every target name visible.',

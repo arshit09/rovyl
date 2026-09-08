@@ -68,6 +68,8 @@ public static class ZenithRadialMouseBlocker {
     private static extern IntPtr GetModuleHandle(string moduleName);
     [DllImport("user32.dll", SetLastError = true)]
     private static extern uint SendInput(uint count, INPUT[] inputs, int size);
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern bool SetCursorPos(int x, int y);
     [DllImport("kernel32.dll", SetLastError = true)]
     private static extern IntPtr OpenProcess(uint access, bool inheritHandle, int processId);
     [DllImport("kernel32.dll", SetLastError = true)]
@@ -301,6 +303,17 @@ public static class ZenithRadialMouseBlocker {
                 InstallHook();
                 TriggerButton = Hook != IntPtr.Zero ? vk : 0;
                 Emit(TriggerButton != 0 ? "TRIGGER_READY" : "TRIGGER_FAILED");
+            }
+        } else if (parts.Length == 3 && parts[0] == "WARP") {
+            /**
+             * Estacionar o ponteiro (execucao sem clique). `SetCursorPos` nao passa pelo hook nem
+             * injeta input -- nao ha reentrancia a proteger e nao acorda o gatilho. Corre no thread
+             * do timer, nunca dentro do `HookCallback`, para o rato do sistema nao esperar por ele.
+             */
+            int wx, wy;
+            if (int.TryParse(parts[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out wx) &&
+                int.TryParse(parts[2], NumberStyles.Integer, CultureInfo.InvariantCulture, out wy)) {
+                SetCursorPos(wx, wy);
             }
         } else if (parts[0] == "EXIT") {
             TriggerButton = 0;

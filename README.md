@@ -40,7 +40,7 @@ puts a window between you and your work.
 - **Workspaces** — separate wheels for work, games, streaming; switch with a number key
 - **Your trigger** — middle mouse button, a side button, or a global hotkey
 - **Two aiming modes** — by direction for speed, or by pointer for precision
-- **Launch without clicking** — optional: hold your aim on a target and it opens itself
+- **Launch without clicking** — optional: hides the pointer, picks by direction, and opens on its own
 - **Focus protection** — stays out of the way while you are in a fullscreen game
 - **Fully offline** — no account, no telemetry, no ads, nothing leaves your machine
 

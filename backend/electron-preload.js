@@ -99,6 +99,11 @@ contextBridge.exposeInMainWorld("electron", {
   collapseIdleOverlay: () => ipcRenderer.invoke("collapse-idle-overlay"),
   setRadialViewport: (payload) =>
     ipcRenderer.send("set-radial-viewport", payload),
+  /** Execução sem clique: o main estaciona o ponteiro no centro da roda e devolve-o ao fechar. */
+  setRadialCursorCapture: (enabled) =>
+    ipcRenderer.send("set-radial-cursor-capture", !!enabled),
+  /** Reencosta o ponteiro ao centro a meio do gesto — não o termina nem mexe no ponto de regresso. */
+  parkRadialCursor: () => ipcRenderer.send("park-radial-cursor"),
   /** Estado geométrico crítico: o próximo atalho pode ocorrer no mesmo tick do fecho de Settings. */
   setPanelSurfaceVisible: (visible) => {
     try {

@@ -252,6 +252,7 @@ export const DEFAULT_UI_CONFIG: UIConfig = {
    */
   radialInstantActivate: 'off',
   radialInstantDwellMs: 400,
+  radialInstantSensitivity: 'medium',
   enableMouseTrigger: true,
   mouseTriggerMode: 'click',
   mouseTriggerButton: 'middle',

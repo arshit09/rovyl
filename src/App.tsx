@@ -522,6 +522,15 @@ export default function App() {
   }, [config.menuRadius, config.iconSize]);
 
   /**
+   * Execução sem clique: quem sabe que está ligada é o renderer, mas quem tem de estacionar o
+   * ponteiro no centro da roda é o main — o warp acontece antes do `open-menu`, e portanto antes
+   * de o radial existir aqui. Só o sim/não atravessa, e só quando a definição muda.
+   */
+  useEffect(() => {
+    window.electron?.setRadialCursorCapture?.(config.radialInstantActivate === 'dwell');
+  }, [config.radialInstantActivate]);
+
+  /**
    * O main não consegue inferir isto: `hide-window` esconde a janela sem mudar de modo, por isso
    * `windowed` sobrevive a ela e o radial seguinte abria "por cima de um painel" que não estava
    * no ecrã — trazendo as definições atrás. Quem sabe é o renderer, e diz.

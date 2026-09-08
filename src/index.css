@@ -918,6 +918,22 @@
   animation: zn-dwell-arc var(--zn-dwell-ms, 400ms) linear forwards;
 }
 
+/**
+ * Execucao sem clique: o ponteiro deixa de existir para o utilizador.
+ *
+ * `cursor` herda-se, mas cada tile pede `cursor-pointer` por classe do Tailwind e a superficie da
+ * App pede `crosshair` enquanto se arrasta — os descendentes tem de ser cobertos um a um, e com
+ * `!important`, senao a roda esconde o ponteiro em todo o lado menos por cima dos icones, que e
+ * precisamente onde ele se ve.
+ *
+ * Isto so pinta por cima da janela do radial; o cursor so esta la porque o main o estacionou no
+ * centro ao abrir (ver `captureRadialCursor`).
+ */
+.zn-radial--nocursor,
+.zn-radial--nocursor * {
+  cursor: none !important;
+}
+
 /* Modo normal: expansão progressiva, com desaceleração longa o bastante para a
    troca de workspace/pasta não parecer um corte seco. */
 .zn-radial-slice {

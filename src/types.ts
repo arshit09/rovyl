@@ -135,17 +135,24 @@ export interface UIConfig {
   /**
    * Executar sem clique: manter a mira num alvo durante `radialInstantDwellMs` lança-o.
    *
-   * 'swipe' está RESERVADO e é lido como 'off' em todo o lado. O gesto de atirar o ponteiro para
-   * fora de um raio exige que ele comece no centro da roda, e isso não é verdade aqui: a roda
-   * nasce no centro do monitor enquanto o cursor fica onde estava, e a janela do radial é uma
-   * caixa (~988px), portanto um cursor num canto do ecrã não gera sequer um `mousemove`. Fazê-lo
-   * funcionar obrigaria a teleportar o cursor a partir do processo principal — ou seja, mexer no
-   * hook de rato, que já parou todo o input do sistema uma vez. O valor fica declarado para que
-   * uma implementação futura não precise de migrar configs.
+   * Ligar isto muda também COMO se mira. O ponteiro é escondido e estacionado no centro da roda
+   * (o main trata disso), e a fatia passa a sair da direção em que a mão foi desde aí — não da
+   * posição em que o cursor já estava. Sem isso, abrir a roda com o rato em baixo acendia o item
+   * de baixo ao primeiro tremor e o tempo de mira lançava-o sozinho.
+   *
+   * 'swipe' está RESERVADO e é lido como 'off' em todo o lado — é o mesmo gesto sem a espera, e
+   * fica declarado para que uma implementação futura não precise de migrar configs.
    */
   radialInstantActivate?: 'off' | 'swipe' | 'dwell';
   /** Milissegundos de mira contínua no mesmo alvo antes de executar. Preso a [250, 1200]. */
   radialInstantDwellMs?: number;
+  /**
+   * Quanto deslocamento uma direção precisa para acender a fatia desse lado, com a execução sem
+   * clique ligada. Só conta nesse modo: é ele que esconde o ponteiro e o estaciona no centro, e
+   * sem ponteiro visível o gesto é uma direção — não uma posição que já valia alguma coisa antes
+   * de a mão se mexer.
+   */
+  radialInstantSensitivity?: 'low' | 'medium' | 'high';
   openAtLogin?: boolean; // New: Start app at login
   enableMouseTrigger: boolean;
   /** click: clique MMB abre e deixa o radial aberto; hold: segurar abre e soltar executa a seleção. */
@@ -260,6 +267,14 @@ export interface ElectronAPI {
   collapseIdleOverlay?: () => Promise<boolean>;
   /** Lado da caixa do radial (px) + se a posição é fixa — o main dimensiona a janela do menu com isto. */
   setRadialViewport?: (payload: { size: number; fixed: boolean }) => void;
+  /**
+   * Execução sem clique ligada: ao abrir o radial, o main guarda onde o cursor estava, põe-no no
+   * centro da roda e devolve-o ao sítio ao fechar. É isto que torna o ponteiro escondível (só é
+   * invisível por cima da nossa janela) e o gesto neutro no arranque.
+   */
+  setRadialCursorCapture?: (enabled: boolean) => void;
+  /** Reencosta o cursor ao centro sem terminar o gesto — usado quando ele se afasta da janela. */
+  parkRadialCursor?: () => void;
   /** Painel (Settings/Welcome) realmente à vista — decide se o radial abre por cima dele. */
   setPanelSurfaceVisible?: (visible: boolean) => void;
   /** Clears island passthrough / hit-shape so widgets and panels receive clicks immediately. */
