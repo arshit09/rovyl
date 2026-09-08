@@ -9,8 +9,25 @@
  * The pattern is kept in step with `REF_PATTERN` there. Both are anchored and lowercase-only
  * because the same string ends up naming a file inside userData.
  */
+import type { AppItem } from "./types";
+import { isLikelyWebUrl } from "./siteFavicon";
+
 const ICON_REF_PATTERN = /^rovyl-icon:\/\/icon\/[0-9a-f]{64}\.(?:png|jpg|gif|webp|bmp|ico)$/;
 
 export function isStoredIconRef(value: string | null | undefined): boolean {
   return ICON_REF_PATTERN.test(String(value ?? "").trim());
+}
+
+/**
+ * A remote favicon rather than something this machine produced. Neither the `.exe` icon cache-bust
+ * nor the healing pass should treat one as a stale native icon — it did not come from the Windows
+ * pipeline and re-extracting will not improve it.
+ */
+export function isRemoteIconUrl(value: string | undefined): boolean {
+  return /^https?:\/\//i.test(String(value ?? "").trim());
+}
+
+/** A shortcut whose target is a web page, so its icon comes from a favicon and not from a file. */
+export function isWebShortcutItem(item: AppItem): boolean {
+  return item.commandType === "url" || isLikelyWebUrl(item.command);
 }

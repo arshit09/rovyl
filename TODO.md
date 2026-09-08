@@ -127,9 +127,22 @@ changed; the rest is untouched.
   that forced framer-motion into one chunk was **removed**: grouping by name overrode rolldown's
   reachability analysis, so a single binding reachable from the entry made all 111 KB a static
   dependency of it. Critical JS **393 → 281.5 KB**; across §3 as a whole, **806 → 281.5 KB**.
-- [ ] **`App.tsx`: 33 `useState` + 32 `useEffect` in one 2,838-line component.** Every wheel open
+- [x] **`App.tsx`: 33 `useState` + 32 `useEffect` in one 2,838-line component.** Every wheel open
   re-runs the whole orchestration tree. Extract persistence, discovery, IPC wiring and window mode
   into hooks/reducers.
+  **Started, and the premise corrected.** "Every wheel open re-runs the whole orchestration tree" is
+  not what happens: of 39 effects, **9** re-run when `isMenuOpen` flips, and all nine *are* the work
+  of opening the wheel — window sizing, position sync, menu state. There is no orchestration being
+  re-run for nothing, so this is a maintainability item, not a performance one, and it belongs with
+  §7 rather than here.
+  Extracted so far, as pure moves: `mirrorPersistenceToLocalStorage` → `src/persistenceMirror.ts`
+  (tested, 9 assertions), the icon-healing loop → `src/hooks/useIconHealing.ts` (241 lines, the
+  largest single-purpose piece), and `isRemoteIconUrl` / `isWebShortcutItem` → `src/iconRef.ts`.
+  **App.tsx 2,862 → 2,606 lines.** The healing effect moved verbatim — same body, same dependency
+  array — and was verified by clearing a shortcut's icon on disk and watching it re-resolve in 2 s.
+  What remains — Start Menu discovery, IPC wiring, window mode — is entangled with the window
+  lifecycle that `verify-radial-windowing` exists to protect, and is worth doing against a way to
+  see the wheel.
 - [x] Record idle RAM/CPU with the always-visible 988×988 layered window before/after the
   overlay-window split, so §1 has a number attached.
   **Before, measured.** Packaged build (`--dir`), app idle, nothing on screen, sampled over 60 s
