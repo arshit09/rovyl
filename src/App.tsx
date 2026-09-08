@@ -1,7 +1,6 @@
 import React, { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo } from 'react';
 import { flushSync } from 'react-dom';
 import { RadialMenu } from './components/RadialMenu';
-import { Toast } from './components/Toast';
 import { Coordinates, AppItem, UIConfig, UserProfile, Workspace } from './types';
 import {
   DEFAULT_UI_CONFIG,
@@ -11,7 +10,6 @@ import {
   workspaceContainsBundledDemoApp,
 } from './defaults';
 import { Minus, X, Maximize, Square, AlertTriangle, ArrowLeft, ArrowRight, PanelLeftClose } from 'lucide-react';
-import { motion, AnimatePresence } from 'framer-motion';
 import { isLikelyWebUrl, resolveWebsiteIconFields } from './siteFavicon';
 import { preloadIconsByName } from './iconMap';
 import { isStoredIconRef } from './iconRef';
@@ -22,6 +20,21 @@ const PrecisionSettings = React.lazy(() =>
   import('./components/PrecisionSettings').then((module) => ({
     default: module.PrecisionSettings,
   })),
+);
+
+/**
+ * The only two things in this file that animated with `framer-motion`, both behind their own chunks.
+ *
+ * The wheel does not use the library at all — `RadialMenu` has zero `motion.` usages — yet 111 kB of
+ * it was statically imported here for a settings transition, an error banner and a toast, and so sat
+ * in the chunk the wheel waits on before it can paint. None of the three is ever on screen in a
+ * session where the user opens the wheel and nothing fails.
+ */
+const PanelTransition = React.lazy(() =>
+  import('./components/PanelTransition').then((module) => ({ default: module.PanelTransition })),
+);
+const ErrorOverlays = React.lazy(() =>
+  import('./components/ErrorOverlays').then((module) => ({ default: module.ErrorOverlays })),
 );
 
 const LS_MAIN_DISCOVERY_DONE = 'zenith_main_discovery_done';
@@ -324,6 +337,11 @@ export default function App() {
   const radialTransitionWarmedRef = useRef(false);
   const [lastLaunched, setLastLaunched] = useState<AppItem | null>(null);
   const [executionError, setExecutionError] = useState<string | null>(null);
+  /** Latches on the first failure so the overlay chunk is fetched then, and never before. */
+  const [errorOverlaysNeeded, setErrorOverlaysNeeded] = useState(false);
+  useEffect(() => {
+    if (lastLaunched || executionError) setErrorOverlaysNeeded(true);
+  }, [lastLaunched, executionError]);
   const [isDesktopMode, setIsDesktopMode] = useState(false);
   /** Só montar a ilha depois de `setWindowSize('small')` com bounds do monitor — senão o hit-shape usa coords com a janela ainda em 1280×800 (dev). */
   const [electronSmallOverlayReady, setElectronSmallOverlayReady] = useState(false);
@@ -2718,19 +2736,17 @@ export default function App() {
 
         {/* WELCOME SCREEN / DASHBOARD — AnimatePresence sync evita buraco só com fundo entre dashboard e definições (DWM). */}
         {panelContentVisible && (
-          <AnimatePresence mode="sync">
-            {isSettingsOpen && panelSurfaceOpen && (
-              <motion.div
-                key="settings-page"
-                initial={{ opacity: 0, x: 20, filter: 'blur(10px)' }}
-                animate={{ opacity: 1, x: 0, filter: 'blur(0px)' }}
-                exit={{ opacity: 0, x: 20, filter: 'blur(10px)' }}
-                transition={{ duration: 0.28, ease: [0.22, 1, 0.36, 1] }}
-                className="absolute inset-x-0 bottom-0 top-[var(--zenith-title-bar-h)] z-20"
-              >
-                <React.Suspense
-                  fallback={<div className="absolute inset-0 bg-[#08090b]" aria-hidden />}
-                >
+          <React.Suspense
+            fallback={
+              isSettingsOpen && panelSurfaceOpen ? (
+                <div
+                  className="absolute inset-x-0 bottom-0 top-[var(--zenith-title-bar-h)] z-20 bg-[#08090b]"
+                  aria-hidden
+                />
+              ) : null
+            }
+          >
+            <PanelTransition show={isSettingsOpen && panelSurfaceOpen}>
                 <PrecisionSettings
                   isOpen={isSettingsOpen}
                   isPage={true}
@@ -2755,10 +2771,8 @@ export default function App() {
                   }}
                   onOpenDashboard={handleOpenSettings}
                 />
-                </React.Suspense>
-              </motion.div>
-            )}
-          </AnimatePresence>
+            </PanelTransition>
+          </React.Suspense>
         )}
 
       </div>
@@ -2814,31 +2828,20 @@ export default function App() {
           />
         )}
 
-        <Toast app={lastLaunched} />
-        
-        <AnimatePresence>
-          {executionError && (
-            <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[1000]">
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: 20 }}
-                className="px-6 py-4 bg-red-500/90 backdrop-blur-xl border border-red-400/50 rounded-2xl shadow-2xl flex items-center gap-4 min-w-[320px]"
-              >
-                <div className="w-10 h-10 rounded-xl bg-white/20 flex items-center justify-center text-white shrink-0">
-                  <AlertTriangle size={20} />
-                </div>
-                <div className="flex-1">
-                  <div className="text-[10px] font-black uppercase tracking-widest text-white/60 mb-1">Execution Error</div>
-                  <div className="text-sm font-bold text-white leading-tight">{executionError}</div>
-                </div>
-                <button onClick={() => setExecutionError(null)} className="text-white/40 hover:text-white transition-colors">
-                  <X size={18} />
-                </button>
-              </motion.div>
-            </div>
-          )}
-        </AnimatePresence>
+        {/**
+          * Kept mounted once it has ever been needed: `AnimatePresence` can only animate a child
+          * out while it still owns it, so unmounting the moment the error clears would cut the
+          * exit animation short.
+          */}
+        {errorOverlaysNeeded && (
+          <React.Suspense fallback={null}>
+            <ErrorOverlays
+              lastLaunched={lastLaunched}
+              executionError={executionError}
+              onDismissError={() => setExecutionError(null)}
+            />
+          </React.Suspense>
+        )}
 
 
         {/* FLASH PREVENTION BLANKER */}

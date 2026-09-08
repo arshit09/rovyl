@@ -26,8 +26,8 @@ import { fileURLToPath } from "node:url";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const distDir = join(root, "dist");
 
-/** Ceiling for all statically loaded JS, in bytes. It sits at ~385 kB; it was 806 kB before §3. */
-const CRITICAL_JS_BUDGET = 440 * 1024;
+/** Ceiling for all statically loaded JS, in bytes. It sits at ~288 kB; it was 806 kB before §3. */
+const CRITICAL_JS_BUDGET = 330 * 1024;
 
 /**
  * Lucide glyphs allowed in the critical path. `CURATED_ICON_MAP` holds 282; the margin is there so

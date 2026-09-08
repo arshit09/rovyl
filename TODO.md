@@ -116,8 +116,17 @@ changed; the rest is untouched.
   feed `lastPointerRef`, which is what the release reads to decide the slice, so an 8 ms staler
   point is ~16 px of travel on a fast flick — enough to cross a boundary. On the 239 Hz display
   this fork was debugged against, 125 Hz is already slower than the frame rate.
-- [ ] **Only settings is code-split.** Split out the icon picker, installed-app scanner and
+- [x] **Only settings is code-split.** Split out the icon picker, installed-app scanner and
   workspace editor so they are not in first paint.
+  **Done — though not where the item pointed.** Those three were already off first paint: all live
+  inside the lazy `PrecisionSettings` chunk, and the icon picker's real weight (the full Lucide set)
+  became its own on-demand chunk earlier in this section. The weight actually left in first paint
+  was `framer-motion`, 111 KB, which the wheel never uses — `RadialMenu` has zero `motion.` usages.
+  It was there because `App.tsx` imported it for a settings transition, an error banner and a toast.
+  All three moved to lazy modules (`PanelTransition`, `ErrorOverlays`), and the `manualChunks` rule
+  that forced framer-motion into one chunk was **removed**: grouping by name overrode rolldown's
+  reachability analysis, so a single binding reachable from the entry made all 111 KB a static
+  dependency of it. Critical JS **393 → 281.5 KB**; across §3 as a whole, **806 → 281.5 KB**.
 - [ ] **`App.tsx`: 33 `useState` + 32 `useEffect` in one 2,838-line component.** Every wheel open
   re-runs the whole orchestration tree. Extract persistence, discovery, IPC wiring and window mode
   into hooks/reducers.

@@ -71,15 +71,26 @@ export default defineConfig({
   },
   build: {
     target: "es2022",
-    // Smaller initial parse + cache-friendly chunks in production (slightly snappier cold start).
+    /**
+     * One manual chunk, deliberately.
+     *
+     * React is genuinely eager — nothing renders without it — so grouping it buys a stable,
+     * cache-friendly file. `framer-motion` used to be grouped the same way and it was actively
+     * harmful: forcing all 111 kB into one chunk meant that a single binding reachable from the
+     * entry made the whole chunk a *static* dependency of it, and the modulepreload followed. The
+     * wheel has no `motion.` usage at all, so that was 111 kB parsed before first paint for a
+     * library only the settings panel, an error banner and a toast ever use. Left to itself,
+     * rolldown puts the sliver the entry needs in `react-vendor` and the remaining ~105 kB in an
+     * async chunk. Critical JS 393 kB -> 288 kB.
+     *
+     * The lesson generalises: grouping a dependency by name overrides the reachability analysis
+     * that would otherwise have kept most of it off the critical path.
+     */
     rollupOptions: {
       output: {
         manualChunks(id) {
           if (id.includes("node_modules/react/") || id.includes("node_modules/react-dom/")) {
             return "react-vendor";
-          }
-          if (id.includes("node_modules/framer-motion/")) {
-            return "motion";
           }
         },
       },
