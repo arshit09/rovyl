@@ -11,6 +11,12 @@
  * anything like it, comes back — including via `manualChunks`, which can move the same bytes into
  * a sibling chunk that is still statically imported.
  *
+ * It also guards the shipped web fonts. Same shape of failure, opposite direction: importing a
+ * whole `@fontsource-variable` package is one line and silently brings back subsets for scripts
+ * this UI does not use, while a `url()` Vite cannot resolve is not an error at all — it warns,
+ * leaves the specifier verbatim and exits 0, shipping a stylesheet that 404s. So the fonts are
+ * checked from both ends: nothing extra, and nothing missing.
+ *
  * Raise the budgets deliberately when a real feature needs the room — never to make a build pass.
  */
 import { readdirSync, readFileSync, statSync } from "node:fs";
@@ -28,6 +34,31 @@ const CRITICAL_JS_BUDGET = 620 * 1024;
  * adding a wheel glyph does not need this file edited, while pulling the whole set still fails.
  */
 const MAX_CRITICAL_ICONS = 320;
+
+/** Ceiling for all shipped font files, in bytes. Latin + latin-ext of three families is ~211 kB. */
+const FONT_BUDGET = 240 * 1024;
+
+/**
+ * Subsets `src/fonts.css` deliberately leaves out. The UI is English and every font stack ends in a
+ * generic that Windows resolves to a face covering all scripts, so these buy a nicer glyph for a
+ * case that does not arise, at 92 kB.
+ */
+const UNSHIPPED_FONT_SUBSETS = ["cyrillic", "greek", "vietnamese"];
+
+/**
+ * Faces `src/fonts.css` and `src/fonts-display.css` declare, by pre-hash basename. Keep in step
+ * with those files. A face that stops resolving — a Fontsource rename, or a build run without
+ * devDependencies installed — makes the output *smaller*, so the ceiling above would wave it
+ * through. Naming them is what turns that into a failed build.
+ */
+const REQUIRED_FONT_FACES = [
+  "inter-latin-wght-normal",
+  "inter-latin-ext-wght-normal",
+  "instrument-sans-latin-wght-normal",
+  "instrument-sans-latin-ext-wght-normal",
+  "space-grotesk-latin-wght-normal",
+  "space-grotesk-latin-ext-wght-normal",
+];
 
 /**
  * `createLucideIcon("Activity", [["path", …]])`, after minification: an identifier, the glyph name
@@ -102,6 +133,7 @@ if (totalIcons > MAX_CRITICAL_ICONS) {
 const lazyIconChunk = readdirSync(join(distDir, "assets")).find((name) =>
   name.startsWith("_virtual_lucide-icon-set"),
 );
+
 if (!lazyIconChunk) {
   problems.push(
     "no _virtual_lucide-icon-set-*.js chunk was emitted — the icon picker's glyph set is no longer code-split",
@@ -112,6 +144,47 @@ if (!lazyIconChunk) {
   );
 }
 
+const assetNames = readdirSync(join(distDir, "assets"));
+const fontFiles = assetNames.filter((name) => name.endsWith(".woff2"));
+const fontBytes = fontFiles.reduce(
+  (total, name) => total + statSync(join(distDir, "assets", name)).size,
+  0,
+);
+
+if (fontBytes > FONT_BUDGET) {
+  problems.push(
+    `shipped fonts total ${(fontBytes / 1024).toFixed(1)} kB across ${fontFiles.length} files, over the ${(FONT_BUDGET / 1024).toFixed(0)} kB budget`,
+  );
+}
+
+const unwantedSubsets = fontFiles.filter((name) =>
+  UNSHIPPED_FONT_SUBSETS.some((subset) => name.includes(subset)),
+);
+if (unwantedSubsets.length) {
+  problems.push(
+    `font subsets this UI does not use are being shipped (${unwantedSubsets.join(", ")}) — declare faces in src/fonts.css rather than importing a whole @fontsource-variable package`,
+  );
+}
+
+const missingFaces = REQUIRED_FONT_FACES.filter(
+  (face) => !fontFiles.some((name) => new RegExp(`^${face}-[A-Za-z0-9_-]+\.woff2$`).test(name)),
+);
+if (missingFaces.length) {
+  problems.push(
+    `faces declared in src/fonts.css were not emitted (${missingFaces.join(", ")}) — a url() no longer resolves to a file in node_modules, most likely a Fontsource rename or a build without devDependencies`,
+  );
+}
+
+/** The same failure seen from the other side: an unresolved specifier left verbatim in the output. */
+for (const styleSheet of assetNames.filter((name) => name.endsWith(".css"))) {
+  const css = readFileSync(join(distDir, "assets", styleSheet), "utf8");
+  if (css.includes("@fontsource-variable") || css.includes("node_modules")) {
+    problems.push(
+      `${styleSheet} still points at node_modules — a url() in src/fonts.css or src/fonts-display.css did not resolve, and Vite only warned about it`,
+    );
+  }
+}
+
 if (problems.length) {
   console.error("verify-renderer-budget: FAILED");
   for (const problem of problems) console.error(`  - ${problem}`);
@@ -119,5 +192,5 @@ if (problems.length) {
 }
 
 console.log(
-  `verify-renderer-budget: OK (${(totalBytes / 1024).toFixed(1)} kB critical JS in ${uniqueScripts.length} chunks, ${totalIcons} Lucide glyphs)`,
+  `verify-renderer-budget: OK (${(totalBytes / 1024).toFixed(1)} kB critical JS in ${uniqueScripts.length} chunks, ${totalIcons} Lucide glyphs, ${(fontBytes / 1024).toFixed(1)} kB fonts in ${fontFiles.length} files)`,
 );

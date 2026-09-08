@@ -36,7 +36,12 @@ changed; the rest is untouched.
   and gate, or strip entirely from this fork.
 - [ ] **`radialInstantActivate: 'swipe'`** reserved in the type, never implemented — build or remove.
 - [ ] Prune deps once the above lands — verify `active-win`, `sql.js`,
-  `node-global-key-listener` each still earn their install size.
+  `node-global-key-listener` each still earn their install size. Measured while fixing §3's font
+  item: `app.asar` is 69.7 MB and 5,385 of its 5,430 entries are `node_modules`, because
+  `build.files` never mentions node_modules but electron-builder packs the production dependency
+  tree anyway. `lucide-react` alone is 2,738 entries, `framer-motion` 379 — both are bundled into
+  `dist/` by Vite and never `require`d at runtime, so like the fonts they belong in
+  `devDependencies`. `electron-updater` (212) and `active-win` (37) are genuinely runtime.
 
 ## 3. Performance / RAM / CPU
 
@@ -48,9 +53,16 @@ changed; the rest is untouched.
   dynamically imported while anything imports it statically (`INEFFECTIVE_DYNAMIC_IMPORT`), so the
   lazy set is a `virtual:lucide-icon-set` module of deep paths. Guarded by
   `scripts/verify-renderer-budget.mjs` (in `npm run build`) and `npm run test:icon-map`.
-- [ ] **All three font families load eagerly** (`src/main.tsx:3-5`) including cyrillic, greek,
+- [x] **All three font families load eagerly** (`src/main.tsx:3-5`) including cyrillic, greek,
   vietnamese and latin-ext subsets (~280 KB woff2) for an English-only UI. Load only used subsets;
   defer fonts the wheel does not need.
+  **Done:** `src/fonts.css` declares latin + latin-ext of Inter and Instrument Sans and nothing
+  else; Space Grotesk is settings-only, so it moved to `src/fonts-display.css` and rides the
+  settings chunk. Shipped woff2 307.7 → 215.8 KB. The bigger find was upstream of that: the three
+  `@fontsource-variable` packages sat in `dependencies`, so electron-builder packed all 57 of their
+  woff2 into `app.asar` on top of the six Vite emits — nothing reads them at runtime. Moved to
+  `devDependencies`: `app.asar` 72.21 → 69.69 MB. `unicode-range` already made unused subsets lazy
+  at runtime, so this is installer weight, not RAM.
 - [ ] **`translations.ts` (3,451 lines, 10 languages) ships for ~5 live strings.** See §6.
 - [ ] **Base64 icons stored in JSON.** `config-v2.json` is 456 KB here, rewritten (plus a `.bak`) on
   every debounced change and mirrored into three `localStorage` keys on the same tick

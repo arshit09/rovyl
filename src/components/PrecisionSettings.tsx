@@ -39,6 +39,7 @@ import { getIcon } from '../iconMap';
 import { resolveWebsiteIconFields } from '../siteFavicon';
 import { SmartIcon } from './SmartIcon';
 import { IconPicker } from './IconPicker';
+import '../fonts-display.css';
 import { NativeAppIcon, useInstalledApps, type InstalledApp } from './installedApps';
 
 interface PrecisionSettingsProps {
