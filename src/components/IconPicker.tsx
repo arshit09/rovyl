@@ -7,8 +7,7 @@ import {
   listPickableIconNames,
   loadFullIconMap,
 } from '../iconMap';
-import type { UIConfig } from '../types';
-import { getTranslation } from '../translations';
+import { uiString } from '../strings';
 import {
   buildResolvedEnglishKeywordMap,
   collectIconsForEnglishTokens,
@@ -66,7 +65,6 @@ function gridNameForSelection(
 export interface IconPickerProps {
   selectedIcon: string;
   onSelect: (iconName: string) => void;
-  config: UIConfig;
   /** `compact`: grid mais densa, busca menor — para painéis estreitos (ex.: ícone do workspace). */
   variant?: 'default' | 'compact';
   className?: string;
@@ -75,7 +73,6 @@ export interface IconPickerProps {
 export const IconPicker: React.FC<IconPickerProps> = ({
   selectedIcon,
   onSelect,
-  config,
   variant = 'default',
   className = '',
 }) => {
@@ -199,7 +196,7 @@ export const IconPicker: React.FC<IconPickerProps> = ({
           type="text"
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
-          placeholder={getTranslation(config, 'iconPicker.search_placeholder')}
+          placeholder={uiString('iconPicker.search_placeholder')}
           className={
             compact
               ? 'w-full bg-white/[0.04] border border-white/[0.08] rounded-lg pl-8 pr-3 py-1.5 text-xs text-white/90 placeholder:text-white/25 focus:outline-none focus:border-white/18 focus:bg-white/[0.06] transition-all'
@@ -211,7 +208,7 @@ export const IconPicker: React.FC<IconPickerProps> = ({
       <p
         className={`shrink-0 text-white/25 ${compact ? 'text-[9px] leading-snug' : 'text-[10px] leading-relaxed'}`}
       >
-        {getTranslation(config, 'iconPicker.english_keywords_hint')}
+        {uiString('iconPicker.english_keywords_hint')}
       </p>
 
       <div
@@ -258,7 +255,7 @@ export const IconPicker: React.FC<IconPickerProps> = ({
             style={compact ? { gridColumn: '1 / -1' } : undefined}
           >
             <p className="text-white/20 text-xs font-medium">
-              {getTranslation(config, 'iconPicker.no_results')}
+              {uiString('iconPicker.no_results')}
             </p>
           </div>
         )}

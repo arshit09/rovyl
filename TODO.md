@@ -63,7 +63,12 @@ changed; the rest is untouched.
   woff2 into `app.asar` on top of the six Vite emits — nothing reads them at runtime. Moved to
   `devDependencies`: `app.asar` 72.21 → 69.69 MB. `unicode-range` already made unused subsets lazy
   at runtime, so this is installer weight, not RAM.
-- [ ] **`translations.ts` (3,451 lines, 10 languages) ships for ~5 live strings.** See §6.
+- [x] **`translations.ts` (3,451 lines, 10 languages) ships for ~5 live strings.** See §6.
+  **Done:** it no longer ships. The six keys live code reached moved to `src/strings.ts` (English,
+  typed keys), and `RadialMenu` / `IconPicker` call that instead of `getTranslation`. Entry chunk
+  315.5 → 148.8 KB; critical JS 548.1 → 385.2 KB. The table itself is still on disk because three
+  dead components import it — deleting those, and it, is §2/§6. Guarded: the build fails if any
+  locale's text reappears in any emitted chunk.
 - [ ] **Base64 icons stored in JSON.** `config-v2.json` is 456 KB here, rewritten (plus a `.bak`) on
   every debounced change and mirrored into three `localStorage` keys on the same tick
   (`src/App.tsx:1378-1380`) — ~1.4 MB serialised per settings tweak, scaling with shortcut count.
@@ -140,9 +145,13 @@ changed; the rest is untouched.
   `SettingsModal`.
 - [ ] **Key parity is broken**: pt/en 429 keys, es 281, fr/de/it/ja/zh/ko/ru 257–258. The surplus
   pt/en keys belong to the dead modal.
-- [ ] Decide: (a) delete `translations.ts`, ship English-only, drop 3,451 lines from the bundle, or
+- [x] Decide: (a) delete `translations.ts`, ship English-only, drop 3,451 lines from the bundle, or
   (b) re-adopt properly — a real `t()` in `PrecisionSettings`, lazy per-language chunks, parity check
   in CI. **(a) is the honest default.**
+  **Decided (a)**, and the bundle half is done — see §3. `src/strings.ts` holds the six live strings
+  and `translations.ts` is out of every chunk. What remains is deleting the file, which has to wait
+  for §2 to delete `SettingsModal` / `SystemCenter` / `WelcomeScreen`, its only importers. The three
+  bullets above are all about that file and go with it.
 
 ## 7. Engineering hygiene
 

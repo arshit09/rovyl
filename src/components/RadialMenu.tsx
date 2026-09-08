@@ -4,7 +4,7 @@ import { getIcon } from '../iconMap';
 import { CornerUpLeft } from 'lucide-react';
 import { SmartIcon } from './SmartIcon';
 import { RovylLogo } from './RovylLogo';
-import { getTranslation } from '../translations';
+import { uiString } from '../strings';
 import { RadialHud } from './RadialHud';
 import {
   getRootRadialApps,
@@ -86,11 +86,11 @@ function sameRadialLevel(a: AppItem[], b: AppItem[]): boolean {
 }
 
 /** When "recent folders" is enabled but MRU fetch is empty or fails, show one explicit slice — never auto-launch the parent IDE. */
-function buildRecentsEmptyFallback(parent: AppItem, config: UIConfig): AppItem[] {
+function buildRecentsEmptyFallback(parent: AppItem): AppItem[] {
   return [
     {
       id: `${parent.id}__recents-empty-fallback`,
-      label: getTranslation(config, 'menu.recents_fallback'),
+      label: uiString('menu.recents_fallback'),
       command: parent.command,
       commandType: parent.commandType || 'app',
       iconName: parent.iconName || 'AppWindow',
@@ -611,12 +611,12 @@ const RadialMenuItem = React.memo(({
                 <Icon size={Math.round(actualIconSize * 0.55)} strokeWidth={1.75} />
               )}
 
-              {/* A espera diz-se com um indicador, não com um ícone que não é o da app. */}
+              {/* A wait is said with an indicator, not with an icon that is not the app's. */}
               {iconPending && !pendingExpired && !hasRasterIcon && (
                 <span
                   className="absolute inset-0 flex items-center justify-center"
                   style={{ background: 'rgba(6,7,9,0.72)' }}
-                  aria-label="A obter ícone"
+                  aria-label="Fetching icon"
                 >
                   <span
                     className="rounded-full border-2 border-white/15 border-t-white/70 animate-spin"
@@ -912,11 +912,9 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
     setIsCenterActive(true);
   }, [isOpen, currentLevelApps.length]);
 
-  const t = (key: string) => getTranslation(config, key);
-
   // The root hub carries the Rovyl identity; deeper levels keep the Back affordance.
   const isRoot = folderStack.length === 0;
-  const centerLabel = !isRoot ? t('menu.back') : (config.centerButton?.label || t('menu.center'));
+  const centerLabel = !isRoot ? uiString('menu.back') : (config.centerButton?.label || uiString('menu.center'));
 
 
   // Reset state when menu opens.
@@ -1389,7 +1387,7 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
                 setActiveIndex(null);
               } else if (selectedItem.hasRecents) {
                 setIsLoadingRecents(false);
-                const fallback = buildRecentsEmptyFallback(selectedItem, stateRef.current.config);
+                const fallback = buildRecentsEmptyFallback(selectedItem);
                 setFolderStack([...folderStack, { label: selectedItem.label, apps: fallback }]);
                 setCurrentLevelApps(fallback);
                 setHasMoved(false);
@@ -1400,7 +1398,7 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
             }).catch(() => {
               setIsLoadingRecents(false);
               if (selectedItem.hasRecents) {
-                const fallback = buildRecentsEmptyFallback(selectedItem, stateRef.current.config);
+                const fallback = buildRecentsEmptyFallback(selectedItem);
                 setFolderStack([...folderStack, { label: selectedItem.label, apps: fallback }]);
                 setCurrentLevelApps(fallback);
                 setHasMoved(false);
@@ -1666,7 +1664,7 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
                   setActiveIndex(null);
                 } else if (selectedItem.hasRecents) {
                   setIsLoadingRecents(false);
-                  const fallback = buildRecentsEmptyFallback(selectedItem, stateRef.current.config);
+                  const fallback = buildRecentsEmptyFallback(selectedItem);
                   setFolderStack(prev => [...prev, { label: selectedItem.label, apps: fallback }]);
                   setCurrentLevelApps(fallback);
                   setHasMoved(false);
@@ -1677,7 +1675,7 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
               }).catch(() => {
                 setIsLoadingRecents(false);
                 if (selectedItem.hasRecents) {
-                  const fallback = buildRecentsEmptyFallback(selectedItem, stateRef.current.config);
+                  const fallback = buildRecentsEmptyFallback(selectedItem);
                   setFolderStack(prev => [...prev, { label: selectedItem.label, apps: fallback }]);
                   setCurrentLevelApps(fallback);
                   setHasMoved(false);
@@ -1851,7 +1849,7 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
             setActiveIndex(null);
           } else if (app.hasRecents) {
             setIsLoadingRecents(false);
-            const fallback = buildRecentsEmptyFallback(app, cfg);
+            const fallback = buildRecentsEmptyFallback(app);
             setFolderStack(prev => [...prev, { label: app.label, apps: fallback }]);
             setCurrentLevelApps(fallback);
             setHasMoved(false);
@@ -1862,7 +1860,7 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
         }).catch(() => {
           setIsLoadingRecents(false);
           if (app.hasRecents) {
-            const fallback = buildRecentsEmptyFallback(app, cfg);
+            const fallback = buildRecentsEmptyFallback(app);
             setFolderStack(prev => [...prev, { label: app.label, apps: fallback }]);
             setCurrentLevelApps(fallback);
             setHasMoved(false);
@@ -2302,7 +2300,7 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
                   className="text-[10px] leading-none text-white/45 px-1.5 py-1 rounded-[5px]"
                   style={{ background: 'rgba(255,255,255,0.09)' }}
                 >
-                  {isRoot ? centerLabel : t('menu.back')}
+                  {isRoot ? centerLabel : uiString('menu.back')}
                 </span>
               </div>
             </div>

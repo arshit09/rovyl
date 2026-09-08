@@ -11,7 +11,6 @@ import {
   workspaceContainsBundledDemoApp,
 } from './defaults';
 import { Minus, X, Maximize, Square, AlertTriangle, ArrowLeft, ArrowRight, PanelLeftClose } from 'lucide-react';
-import type { Language } from './translations';
 import { motion, AnimatePresence } from 'framer-motion';
 import { isLikelyWebUrl, resolveWebsiteIconFields } from './siteFavicon';
 import { preloadIconsByName } from './iconMap';
@@ -1135,7 +1134,6 @@ export default function App() {
 
         const discoverHasDemoFingerprint = hasDemoFingerprint;
         nextConfig = { ...nextConfig, language: 'en' };
-        const uiLangDeferred = 'en' as Language;
 
         /**
          * Arranque sem dados anteriores (reset / primeira instalação): mostrar overlay imediatamente

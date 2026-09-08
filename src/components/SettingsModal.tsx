@@ -590,7 +590,6 @@ const AppEditorModal = React.memo(({
                                             </div>
                                             <div className="bg-black/30 rounded-xl border border-white/5 p-3 max-h-[280px] overflow-y-auto custom-scrollbar">
                                                 <IconPicker
-                                                    config={config}
                                                     selectedIcon={editingApp.app.iconName}
                                                     onSelect={(name) => handleAppChange('iconName', name)}
                                                 />
@@ -918,7 +917,6 @@ const AppEditorModal = React.memo(({
                                         </div>
                                         <div className="flex-1 overflow-y-auto custom-scrollbar p-3 min-h-0">
                                             <IconPicker
-                                                config={config}
                                                 selectedIcon={editingApp.app.iconName}
                                                 onSelect={(name) => handleAppChange('iconName', name)}
                                             />
@@ -1709,7 +1707,6 @@ const WorkspacesTab = React.memo(({
                               <div className="min-h-0 flex-1 px-5 pb-2 pt-2">
                                   <div className="h-[min(360px,48vh)] min-h-[220px]">
                                       <IconPicker
-                                          config={config}
                                           selectedIcon={
                                               config.workspaces[selectedWorkspaceIndex].pickerIconName || 'Layers'
                                           }

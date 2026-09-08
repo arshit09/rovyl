@@ -26,8 +26,8 @@ import { fileURLToPath } from "node:url";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const distDir = join(root, "dist");
 
-/** Ceiling for all statically loaded JS, in bytes. It sat at ~561 kB when this guard was written. */
-const CRITICAL_JS_BUDGET = 620 * 1024;
+/** Ceiling for all statically loaded JS, in bytes. It sits at ~385 kB; it was 806 kB before §3. */
+const CRITICAL_JS_BUDGET = 440 * 1024;
 
 /**
  * Lucide glyphs allowed in the critical path. `CURATED_ICON_MAP` holds 282; the margin is there so
@@ -68,6 +68,26 @@ const REQUIRED_FONT_FACES = [
  */
 const LUCIDE_ICON_DEFINITION = /\(["'`]([A-Z][A-Za-z0-9]*)["'`]\s*,\s*\[\[/g;
 
+/**
+ * One string per locale of `src/translations.ts`, each chosen because it appears nowhere else in
+ * `src/` — so a hit means that table is in the bundle, not that someone wrote a word in Portuguese.
+ *
+ * The table is ten languages of UI text for an app that overwrites `config.language` with `'en'` on
+ * every hydration and has no language selector, and it cannot be tree-shaken because
+ * `getTranslation` indexes it by a runtime key. Importing it anywhere brings all ten.
+ */
+const LOCALE_TEXT_THAT_MUST_NOT_SHIP = {
+  Portuguese: "Núcleo",
+  Spanish: "Buscar icono…",
+  French: "Système",
+  German: "Speichern und Schließen",
+  Italian: "Gestisci la tua identità digitale.",
+  Japanese: "アプリとスペース",
+  Chinese: "选择应用...",
+  Korean: "앱 및 공간",
+  Russian: "Приложения и Пространства",
+};
+
 const problems = [];
 
 let html;
@@ -77,6 +97,9 @@ try {
   console.error(`verify-renderer-budget: no build output at ${distDir} — run 'vite build' first`);
   process.exit(1);
 }
+
+/** Everything the build emitted. Some checks want only the critical path, some want all of it. */
+const assetNames = readdirSync(join(distDir, "assets"));
 
 /** Entry script plus every modulepreload: exactly the JS the browser fetches before first paint. */
 const criticalScripts = [
@@ -120,6 +143,25 @@ if (totalBytes > CRITICAL_JS_BUDGET) {
   );
 }
 
+/**
+ * Every emitted chunk, not only the preloaded ones. The byte and icon budgets are rightly about
+ * what the wheel waits on, but `PrecisionSettings` — the live settings panel, and the obvious place
+ * a language selector would land — is a lazy chunk, so a critical-path-only probe would have been
+ * blind to exactly the regression it is here to catch.
+ */
+const bundleSources = assetNames
+  .filter((name) => name.endsWith(".js"))
+  .map((name) => readFileSync(join(distDir, "assets", name), "utf8"));
+
+const shippedLocales = Object.entries(LOCALE_TEXT_THAT_MUST_NOT_SHIP)
+  .filter(([, probe]) => bundleSources.some((source) => source.includes(probe)))
+  .map(([language]) => language);
+if (shippedLocales.length) {
+  problems.push(
+    `translated UI text is back in the bundle (${shippedLocales.join(", ")}) — the live UI is English-only (src/strings.ts); importing src/translations.ts anywhere ships all ten locales`,
+  );
+}
+
 if (totalIcons > MAX_CRITICAL_ICONS) {
   problems.push(
     `${totalIcons} Lucide glyphs are in the critical path (${iconsByChunk.join(", ")}), over the ${MAX_CRITICAL_ICONS} allowed — keep the barrel out of the static graph and add wheel glyphs to CURATED_ICON_MAP one at a time`,
@@ -130,9 +172,7 @@ if (totalIcons > MAX_CRITICAL_ICONS) {
  * The lazy set must still exist, and must still be lazy. Without both halves a build could pass
  * the checks above by dropping the icon picker's glyphs altogether, or by preloading them anyway.
  */
-const lazyIconChunk = readdirSync(join(distDir, "assets")).find((name) =>
-  name.startsWith("_virtual_lucide-icon-set"),
-);
+const lazyIconChunk = assetNames.find((name) => name.startsWith("_virtual_lucide-icon-set"));
 
 if (!lazyIconChunk) {
   problems.push(
@@ -144,7 +184,6 @@ if (!lazyIconChunk) {
   );
 }
 
-const assetNames = readdirSync(join(distDir, "assets"));
 const fontFiles = assetNames.filter((name) => name.endsWith(".woff2"));
 const fontBytes = fontFiles.reduce(
   (total, name) => total + statSync(join(distDir, "assets", name)).size,
@@ -192,5 +231,5 @@ if (problems.length) {
 }
 
 console.log(
-  `verify-renderer-budget: OK (${(totalBytes / 1024).toFixed(1)} kB critical JS in ${uniqueScripts.length} chunks, ${totalIcons} Lucide glyphs, ${(fontBytes / 1024).toFixed(1)} kB fonts in ${fontFiles.length} files)`,
+  `verify-renderer-budget: OK (${(totalBytes / 1024).toFixed(1)} kB critical JS in ${uniqueScripts.length} chunks, ${totalIcons} Lucide glyphs, ${(fontBytes / 1024).toFixed(1)} kB fonts in ${fontFiles.length} files, English-only)`,
 );

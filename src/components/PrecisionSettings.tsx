@@ -1178,7 +1178,6 @@ function SettingsEditor({
       <WorkspaceManager
         workspace={workspace}
         workspaceIndex={index}
-        config={config}
         isActive={config.activeWorkspaceIndex === index}
         canDelete={config.workspaces.length > 1}
         updateWorkspace={updateWorkspace}
@@ -1489,7 +1488,6 @@ function WorkspaceCards({
 function WorkspaceManager({
   workspace,
   workspaceIndex,
-  config,
   isActive,
   canDelete,
   updateWorkspace,
@@ -1498,7 +1496,6 @@ function WorkspaceManager({
 }: {
   workspace: Workspace;
   workspaceIndex: number;
-  config: UIConfig;
   isActive: boolean;
   canDelete: boolean;
   updateWorkspace: (index: number, patch: Partial<Workspace>) => void;
@@ -1830,7 +1827,6 @@ function WorkspaceManager({
                 <IconPicker
                   selectedIcon={workspace.pickerIconName?.trim() || 'Layers'}
                   onSelect={(iconName) => updateWorkspace(workspaceIndex, { pickerIconName: iconName })}
-                  config={config}
                 />
               </div>
             </motion.div>
