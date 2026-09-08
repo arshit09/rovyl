@@ -130,8 +130,26 @@ changed; the rest is untouched.
 - [ ] **`App.tsx`: 33 `useState` + 32 `useEffect` in one 2,838-line component.** Every wheel open
   re-runs the whole orchestration tree. Extract persistence, discovery, IPC wiring and window mode
   into hooks/reducers.
-- [ ] Record idle RAM/CPU with the always-visible 988×988 layered window before/after the
+- [x] Record idle RAM/CPU with the always-visible 988×988 layered window before/after the
   overlay-window split, so §1 has a number attached.
+  **Before, measured.** Packaged build (`--dir`), app idle, nothing on screen, sampled over 60 s
+  after a 30 s settle:
+
+  | process | working set | CPU |
+  |---|---|---|
+  | browser (main) | 96.2 MB | 0.049% of one core |
+  | renderer | 81.1 MB | 0.172% of one core |
+  | gpu-process | 86.5 MB | 0.000% |
+  | network service | 46.0 MB | 0.000% |
+  | **total** | **309.7 MB** (peak 311.1) | **0.221% of one core** (0.018% of 12) |
+
+  The two figures §1 should be judged against are the **86.5 MB GPU process** — which exists to
+  composite a 988×988 transparent window that is showing nothing — and the **0.172% the renderer
+  burns while idle**. Note what this does *not* say: 988×988×4 B is ~3.9 MB of pixels, so the GPU
+  process is mostly Chromium's own baseline, not the buffer. The honest claim is that the idle
+  overlay keeps a GPU process alive at all; a hidden window would not need one. Dev mode measured
+  317.6 MB / 0.503% for comparison — do not compare that number with a packaged one.
+  Method: `Get-Process` working set and `.CPU` deltas per PID; script kept out of the repo.
 
 ## 4. UX and intuitiveness
 
