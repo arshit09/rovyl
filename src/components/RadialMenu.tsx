@@ -1191,17 +1191,34 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
         y: position.y + gestureVectorRef.current.y,
       });
 
+      /**
+       * A assinatura do nosso próprio `SetCursorPos`: um salto grande que ATERRA no centro da
+       * roda. As duas metades juntas não descrevem mão nenhuma — uma mão que atravesse 120px num
+       * só evento não pára em cima do centro — portanto isto identifica o teleporte pelo que ele
+       * é, e não por estarmos à espera dele.
+       *
+       * Tem de ser incondicional. O `WARP` fica em fila enquanto o helper de PowerShell arranca
+       * (`writeRadialCursorCommand` guarda-o até ao READY), e o primeiro radial de uma sessão pode
+       * abrir antes disso: a bandeira de "estacionamento pendente" expira ao fim de
+       * `PARK_TIMEOUT_MS` e o salto chegava DEPOIS, já a ser somado ao vetor como se fosse gesto —
+       * a roda a saltar para o lado oposto ao da mão a meio de uma mira.
+       */
+      const teleported =
+        !!previous &&
+        Math.hypot(point.x - previous.x, point.y - previous.y) >= PARK_JUMP_PX &&
+        Math.hypot(point.x - position.x, point.y - position.y) <= PARK_LANDING_PX;
+      if (teleported) {
+        gestureParkAtRef.current = 0;
+        return virtual();
+      }
+
       if (gestureParkAtRef.current !== 0) {
         /**
-         * A UMA amostra que aterra no centro — ou que salta mais do que uma mão consegue num só
-         * evento — é o teleporte. Serve de referência nova e o delta dela morre aqui; a seguinte
-         * já é gesto. Descartar tudo até à aterragem comia o arranque do movimento, que é
-         * precisamente onde a sensibilidade alta se joga.
+         * Estacionamento pedido por nós: a primeira amostra a aterrar no centro fecha a espera e o
+         * delta dela morre aqui. Descartar tudo até à aterragem comia o arranque do movimento, que
+         * é precisamente onde a sensibilidade alta se joga.
          */
-        const landed =
-          Math.hypot(point.x - position.x, point.y - position.y) <= PARK_LANDING_PX ||
-          (!!previous && Math.hypot(point.x - previous.x, point.y - previous.y) >= PARK_JUMP_PX);
-        if (landed) {
+        if (Math.hypot(point.x - position.x, point.y - position.y) <= PARK_LANDING_PX) {
           gestureParkAtRef.current = 0;
           return virtual();
         }
@@ -2117,6 +2134,20 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
     const item = stateRef.current.currentLevelApps[aim.index];
     if (!item || item.id !== target.itemId) return void cancelDwell();
     if (gestureConsumedRef.current) return void cancelDwell();
+    /**
+     * A quarentena da execução ANTERIOR também trava esta.
+     *
+     * `handleAppClick` já a respeita, mas respeitá-la lá dentro é tarde: a linha abaixo consome o
+     * gesto primeiro, e uma chamada que volta sem trocar de nível não deixa nada por trás que o
+     * volte a libertar — `gestureConsumedRef` só é limpo na mudança de nível e na abertura. O
+     * resultado era uma roda inerte: nem o tempo nem o clique voltavam a confirmar seja o que for.
+     *
+     * Com o mínimo de 250ms isto era inalcançável, porque a segunda execução mais cedo possível
+     * caía em paint+120+250 = 370ms, já fora dos 300ms. Com a espera opcional a segunda execução
+     * chega aos ~140ms, e o encadeamento passou a ser trivial: abrir uma pasta com um empurrão
+     * deixa a mão ainda a travar, e essa travagem volta a atravessar o limiar lá dentro.
+     */
+    if (Date.now() < quarantineUntilRef.current) return void cancelDwell();
 
     gestureConsumedRef.current = true;
     logRadialConfirm('dwell', lastPointerRef.current, aim);
@@ -2178,25 +2209,38 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
       /** A primeira amostra depois de abrir ou de mudar de nível só serve para pôr a referência. */
       if (dwellBaselineRef.current === null) {
         dwellBaselineRef.current = point;
-        return;
+        /**
+         * Por direção esta amostra NÃO se engole. Só se chega aqui depois de o vetor já ter
+         * passado o limiar (`processMouseMove` devolve antes disso), portanto esta é a primeira
+         * amostra do gesto comprometido — e se a mão parar exatamente aqui, mais nenhuma chega.
+         * Devolver deixava a fatia acesa para sempre e nada a executar.
+         */
+        if (!directionModeRef.current) return;
       }
 
       if (!dwellArmedRef.current) {
         if (Date.now() - paintReadyAtRef.current < INSTANT_ARM_DELAY_MS) return;
-        const baseline = dwellBaselineRef.current;
         /**
-         * Por direção, a prova de intenção é o próprio compromisso: uma fatia só acende depois de
-         * a mão andar o que a sensibilidade pede, e o vetor nasce a zero em cada abertura e em
-         * cada nível. Manter aqui um limiar FIXO maior que esse deixava a sensibilidade alta a
-         * acender sem nunca poder executar — a definição a prometer uma coisa e a roda a fazer outra.
+         * Armar é um facto observado — e por direção o facto já foi observado.
+         *
+         * O limiar existe porque, mirando por posição, um ponteiro PARADO longe do centro acende
+         * uma fatia sem ninguém ter mexido em nada: era preciso ver deslocamento real antes de
+         * deixar o tempo executar. Por direção esse estado não existe — o vetor nasce a zero em
+         * cada abertura e em cada nível, e a única coisa que o faz passar o limiar da
+         * sensibilidade é movimento real da mão. Exigir aqui outro tanto por cima significava
+         * pedir o dobro do que a definição anuncia (36px no "alto", 108px no "baixo") e, pior,
+         * nunca executar quando a mão comprometia a direção e parava — que é literalmente o gesto
+         * que a funcionalidade descreve.
          */
-        const armDistance = directionModeRef.current
-          ? Math.min(INSTANT_ARM_DISPLACEMENT_PX, directionCommitRef.current)
-          : INSTANT_ARM_DISPLACEMENT_PX;
-        if (Math.hypot(point.x - baseline.x, point.y - baseline.y) < armDistance) {
-          return;
+        if (directionModeRef.current) {
+          dwellArmedRef.current = true;
+        } else {
+          const baseline = dwellBaselineRef.current;
+          if (Math.hypot(point.x - baseline.x, point.y - baseline.y) < INSTANT_ARM_DISPLACEMENT_PX) {
+            return;
+          }
+          dwellArmedRef.current = true;
         }
-        dwellArmedRef.current = true;
       }
 
       /** O hub nunca executa por tempo: voltar ao centro é o gesto de desistir. */
@@ -2329,6 +2373,7 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
             */}
             {isOpen && (
               <div
+                data-zn-radial-center="true"
                 className="absolute top-0 left-0 z-30 pointer-events-auto cursor-pointer"
                 style={{
                   width: `${hubHitSize}px`,

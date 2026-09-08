@@ -144,7 +144,11 @@ export interface UIConfig {
    * fica declarado para que uma implementação futura não precise de migrar configs.
    */
   radialInstantActivate?: 'off' | 'swipe' | 'dwell';
-  /** Milissegundos de mira contínua no mesmo alvo antes de executar. Preso a [250, 1200]. */
+  /**
+   * Milissegundos de mira contínua no mesmo alvo antes de executar. Preso a [0, 2000], e o
+   * zero é uma escolha e não um piso: a espera é opcional, e a essa marca a direção executa
+   * assim que se compromete.
+   */
   radialInstantDwellMs?: number;
   /**
    * Quanto deslocamento uma direção precisa para acender a fatia desse lado, com a execução sem

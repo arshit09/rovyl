@@ -934,6 +934,28 @@
   cursor: none !important;
 }
 
+/**
+ * ...e, pela mesma razao, nada dentro dela recebe cliques.
+ *
+ * Os alvos de rato do radial sao testados contra o ponteiro FISICO, e por direcao esse ponteiro ja
+ * nao e a mira: ele fica estacionado no centro (ou onde a mao o deixou ate ao reencosto) enquanto
+ * a fatia acesa sai do vetor do gesto. Os dois divergem por construcao, portanto deixar o DOM
+ * decidir significava confirmar uma coisa e ter aceso outra:
+ *
+ * - o tile por baixo do ponteiro invisivel lancava-se a si proprio em vez do setor apontado;
+ * - o quadrado de 70px do centro engolia o clique -- a mira acende aos 18px, muito antes de o
+ *   ponteiro sair dele -- e a roda FECHAVA em vez de lancar.
+ *
+ * Ambos chamam `stopPropagation`, que em React 17+ para tambem o evento nativo, portanto o
+ * `mouseup` da janela (o unico que sabe o que e a mira por direcao) nunca corria. Inertes, o
+ * evento cai para o scrim, ninguem o para, e esse `mouseup` decide sozinho -- centro incluido.
+ */
+.zn-radial--nocursor .zn-radial-slice *,
+.zn-radial--nocursor .zn-radial-hub,
+.zn-radial--nocursor [data-zn-radial-center] {
+  pointer-events: none !important;
+}
+
 /* Modo normal: expansão progressiva, com desaceleração longa o bastante para a
    troca de workspace/pasta não parecer um corte seco. */
 .zn-radial-slice {
