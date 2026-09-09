@@ -54,3 +54,6 @@ backend/debug_*.json
 # Local build verification runs
 build-out-update-validation/
 build/appx/
+
+# Markdown preview exports
+TODO.html
