@@ -26,7 +26,7 @@ changed; the rest is untouched.
 
 ## 2. Dead code and orphaned features
 
-- [ ] **Delete `src/components/SettingsModal.tsx` (4,964 lines)** — nothing imports it.
+- [x] **Delete `src/components/SettingsModal.tsx` (4,961 lines)** — nothing imports it.
 - [ ] **Delete `WelcomeScreen.tsx` (659)**, **`SystemCenter.tsx` (262)**, **`AppSelector.tsx` (461,
   only reachable via SettingsModal)**. ~6,300 dead lines ≈ 22% of `src/`.
 - [ ] **Weather/battery HUD is orphaned** — `showWeather`, `showBattery`, `clockPosition` have no UI

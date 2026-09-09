@@ -5,7 +5,7 @@
  * chunk the wheel waits on — 167 kB of it, measured — because `getTranslation` indexes the table by
  * a runtime key and nothing can be shaken out of it. Six strings did not justify that, and the ten
  * languages were never reachable anyway: `App.tsx` writes `language: 'en'` over every config it
- * hydrates, and the only language selector left in the tree is inside the dead `SettingsModal`.
+ * hydrates, and the last language selector left the tree with the dead `SettingsModal` (TODO §2).
  *
  * So this is not a decision to drop i18n — it is recording the one this app already made. If real
  * translation comes back it should come back properly (see TODO §6): a per-language chunk loaded on
