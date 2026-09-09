@@ -5,6 +5,7 @@ const {
   globalShortcut,
   screen,
   nativeImage,
+  nativeTheme,
   Menu,
   Tray,
   shell,
@@ -2144,7 +2145,18 @@ function updateWindowSize(mode, anchorScreenPoint) {
      */
     let boundsAlreadyCorrect = false;
     try {
-      boundsAlreadyCorrect = boundsApproxEqual(mainWindow.getBounds(), lastWindowedBounds);
+      /**
+       * Maximizada conta como correta. `lastWindowedBounds` está congelado no rect ANTES de
+       * maximizar — os trackers de `resize`/`move` ignoram a janela maximizada — por isso os dois
+       * rects diferem sempre e o `setBounds` corria de certeza. E `setBounds` numa janela
+       * maximizada desmaximiza-a sem emitir `unmaximize`, deixando o botão do título a mostrar
+       * "Restaurar" numa janela que já não está maximizada: a pancada seguinte maximiza em vez de
+       * restaurar. Reabrir Settings (bandeja, `toggle-settings`, duplo-MMB) não é pedido para
+       * mudar o tamanho da janela.
+       */
+      boundsAlreadyCorrect =
+        mainWindow.isMaximized() ||
+        boundsApproxEqual(mainWindow.getBounds(), lastWindowedBounds);
     } catch (e) {
       boundsAlreadyCorrect = false;
     }
@@ -2226,10 +2238,25 @@ function updateWindowSize(mode, anchorScreenPoint) {
 
 }
 
-/** Recreate the BrowserWindow if it was closed/destroyed (e.g. after errors). */
+/**
+ * Recreate the BrowserWindow if it was closed/destroyed (e.g. after errors).
+ *
+ * `createWindow` only resolves on `ready-to-show` plus a 200 ms stabilization wait. Two gestures
+ * inside that window — a tray double-click is the literal case — both cleared the guard above and
+ * built TWO BrowserWindows: the second took `mainWindow`, the first was orphaned but still alive,
+ * invisible, holding its own listeners and having already overwritten `lastWindowedBounds`.
+ * Sharing the in-flight promise covers all four callers at once. The `.finally` reset is
+ * load-bearing: without it a rejected create would wedge every later call.
+ */
+let mainWindowCreation = null;
 async function ensureMainWindow() {
   if (mainWindow && !mainWindow.isDestroyed()) return mainWindow;
-  mainWindow = await createWindow();
+  if (!mainWindowCreation) {
+    mainWindowCreation = createWindow().finally(() => {
+      mainWindowCreation = null;
+    });
+  }
+  mainWindow = await mainWindowCreation;
   return mainWindow;
 }
 
@@ -2243,10 +2270,41 @@ function clearSkipTaskbarHideTimer() {
 /**
  * Force windowed, interactive mode, then notify renderer to open settings.
  * Cancels the deferred skipTaskbar from showMenuAtCursor (fixes double-MMB → settings glitches).
+ *
+ * The single entry point for every way of asking for Settings: tray menu, tray click,
+ * `toggle-settings` and double-MMB. Two things about arriving here from a minimized window, which
+ * only the tray paths can do:
+ *
+ *   - `updateWindowSize` refuses to `setBounds` while minimized and queues into
+ *     `pendingWindowSize` instead, so the queueing call has to come BEFORE `restore()` — Win32
+ *     dispatches WM_SIZE synchronously, which means `onRestore` runs inside `restore()` and its
+ *     `flushPendingWindowSizeIfNeeded()` is what actually applies the geometry. Queue after, and
+ *     the flush applies the island's `small` and tells the renderer to re-shrink the window a beat
+ *     after Settings opened.
+ *   - that same `onRestore` then rewrites skipTaskbar from `nativeWindowSizeMode` and
+ *     `rendererPanelVisible` — and `rendererPanelVisible` is still false here, since the renderer
+ *     has not been sent `open-settings` yet. So `setSkipTaskbar(false)` is re-asserted afterwards,
+ *     in a `setImmediate` that lands after the second `restore` listener's own deferred flush.
  */
 function openSettingsFromMainProcess() {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   clearSkipTaskbarHideTimer();
+  /** Steers `onRestore` away from its passive-hide branch and into the one that flushes. */
+  windowBuriedPassive = false;
+  try {
+    if (mainWindow.isMinimized()) {
+      updateWindowSize("windowed");
+      mainWindow.restore();
+    }
+  } catch (e) {
+    diagLog(`[Settings] restore: ${e.message}`);
+  }
+  /** Coming back from the tray with the renderer still throttled shows the old texture first. */
+  try {
+    mainWindow.webContents.setBackgroundThrottling(false);
+  } catch (e) {
+    /* ignore */
+  }
   mainWindow.setSkipTaskbar(false);
   mainWindow.setVisibleOnAllWorkspaces(false);
   updateWindowSize("windowed");
@@ -2261,6 +2319,14 @@ function openSettingsFromMainProcess() {
   mainWindow.focus();
   mainWindow.webContents.focus();
   mainWindow.webContents.send("open-settings");
+  setImmediate(() => {
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    try {
+      mainWindow.setSkipTaskbar(false);
+    } catch (e) {
+      /* ignore */
+    }
+  });
   try {
     if (
       mainWindow.webContents &&
@@ -3873,32 +3939,141 @@ app.whenReady().then(async () => {
   });
 
   // Configurar Ícone na Bandeja (Tray)
-  const iconPath = isDev
-    ? path.join(__dirname, "../public/icon.png")
-    : path.join(__dirname, "../dist/icon.png");
+  /**
+   * `public/` in dev, `dist/` when packaged — Vite copies publicDir verbatim and `dist/**` is
+   * already in electron-builder's `files`, so these read straight out of the asar. Both arms have
+   * to move together, which is why this is a helper and not a ternary at each call site.
+   */
+  const uiAssetPath = (name) =>
+    path.join(__dirname, isDev ? "../public" : "../dist", name);
+
+  /**
+   * `createFromPath` does not throw on a bad path — it hands back an empty image. But handing that
+   * same path to a menu item as a plain `icon` STRING does throw, and the catch around the tray
+   * would have swallowed it and left the user with no tray icon at all: strictly worse than a
+   * missing glyph. Resolve to a NativeImage first, then omit the key when there is nothing to show.
+   *
+   * Always the un-suffixed name: that is what makes Electron scan for the `@2x`/`@3x` siblings.
+   * Never `.resize()` the result either — it collapses the image to a single 1x representation and
+   * throws the high-DPI ones away.
+   */
+  const menuIcon = (baseName) => {
+    /**
+     * Forced colors paints the menu from the High Contrast palette — black ground in three of the
+     * four stock themes — while `shouldUseDarkColors` is hard-false there, so either file is a
+     * guess and the light one is a near-invisible smudge beside a 21:1 label. No glyph beats the
+     * wrong glyph; the `nativeTheme` rebuild below puts them back when the user leaves HC.
+     */
+    if (nativeTheme.shouldUseHighContrastColors) return null;
+    /** Windows cannot tint a menu glyph for us, so the file has to match the menu's own theme. */
+    const name = nativeTheme.shouldUseDarkColors
+      ? `${baseName}-dark.png`
+      : `${baseName}.png`;
+    try {
+      const image = nativeImage.createFromPath(uiAssetPath(name));
+      if (image.isEmpty()) {
+        console.warn("WARNING: tray menu icon is empty. Path:", uiAssetPath(name));
+        return null;
+      }
+      return image;
+    } catch (e) {
+      console.warn("WARNING: tray menu icon failed:", name, e.message);
+      return null;
+    }
+  };
+
+  /**
+   * Windows delivers `click` on WM_LBUTTONDOWN and `double-click` on WM_LBUTTONDBLCLK, so one
+   * double-click arrives here twice and the second is an echo — Settings is the same destination
+   * either way. Rejected on the leading edge, never trailing: opening has to feel immediate.
+   *
+   * The window covers the slowest the OS will accept a double-click at: `GetDoubleClickTime` is
+   * 500 ms by default and reaches ~900 ms at the "Slow" end of the mouse slider, so anything
+   * tighter lets the echo through on exactly the machines the guard exists for.
+   *
+   * What keeps a window that wide from eating a real second click is the visibility test rather
+   * than the clock. The echo always finds a window the first event already showed; a deliberate
+   * second click means the user dismissed Settings in between, so it finds one hidden and passes.
+   */
+  const TRAY_OPEN_SETTINGS_COOLDOWN_MS = 900;
+  let trayOpenSettingsAt = 0;
+  const openSettingsFromTray = async () => {
+    if (isAppQuitting) return;
+    const now = Date.now();
+    let alreadyShowing = false;
+    try {
+      alreadyShowing =
+        !!mainWindow &&
+        !mainWindow.isDestroyed() &&
+        mainWindow.isVisible() &&
+        !mainWindow.isMinimized();
+    } catch (e) {
+      alreadyShowing = false;
+    }
+    if (alreadyShowing && now - trayOpenSettingsAt < TRAY_OPEN_SETTINGS_COOLDOWN_MS) return;
+    trayOpenSettingsAt = now;
+    try {
+      await ensureMainWindow();
+      if (isAppQuitting) return;
+      openSettingsFromMainProcess();
+    } catch (e) {
+      diagLog(`[Tray] Abrir Configurações: ${e.message}`);
+    }
+  };
+
+  const buildTrayMenu = () => {
+    const settingsIcon = menuIcon("tray-settings");
+    const quitIcon = menuIcon("tray-power");
+    return Menu.buildFromTemplate([
+      {
+        label: "Open Settings",
+        ...(settingsIcon ? { icon: settingsIcon } : {}),
+        click: () => {
+          void openSettingsFromTray();
+        },
+      },
+      { type: "separator" },
+      {
+        label: "Quit",
+        ...(quitIcon ? { icon: quitIcon } : {}),
+        click: () => app.quit(),
+      },
+    ]);
+  };
+
   try {
+    const iconPath = uiAssetPath("icon.png");
     const trayIcon = nativeImage.createFromPath(iconPath);
     if (trayIcon.isEmpty()) {
       console.warn("WARNING: Tray icon is empty. Path:", iconPath);
     }
     const resizedIcon = trayIcon.resize({ width: 16, height: 16 });
     tray = new Tray(resizedIcon);
-    const contextMenu = Menu.buildFromTemplate([
-      {
-        label: "Open Settings",
-        click: async () => {
-          try {
-            await ensureMainWindow();
-            openSettingsFromMainProcess();
-          } catch (e) {
-            diagLog(`[Tray] Abrir Configurações: ${e.message}`);
-          }
-        },
-      },
-      { label: "Quit", click: () => app.quit() },
-    ]);
     tray.setToolTip("Rovyl");
-    tray.setContextMenu(contextMenu);
+    tray.setContextMenu(buildTrayMenu());
+
+    /** A menu item's icon is fixed at build time, so a theme flip means rebuilding the menu. */
+    nativeTheme.on("updated", () => {
+      if (!tray || tray.isDestroyed()) return;
+      try {
+        tray.setContextMenu(buildTrayMenu());
+      } catch (e) {
+        diagLog(`[Tray] rebuild menu for theme: ${e.message}`);
+      }
+    });
+
+    /**
+     * On Windows a context menu does NOT swallow the left button — that constraint is macOS's.
+     * The right button pops the menu by itself and stops emitting `right-click`, so there is no
+     * listener for it here. Both listeners below share one cooldown on purpose: whether a
+     * double-click really yields click+double-click or click+click, the outcome is the same.
+     */
+    tray.on("click", () => {
+      void openSettingsFromTray();
+    });
+    tray.on("double-click", () => {
+      void openSettingsFromTray();
+    });
 
     // Feedback de início
     console.log("Rovyl started successfully in the background.");

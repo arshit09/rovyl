@@ -22,6 +22,7 @@
     "test:launch-failure": "node scripts/launch-failure-smoke.mjs",
     "test:icon-store": "node scripts/icon-store-smoke.mjs",
     "test:persistence-mirror": "node scripts/persistence-mirror-smoke.mjs",
+    "icons:tray": "node scripts/generate-tray-icons.mjs",
     "verify:radial-windowing": "node scripts/verify-radial-windowing.mjs",
     "verify:renderer-budget": "node scripts/verify-renderer-budget.mjs",
     "release": "node scripts/release.mjs",

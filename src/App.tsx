@@ -1921,6 +1921,10 @@ export default function App() {
     const cleanupSettings = window.electron?.onOpenSettings(() => {
       flushSync(() => {
         setPanelChromeDismissedForIsland(false);
+        // Same cover clearing as onOpenDashboard above: the tray can ask for Settings while a
+        // pre-minimize neutral cover is still up, and only `main-window-minimized` clears it.
+        setMinimizeNeutralCoverActive(false);
+        setRadialPreShowSolidCover(false);
         setIsMenuOpen(false);
         setIsSettingsOpen(true);
         setIsDashboardOpen(false);
