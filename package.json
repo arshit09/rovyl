@@ -104,7 +104,7 @@
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "guid": "5e135f2a-7b3b-4e12-8c14-998822334455",
-      "artifactName": "${productName}.${ext}",
+      "artifactName": "${productName}-Setup-${version}.${ext}",
       "include": "nsis/installer.nsh",
       "deleteAppDataOnUninstall": true
     },
