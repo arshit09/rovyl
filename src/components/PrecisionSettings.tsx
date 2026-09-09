@@ -52,13 +52,32 @@ interface PrecisionSettingsProps {
   setConfig: (value: UIConfig | ((prev: UIConfig) => UIConfig)) => void;
   onReset: () => void;
   onOpenDashboard: () => void;
+  /**
+   * Onde o utilizador ia. Vive no `App` porque este componente não sobrevive a usar a app:
+   * a roda por cima do painel, o recolher para a ilha e o atalho com as Definições arrumadas
+   * desmontam-no, e tudo o que fosse estado local voltava a `general` sem ninguém ter pedido.
+   */
+  nav: SettingsNav;
+  setNav: React.Dispatch<React.SetStateAction<SettingsNav>>;
   /** Estado da licença ativa nesta máquina — a linha das definições espelha-o. */
   /** Verdadeiro enquanto houver um pedido pendente para abrir o cartão da licença. */
   /** Chamado assim que o pedido é atendido, para o App o limpar. */
   isPage?: boolean;
 }
 
-type SectionId = 'general' | 'trigger' | 'appearance' | 'spaces' | 'advanced';
+export type SectionId = 'general' | 'trigger' | 'appearance' | 'spaces' | 'advanced';
+
+/**
+ * A navegação que tem de durar mais do que a árvore: secção aberta e barra lateral.
+ *
+ * Só o TIPO atravessa a fronteira para o `App` — `import type` é apagado na compilação e este
+ * módulo continua a ser carregado só por `React.lazy`. Exportar aqui o valor inicial punha as
+ * Definições inteiras no chunk que a roda espera para pintar.
+ */
+export interface SettingsNav {
+  sectionId: SectionId;
+  isSidebarCollapsed: boolean;
+}
 
 /** O modal fica reservado ao que não cabe numa linha: listas longas, gravação e edição. */
 type Editor =
@@ -118,9 +137,36 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
   config,
   setConfig,
   onReset,
+  nav,
+  setNav,
 }) => {
-  const [sectionId, setSectionId] = useState<SectionId>('general');
-  const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  /**
+   * Os dois valores continuam a ler-se e a escrever-se como estado local — mudou só onde moram.
+   * Os `setNav` funcionais garantem que duas escritas no mesmo commit não se apagam uma à outra.
+   */
+  const { sectionId, isSidebarCollapsed } = nav;
+  const setSectionId = useCallback(
+    (value: React.SetStateAction<SectionId>) =>
+      setNav((current) => ({
+        ...current,
+        sectionId:
+          typeof value === 'function'
+            ? (value as (previous: SectionId) => SectionId)(current.sectionId)
+            : value,
+      })),
+    [setNav],
+  );
+  const setIsSidebarCollapsed = useCallback(
+    (value: React.SetStateAction<boolean>) =>
+      setNav((current) => ({
+        ...current,
+        isSidebarCollapsed:
+          typeof value === 'function'
+            ? (value as (previous: boolean) => boolean)(current.isSidebarCollapsed)
+            : value,
+      })),
+    [setNav],
+  );
   const [editor, setEditor] = useState<Editor>(null);
   const [query, setQuery] = useState('');
   const [toast, setToast] = useState<string | null>(null);
@@ -248,6 +294,15 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
   useEffect(() => {
     if (!isOpen) return;
     const onKey = (event: KeyboardEvent) => {
+      /**
+       * O Escape que fecha a roda não é nosso.
+       *
+       * `RadialMenu` ouve em CAPTURA e faz `preventDefault` antes de este ouvinte de bolha correr,
+       * mas não `stopPropagation` — por isso a mesma tecla chegava aqui e fechava também o painel:
+       * um Escape com a roda por cima das Definições desligava as duas coisas em vez de só a roda.
+       * Quem já reclamou a tecla marca-a; nós respeitamos a marca.
+       */
+      if (event.defaultPrevented) return;
       if (event.key === 'Escape') {
         if (editor) setEditor(null);
         else onClose();

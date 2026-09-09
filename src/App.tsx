@@ -16,6 +16,8 @@ import { useIconHealing } from './hooks/useIconHealing';
 import { mirrorPersistenceToLocalStorage } from './persistenceMirror';
 /** `import type` is erased at compile time: `launchFailure.ts` stays only in the late card chunk. */
 import type { SurfacedFault } from './launchFailure';
+/** Erased too — a value import here would put the whole settings module in the wheel's chunk. */
+import type { SettingsNav } from './components/PrecisionSettings';
 
 /** Settings is the largest UI surface; radial-only sessions never need to parse or retain it. */
 const PrecisionSettings = React.lazy(() =>
@@ -235,6 +237,19 @@ export default function App() {
   /** Main: `prepare-radial-show` — pintar antes de `show()` para não expor textura antiga (minimizado/dashboard). */
   const [radialPreShowSolidCover, setRadialPreShowSolidCover] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(true);
+  /**
+   * Onde as Definições estavam abertas. Aqui em cima porque o painel não sobrevive a usar a app.
+   *
+   * A superfície é desmontada por três caminhos independentes — a roda por cima dela (o commit em
+   * que `panelOverlayClientRect` ainda não existe), o recolher para a ilha, e o atalho com o painel
+   * já arrumado — e o React leva o estado do componente com ela. Enquanto a secção aberta vivia lá
+   * dentro, qualquer um destes gestos devolvia o utilizador a General a meio do que estava a fazer.
+   * Guardada aqui, atravessa a desmontagem e não toca em nada do que decide o que se pinta.
+   */
+  const [settingsNav, setSettingsNav] = useState<SettingsNav>({
+    sectionId: 'general',
+    isSidebarCollapsed: false,
+  });
   /** Two-paint transparent close phase so DWM never caches Settings as the idle HWND texture. */
   const [panelNeutralizingClose, setPanelNeutralizingClose] = useState(false);
   const isDashboardOpenRef = useRef(false);
@@ -2510,7 +2525,23 @@ export default function App() {
         {/* DELETED: Removed redundant background to allow RadialMenu to handle it exclusively */}
 
         {/* WELCOME SCREEN / DASHBOARD — AnimatePresence sync evita buraco só com fundo entre dashboard e definições (DWM). */}
-        {panelContentVisible && (
+        {/**
+         * Esconder, não desmontar.
+         *
+         * `panelContentVisible` existe para o painel não se DESENHAR antes de ter posição (ver
+         * `panelAwaitingOverlayPlacement`), e conseguia-o retirando a subárvore do React. Como o
+         * main manda sempre `keepPanel` com rect, e esse rect só chega a coordenadas de cliente no
+         * `useLayoutEffect` seguinte, TODO o gesto da roda por cima das Definições passava por um
+         * commit sem árvore — e ao fechar a roda o painel voltava a montar-se, a repetir a entrada
+         * de 0,28 s e o fade da `.zs-shell`. O painel parecia recarregar de cada vez que se usava a
+         * app, quando nunca tinha saído.
+         *
+         * `display: none` suprime exatamente o mesmo: o Chromium não gera caixa nenhuma, portanto o
+         * frame entregue ao DWM é igual ao que era sem a subárvore. O FUNDO continua a ser pintado
+         * pelo contentor (`zenith-panel-surface`), que fica de fora deste `div` — a lacuna de
+         * posicionamento pinta o que sempre pintou. Muda só o que sobrevive ao gesto.
+         */}
+        <div className={panelContentVisible ? undefined : 'hidden'}>
           <React.Suspense
             fallback={
               isSettingsOpen && panelSurfaceOpen ? (
@@ -2525,13 +2556,17 @@ export default function App() {
                 <PrecisionSettings
                   isOpen={isSettingsOpen}
                   isPage={true}
+                  nav={settingsNav}
+                  setNav={setSettingsNav}
                   onClose={handleClosePanelToBackground}
-                  apps={apps} setApps={setApps} config={config} setConfig={setConfig} onReset={async () => { 
+                  apps={apps} setApps={setApps} config={config} setConfig={setConfig} onReset={async () => {
                     try {
                       setIsDashboardOpen(false);
                       setIsSettingsOpen(false);
                       setIsAppReady(false);
                       setIsLoaded(false);
+                      /** Repor tudo e reabrir em Advanced, onde se carregou no botão, seria estranho. */
+                      setSettingsNav({ sectionId: 'general', isSidebarCollapsed: false });
                     } catch(e) {}
                     setApps(MINIMAL_MAIN_WORKSPACE_APPS); 
                     setConfig(DEFAULT_UI_CONFIG); 
@@ -2548,7 +2583,7 @@ export default function App() {
                 />
             </PanelTransition>
           </React.Suspense>
-        )}
+        </div>
 
       </div>
 
