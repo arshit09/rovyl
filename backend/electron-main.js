@@ -1856,11 +1856,18 @@ function setRadialMouseBlocking(bounds, monitorBounds) {
 /**
  * Passa a captura do botao de disparo para o hook. `slop` decide o que ainda conta como clique
  * simples e e devolvido a janela por baixo; acima disso o gesto foi uma mira e nao se devolve nada.
+ *
+ * `clickHoldMs` e `clickDragPx` sao as duas provas do modo "click" de que a pressao deixou de ser
+ * nossa: durou de mais, ou a mao saiu do sitio. Vale a que chegar primeiro, e o hook devolve o
+ * botao a janela por baixo enquanto a pressao ainda decorre. Vao no comando em vez de estarem
+ * escritos nas duas linguagens — o main e quem manda nos numeros, como ja acontece com o `slop`.
  */
-function setRadialTriggerCapture(virtualKey, mode, slop) {
+function setRadialTriggerCapture(virtualKey, mode, slop, clickHoldMs, clickDragPx) {
   if (process.platform !== "win32") return;
   ensureRadialMouseBlocker();
-  writeRadialMouseBlocker(`TRIGGER ${virtualKey} ${mode} ${slop}`);
+  writeRadialMouseBlocker(
+    `TRIGGER ${virtualKey} ${mode} ${slop} ${clickHoldMs} ${clickDragPx}`,
+  );
 }
 
 function clearRadialTriggerCapture() {
@@ -5010,6 +5017,46 @@ app.whenReady().then(async () => {
    * O modo "click" não passa por este timer.
    */
   const MMB_HOLD_OPEN_DELAY_MS = 200;
+  /**
+   * Limiar do modo "click": acima disto a pressão foi SEGURAR e o radial não abre.
+   *
+   * Sem ele, o modo "click" abria em QUALQUER largada — a pressão era cronometrada em
+   * `mmbClickDownAt` e o valor nunca chegava a ser lido. Quem segura a roda para deslocar a
+   * página vê o hook engolir o botão (nada rola) e, ao largar, aparecia o radial; com a execução
+   * sem clique ligada, o movimento que ainda restava na mão confirmava logo uma direção e
+   * lançava uma app que ninguém escolheu.
+   *
+   * Não é o `PASSTHROUGH_MAX_MS` de 250 ms do hook: esse decide se o clique engolido é devolvido
+   * à janela por baixo, onde falhar custa um clique do meio que se repete. Aqui falhar custa o
+   * gesto principal da app, sem qualquer sinal de que foi recusado — por isso a margem é mais
+   * larga. Um clique deliberado no botão do meio (duro, é a roda premida a eixo) chega aos 300 ms;
+   * segurar para deslocar nunca desce dos ~500 ms, porque o próprio movimento demora.
+   */
+  const MMB_CLICK_MAX_MS = 400;
+  /**
+   * A outra prova, e a que se sente: a mao saiu do sitio, logo a pressao nao e um clique e o botão
+   * pode ir para a janela por baixo JA, sem esperar pelos 400 ms.
+   *
+   * Deslocar é mover, portanto na prática o deslocamento arranca assim que há alguma coisa para
+   * deslocar — que é a diferença entre "a roda premida não faz nada durante meio segundo" e
+   * "funciona como sempre funcionou".
+   *
+   * 30 px fica muito acima do tremor de uma mão a clicar (abaixo de 10 px, mesmo com DPI alto) e
+   * muito abaixo de qualquer gesto de deslocar. Não é o `TRIGGER_PASSTHROUGH_SLOP_PX` de 6 px:
+   * esse decide se um clique curto é devolvido, e 6 px aqui roubaria cliques a mãos trémulas.
+   */
+  const MMB_CLICK_DRAG_PX = 30;
+  /**
+   * A rede do main, e nada mais.
+   *
+   * Quem classifica a pressao e o hook: tem o instante exato das duas metades do botao e manda
+   * `TRIGGER_HOLD` em vez de `TRIGGER_UP` quando ela foi segurar. Aqui so se mede do instante em
+   * que a LINHA do DOWN foi lida ao instante em que a do UP foi lida, o que inclui o stdout e o
+   * ciclo de eventos do Electron — apertar isto ate aos 400 ms punha os dois relogios a discutir a
+   * fronteira e a recusar cliques legitimos por causa de um atraso de leitura. Fica folgado: apanha
+   * uma pressao absurda que tenha chegado aqui na mesma, e mais nada.
+   */
+  const MMB_CLICK_BACKSTOP_MS = 1000;
   let mmbHoldOpenTimer = null;
   let mmbIsDown = false;
   /** Invalida uma verificação assíncrona se o botão for solto ou surgir um gesto mais novo. */
@@ -5092,7 +5139,13 @@ app.whenReady().then(async () => {
     radialTriggerListener = (text) => {
       if (handleTriggerData) void handleTriggerData(text);
     };
-    setRadialTriggerCapture(virtualKey, mode, TRIGGER_PASSTHROUGH_SLOP_PX);
+    setRadialTriggerCapture(
+      virtualKey,
+      mode,
+      TRIGGER_PASSTHROUGH_SLOP_PX,
+      MMB_CLICK_MAX_MS,
+      MMB_CLICK_DRAG_PX,
+    );
 
     handleTriggerData = async (data) => {
       const lines = data.toString().split(/\r?\n/);
@@ -5172,7 +5225,14 @@ app.whenReady().then(async () => {
               startMmbCursorTracking();
             }, MMB_HOLD_OPEN_DELAY_MS);
           }
-        } else if (msg === "TRIGGER_UP") {
+        } else if (msg === "TRIGGER_UP" || msg === "TRIGGER_HOLD") {
+          /**
+           * `TRIGGER_HOLD` e a largada de uma pressao que o hook ja classificou como SEGURAR e ja
+           * devolveu a janela por baixo. Tem de passar por esta limpeza toda — em especial pelo
+           * consumo de `suppressNextMmbRelease`, que de outra forma ficava preso a comer a largada
+           * do gesto seguinte — mas nao pode abrir nem selecionar coisa nenhuma.
+           */
+          const wasHold = msg === "TRIGGER_HOLD";
           mmbIsDown = false;
           mmbHoldGestureId += 1;
           stopMmbCursorTracking();
@@ -5180,10 +5240,44 @@ app.whenReady().then(async () => {
             suppressNextMmbRelease = false;
             continue;
           }
-          if (cachedRadialFlags.mouseTriggerMode === "click") {
+          if (wasHold) {
             mmbClickDownAt = 0;
+            continue;
+          }
+          if (cachedRadialFlags.mouseTriggerMode === "click") {
+            /**
+             * Instantâneo ANTES do `await`: `shouldOpenMenu()` pode custar mais de um segundo pelo
+             * recurso ao PowerShell, e `handleTriggerData` é disparado sem espera — quando ele
+             * resolver, outra passagem já reescreveu estes campos.
+             */
+            const downAt = mmbClickDownAt;
+            const gestureId = mmbHoldGestureId;
+            mmbClickDownAt = 0;
+            /**
+             * Sem DOWN emparelhado a duração é DESCONHECIDA, e desconhecida resolve para segurar,
+             * nunca para clicar. É o caso de re-armar o hook com o botão já premido — mudar de
+             * botão ou de modo nas definições com o rato na mão: `stopMouseHook` zera
+             * `mmbClickDownAt`, portanto essa largada órfã deixa de abrir seja o que for.
+             */
+            const heldMs = downAt ? Date.now() - downAt : Number.POSITIVE_INFINITY;
+            if (heldMs > MMB_CLICK_BACKSTOP_MS) {
+              /** O único modo de falha disto é um clique recusado em silêncio: fica no log. */
+              diagLog(
+                `[MouseHook] Largada ignorada (${
+                  Number.isFinite(heldMs) ? `${heldMs}ms` : "sem DOWN"
+                } > ${MMB_CLICK_BACKSTOP_MS}ms): foi segurar, não clicar.`,
+              );
+              continue;
+            }
             const allowed = await shouldOpenMenu();
-            if (allowed) showMenuAtCursor("mmb-click");
+            /**
+             * O gesto pode ter sido substituído enquanto o modo de jogo era verificado: um DOWN
+             * novo fecha o radial pelo ramo `closeOnly` e arma `suppressNextMmbRelease`. Reabrir
+             * aqui devolvia a roda que o utilizador acabara de fechar e deixava essa bandeira
+             * presa, a comer a largada do gesto seguinte.
+             */
+            if (!allowed || mmbHoldGestureId !== gestureId) continue;
+            showMenuAtCursor("mmb-click");
             continue;
           }
           if (mmbHoldOpenTimer) {
@@ -5211,6 +5305,12 @@ app.whenReady().then(async () => {
     }
     mmbFirstDownAt = 0;
     mmbClickDownAt = 0;
+    /**
+     * Faltava aqui. Um hook reiniciado a meio da pressão deixava a bandeira presa e ela comia a
+     * largada do gesto seguinte — o mesmo "o meu clique não fez nada" que o limiar acima passa a
+     * tornar suspeito, portanto não pode ficar uma segunda causa dele de pé.
+     */
+    suppressNextMmbRelease = false;
     diagLog("Stopping Mouse Hook");
     radialTriggerListener = null;
     clearRadialTriggerCapture();
