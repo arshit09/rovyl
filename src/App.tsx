@@ -9,11 +9,13 @@ import {
   stripInternalWidgetsFromConfig,
   workspaceContainsBundledDemoApp,
 } from './defaults';
-import { Minus, X, Maximize, Square, AlertTriangle, ArrowLeft, ArrowRight, PanelLeftClose } from 'lucide-react';
+import { Minus, X, Maximize, Square, ArrowLeft, ArrowRight, PanelLeftClose } from 'lucide-react';
 import { preloadIconsByName } from './iconMap';
 import { isRemoteIconUrl, isStoredIconRef, isWebShortcutItem } from './iconRef';
 import { useIconHealing } from './hooks/useIconHealing';
 import { mirrorPersistenceToLocalStorage } from './persistenceMirror';
+/** `import type` is erased at compile time: `launchFailure.ts` stays only in the late card chunk. */
+import type { SurfacedFault } from './launchFailure';
 
 /** Settings is the largest UI surface; radial-only sessions never need to parse or retain it. */
 const PrecisionSettings = React.lazy(() =>
@@ -326,13 +328,21 @@ export default function App() {
   const radialWindowOriginHintRef = useRef<Coordinates | null>(null);
   const [triggerSource, setTriggerSource] = useState<'mmb' | 'mmb-click' | 'shortcut'>('shortcut');
   const radialTransitionWarmedRef = useRef(false);
-  const [lastLaunched, setLastLaunched] = useState<AppItem | null>(null);
-  const [executionError, setExecutionError] = useState<string | null>(null);
+  /** One failure, one card. `seq` rises with each so animation and timer restart. */
+  const [launchFault, setLaunchFault] = useState<SurfacedFault | null>(null);
+  /**
+   * Kept apart from `launchFault` on purpose: this one reports data loss and outlives every launch
+   * failure. Sharing one slot meant the next app that failed to open silently threw it away.
+   */
+  const [configNotice, setConfigNotice] = useState<SurfacedFault | null>(null);
+  const faultSeqRef = useRef(0);
+  /** The label only exists on this side: IPC carries the command, not the item. See `executeAction`. */
+  const lastDispatchRef = useRef<{ label: string; command: string; at: number } | null>(null);
   /** Latches on the first failure so the overlay chunk is fetched then, and never before. */
   const [errorOverlaysNeeded, setErrorOverlaysNeeded] = useState(false);
   useEffect(() => {
-    if (lastLaunched || executionError) setErrorOverlaysNeeded(true);
-  }, [lastLaunched, executionError]);
+    if (launchFault || configNotice) setErrorOverlaysNeeded(true);
+  }, [launchFault, configNotice]);
   const [isDesktopMode, setIsDesktopMode] = useState(false);
   /** Só montar a ilha depois de `setWindowSize('small')` com bounds do monitor — senão o hit-shape usa coords com a janela ainda em 1280×800 (dev). */
   const [electronSmallOverlayReady, setElectronSmallOverlayReady] = useState(false);
@@ -654,18 +664,43 @@ export default function App() {
 
   // Listen for execution errors from backend
   useEffect(() => {
-    let clearErrorTimer: number | undefined;
-    if (window.electron?.onExecutionError) {
-      const unsubscribe = window.electron.onExecutionError((errorMsg: string) => {
-        setExecutionError(errorMsg);
-        if (clearErrorTimer !== undefined) window.clearTimeout(clearErrorTimer);
-        clearErrorTimer = window.setTimeout(() => setExecutionError(null), 5000);
+    if (!window.electron?.onExecutionError) return;
+    const unsubscribe = window.electron.onExecutionError((errorMsg, details) => {
+      console.error('Execution error received:', errorMsg);
+      /**
+       * Global-shortcut registration noise: `save-full-config` re-registers everything many times
+       * and this used to flood the UI. It stays HERE, and not in the classifier, so a failure
+       * nobody will see does not go and fetch the card's chunk (and `framer-motion` with it).
+       */
+      const normalized = errorMsg.toLowerCase();
+      const isGlobalShortcutRegistrationError =
+        normalized.includes('atalho global') ||
+        normalized.includes('global shortcut') ||
+        normalized.includes('registar o atalho');
+      if (isGlobalShortcutRegistrationError) {
+        window.electron?.savePersistenceLog?.(`suppressed global shortcut toast: ${errorMsg}`);
+        return;
+      }
+
+      /** Main does not know the name the user read on the wheel; this side does, if it is the same command. */
+      const dispatched = lastDispatchRef.current;
+      const appLabel =
+        dispatched?.label &&
+        Date.now() - dispatched.at < 15000 &&
+        (!details?.command || details.command === dispatched.command)
+          ? dispatched.label
+          : undefined;
+
+      faultSeqRef.current += 1;
+      setLaunchFault({
+        kind: 'launch',
+        seq: faultSeqRef.current,
+        raw: errorMsg,
+        details,
+        appLabel,
       });
-      return () => {
-        unsubscribe?.();
-        if (clearErrorTimer !== undefined) window.clearTimeout(clearErrorTimer);
-      };
-    }
+    });
+    return unsubscribe;
   }, []);
 
   /** 241 lines of re-fetch and retry bookkeeping, and none of it is anyone else's business. */
@@ -737,9 +772,16 @@ export default function App() {
         window.electron?.savePersistenceLog?.(
           `Hydration: no payload but disk has data (primary=${persistenceMeta.primaryBytes} bak=${persistenceMeta.backupBytes} quarantine=${quarantineBytes}) — blocking saves`,
         );
-        setExecutionError(
-          'Rovyl could not read the configuration stored in AppData. Saving is blocked to protect your data. Check rovyl-persistence.log in the app data folder, look for config-v2.json.broken-* files, or restore config-v2.json / .bak.',
-        );
+        faultSeqRef.current += 1;
+        setConfigNotice({
+          kind: 'notice',
+          seq: faultSeqRef.current,
+          title: 'Rovyl could not read your saved configuration',
+          message:
+            'Saving is blocked so nothing already on disk gets overwritten. Your shortcuts are still in AppData.',
+          hint:
+            'Check rovyl-persistence.log in the app data folder, look for config-v2.json.broken-* files, or restore config-v2.json / .bak.',
+        });
       } else {
         persistenceSaveBlockedRef.current = false;
       }
@@ -1884,29 +1926,6 @@ export default function App() {
       window.dispatchEvent(new MouseEvent('mouseup', { button: 1 }));
     });
 
-    const cleanupExecutionError = window.electron?.onExecutionError((errorMsg: string) => {
-      console.error('Execution error received:', errorMsg);
-      const normalized = errorMsg.toLowerCase();
-      const isGlobalShortcutRegistrationError =
-        normalized.includes('atalho global') ||
-        normalized.includes('global shortcut') ||
-        normalized.includes('registar o atalho');
-      if (isGlobalShortcutRegistrationError) {
-        window.electron?.savePersistenceLog?.(`suppressed global shortcut toast: ${errorMsg}`);
-        return;
-      }
-      const isShortcutError = errorMsg.toLowerCase().includes('shortcut');
-
-      setLastLaunched({
-        id: 'error',
-        label: isShortcutError ? 'Shortcut Error' : 'Execution Error',
-        command: '',
-        iconName: 'AlertTriangle',
-        description: errorMsg
-      });
-      setTimeout(() => setLastLaunched(null), 6000);
-    });
-
     const cleanupWindowHidToTray = window.electron?.onWindowHidToTray(() => {
       // Persist before resetting UI state so we never flush a stale ref or miss the write if the window hides quickly.
       flushPersistenceToDiskRef.current?.();
@@ -1946,7 +1965,6 @@ export default function App() {
       cleanupSettings?.();
       cleanupWindowState?.();
       cleanupMouseUp?.();
-      cleanupExecutionError?.();
       cleanupWindowHidToTray?.();
       cleanupMainWindowMinimized?.();
       cleanupNativeDisplayRestored?.();
@@ -2117,7 +2135,7 @@ export default function App() {
   const executeAction = (
     command: string,
     commandType: "app" | "url" | "folder",
-    _itemForToast?: AppItem,
+    itemForFault?: AppItem,
     options?: { openTerminal?: boolean; terminalCommands?: string[]; workingDirectory?: string; launchMode?: 'normal' | 'reuse' | 'prewarm' }
   ) => {
     // console.log("🚀 Zenith executing:", command, "Type:", commandType);
@@ -2133,6 +2151,9 @@ export default function App() {
 
     if (isDesktopMode && window.electron) {
       // console.log("Calling electron.executeCommand...");
+      /** Recorded before the send: if it fails, this is the name the card puts in the sentence. */
+      /** Trimmed to match what main echoes back in `details.command`; the ref is only a match key. */
+      lastDispatchRef.current = { label: itemForFault?.label ?? '', command: command.trim(), at: Date.now() };
       window.electron.executeCommand(command, commandType, options);
       setTimeout(() => {
         const g = electronShrinkGateRef.current;
@@ -2590,9 +2611,24 @@ export default function App() {
         {errorOverlaysNeeded && (
           <React.Suspense fallback={null}>
             <ErrorOverlays
-              lastLaunched={lastLaunched}
-              executionError={executionError}
-              onDismissError={() => setExecutionError(null)}
+              /**
+                * The sticky notice waits for a surface it can actually be dismissed on. In island
+                * mode the HWND ignores the mouse and the card renders without its close button, so
+                * showing a card that never leaves would pin it over the desktop forever. It stays
+                * in state and appears the moment Settings or the dashboard opens.
+                */
+              faults={
+                [
+                  !isDesktopMode || panelSurfaceOpen ? configNotice : null,
+                  launchFault,
+                ].filter(Boolean) as SurfacedFault[]
+              }
+              theme={panelTheme}
+              interactive={!isDesktopMode || panelSurfaceOpen}
+              onDismiss={(seq) => {
+                setLaunchFault((current) => (current?.seq === seq ? null : current));
+                setConfigNotice((current) => (current?.seq === seq ? null : current));
+              }}
             />
           </React.Suspense>
         )}

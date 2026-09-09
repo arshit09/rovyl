@@ -5380,6 +5380,56 @@ const escapeCommand = (cmd) => {
   return cmd;
 };
 
+/**
+ * Os factos que acompanham a string de erro no canal `execution-error`.
+ *
+ * A string continua a ser a de sempre — quem só a lê não muda de comportamento. O que vai aqui já
+ * estava em memória neste sítio, e sem isso o renderer teria de adivinhar a partir de prosa do
+ * Windows, que é localizada: em português o mesmo erro diz "Acesso negado".
+ *
+ * `exeExists` é o sinal que nenhuma prosa dá. O `exec_direct` monta `<terminal> /c <linha>`, por
+ * isso um escape mal feito num ficheiro que está lá escreve exatamente o mesmo "is not recognized"
+ * que um ficheiro que desapareceu — e mandar reinstalar uma app que nunca se estragou é pior do
+ * que não dizer nada. Ver `src/launchFailure.ts`.
+ *
+ * Nada de `stderr` cru na frase que o utilizador lê: isso vai em `raw`, e o cartão mete-o atrás de
+ * "Details", numa caixa que rola.
+ */
+const describeExecutionFailure = (
+  trimmedCommand,
+  resolvedCommand,
+  commandType,
+  lastMethod,
+  lastError,
+) => {
+  let exeExists = null;
+  try {
+    const { exe } = win32Launch.splitWin32SpawnExeAndArgs(String(resolvedCommand || "").trim());
+    /**
+     * Só uma letra de unidade conta. Uma alternativa não ancorada (`[\\/]`) casaria com qualquer
+     * coisa que tenha uma barra — `https://…`, `steam://…`, `shell:AppsFolder\…!App` — e o disco
+     * responderia "não existe" a um atalho que nunca teve ficheiro nenhum.
+     *
+     * UNC (`\\servidor\…`) fica deliberadamente de fora: isto corre no processo principal e um
+     * `existsSync` a uma partilha morta espera pelo timeout do SMB com a UI parada. Sem sondagem
+     * o classificador cai nos sinais de texto, que é o que fazia antes de ela existir.
+     */
+    if (exe && /^[A-Za-z]:[\\/]/.test(exe)) exeExists = fs.existsSync(exe);
+  } catch (e) {
+    /* sondagem é um extra: sem ela o classificador cai nos sinais de texto */
+  }
+  return {
+    command: trimmedCommand,
+    resolvedCommand,
+    commandType,
+    method: lastMethod,
+    /** `err.code` do Node: string no `spawn` (`ENOENT`), número (código de saída) no `exec`. */
+    errorCode: lastError?.code ?? null,
+    exeExists,
+    raw: String(lastError?.message || "").slice(0, 4000),
+  };
+};
+
 // IPC: Recebe comando do React para executar app
 ipcMain.on("execute-command", async (event, command, commandType, options = {}) => {
   if (!command || typeof command !== "string" || command.trim() === "") {
@@ -5933,6 +5983,8 @@ ipcMain.on("execute-command", async (event, command, commandType, options = {}) 
 
     // Try each method in order
     let lastError = null;
+    /** Qual dos degraus da escada produziu o erro que sobrou — o renderer classifica melhor com ele. */
+    let lastMethod = null;
     for (const method of methodsToTry) {
       try {
         await tryExecution(method, resolvedCommand);
@@ -5943,6 +5995,7 @@ ipcMain.on("execute-command", async (event, command, commandType, options = {}) 
         return; // Success! Exit early
       } catch (err) {
         lastError = err;
+        lastMethod = method;
         // Continue to next method
       }
     }
@@ -5951,13 +6004,21 @@ ipcMain.on("execute-command", async (event, command, commandType, options = {}) 
     const finalError = `Failed to run "${resolvedCommand.substring(0, 50)}${resolvedCommand.length > 50 ? "..." : ""}". Error: ${lastError?.message || "Unknown"}`;
     console.error(`\n✗✗✗ EXEC_ABORT: ${finalError} ✗✗✗\n`);
     if (mainWindow) {
-      mainWindow.webContents.send("execution-error", finalError);
+      mainWindow.webContents.send(
+        "execution-error",
+        finalError,
+        describeExecutionFailure(trimmedCommand, resolvedCommand, commandType, lastMethod, lastError),
+      );
     }
   } catch (err) {
     const finalError = `Unexpected error while running command: ${err.message}`;
     console.error(`\n✗✗✗ EXEC_ABORT: ${finalError} ✗✗✗\n`);
     if (mainWindow) {
-      mainWindow.webContents.send("execution-error", finalError);
+      mainWindow.webContents.send(
+        "execution-error",
+        finalError,
+        describeExecutionFailure(trimmedCommand, resolvedCommand, commandType, null, err),
+      );
     }
   }
 });

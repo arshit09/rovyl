@@ -148,7 +148,8 @@ contextBridge.exposeInMainWorld("electron", {
   getOnboardingApps: () => ipcRenderer.invoke("get-onboarding-apps"),
   getStartupApps: () => ipcRenderer.invoke("get-startup-apps"),
   onExecutionError: (callback) => {
-    const listener = (event, errorMsg) => callback(errorMsg);
+    /** `details` é opcional: os dois envios literais deste canal continuam a mandar só a string. */
+    const listener = (event, errorMsg, details) => callback(errorMsg, details);
     ipcRenderer.on("execution-error", listener);
     return () => ipcRenderer.removeListener("execution-error", listener);
   },

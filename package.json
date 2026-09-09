@@ -19,6 +19,7 @@
     "test:win32-launch": "node --test backend/win32-launch.test.cjs",
     "test:persistence-shape": "node scripts/persistence-normalize-smoke.mjs",
     "test:icon-map": "node scripts/icon-map-smoke.mjs",
+    "test:launch-failure": "node scripts/launch-failure-smoke.mjs",
     "test:icon-store": "node scripts/icon-store-smoke.mjs",
     "test:persistence-mirror": "node scripts/persistence-mirror-smoke.mjs",
     "verify:radial-windowing": "node scripts/verify-radial-windowing.mjs",

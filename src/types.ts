@@ -1,4 +1,6 @@
 import { LucideIcon } from "lucide-react";
+/** `import type` é apagado na compilação: `launchFailure.ts` fica só no chunk tardio do cartão. */
+import type { ExecutionErrorDetails } from "./launchFailure";
 
 export type SubscriptionTier = "free" | "plus" | "pro";
 
@@ -326,7 +328,10 @@ export interface ElectronAPI {
   getInstalledApps: (forceRefresh?: boolean) => Promise<any[]>;
   getOnboardingApps: () => Promise<any[]>;
   getStartupApps: () => Promise<any[]>;
-  onExecutionError: (callback: (errorMsg: string) => void) => () => void;
+  /** `details` só chega dos dois envios finais do `execute-command`; os literais mandam só a string. */
+  onExecutionError: (
+    callback: (errorMsg: string, details?: ExecutionErrorDetails) => void,
+  ) => () => void;
   relaunchApp: () => void;
   getSettings: () => Promise<any>;
   setSettings: (settings: any) => void;

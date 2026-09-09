@@ -815,6 +815,144 @@
   box-shadow: var(--zn-elev); font-size: 12px; font-weight: 500;
 }
 
+/* ══ Falha de arranque ═════════════════════════════════════════════════════
+   O cartão vive FORA de `.zs-shell` — é irmão do painel, não filho — por isso
+   nada aqui pode depender de um seletor `.zs-shell …`: nem o anel de foco nem
+   o bloco de `prefers-reduced-motion`. O tema chega por `data-zn-theme` no
+   próprio cartão (daí os seletores sem espaço), e o travão ao movimento é
+   feito em JS com `useReducedMotion`.
+
+   A regra que impede o regresso da caixa vermelha gigante: o único texto sem
+   limite é o `stderr`, e esse só existe dentro de `.zs-fault-raw`, que tem
+   altura máxima e rola. Título e frase são de uma linha, cortadas por CSS e
+   já limitadas em `src/launchFailure.ts`.
+
+   Centrar é feito com `margin-inline: auto` e nunca com `translateX(-50%)`:
+   quem desenha o cartão é um `motion.div`, e o framer-motion escreve o
+   `transform` em estilo inline — a folha de estilos perdia sempre.
+
+   Sem matiz nova: superfície, linha e sombra são os tokens de sempre. O
+   vermelho aparece só no quadrado do ícone, no mesmo registo do
+   `.zs-launch-risk` — fio e lavagem, nunca um fundo saturado.
+   ════════════════════════════════════════════════════════════════════════ */
+.zs-fault-stack {
+  position: fixed;
+  right: var(--zn-5);
+  bottom: var(--zn-5);
+  /* Largura definida: sem ela o `min(380px, 100%)` do cartão resolvia contra um
+     contentor shrink-to-fit, e a percentagem não tem contra o que medir. */
+  width: min(380px, calc(100vw - var(--zn-5) * 2));
+  max-height: calc(100vh - var(--zn-5) * 2);
+  z-index: 1000;
+  display: grid;
+  justify-items: end;
+  gap: var(--zn-2);
+  /* A raiz do `App` é `pointer-events-none` no modo ambiente de trabalho. */
+  pointer-events: none;
+}
+/* Modo ilha: a janela tem `setIgnoreMouseEvents(true)` e é um quadrado centrado
+   no monitor — encostado ao canto o cartão caía a meio do ecrã. Ali é só aviso. */
+.zs-fault-stack.is-glance {
+  left: var(--zn-5);
+  width: auto;
+  justify-items: center;
+}
+
+.zs-fault {
+  box-sizing: border-box;
+  width: min(380px, 100%);
+  max-height: min(380px, calc(100vh - var(--zn-5) * 2));
+  overflow: hidden auto;
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) var(--zn-ctl-sm);
+  align-items: start;
+  gap: var(--zn-3);
+  padding: var(--zn-3);
+  color: var(--zn-text);
+  border: 1px solid var(--zn-line-strong);
+  border-radius: var(--zn-r-panel);
+  background: var(--zn-surface);
+  box-shadow: var(--zn-elev);
+  font-family: var(--font-ui);
+  -webkit-font-smoothing: antialiased;
+  pointer-events: auto;
+  /* A base pinta as barras quase a branco; fora de `.zs-shell` o override do painel não chega cá. */
+  scrollbar-color: var(--zn-line-strong) transparent;
+}
+.zs-fault *::-webkit-scrollbar-thumb { background: var(--zn-line-strong); }
+.zs-fault[data-zn-theme="black"] { color-scheme: dark; }
+.zs-fault[data-zn-theme="white"] { color-scheme: light; }
+.zs-fault :where(button):focus-visible { outline: 2px solid var(--zn-focus); outline-offset: 2px; }
+.zs-fault.is-glance { grid-template-columns: 22px minmax(0, 1fr); pointer-events: none; }
+
+.zs-fault-mark {
+  width: 22px; height: 22px; margin-top: 1px;
+  display: grid; place-items: center;
+  border-radius: var(--zn-r-chip);
+  color: #ef7c7c; background: rgba(239, 68, 68, .12);
+}
+.zs-fault.is-warning .zs-fault-mark { color: rgba(233, 189, 120, .92); background: rgba(224, 160, 60, .1); }
+/* No tema claro os dois tons têm de escurecer para se lerem sobre superfície branca. */
+[data-zn-theme="white"].zs-fault .zs-fault-mark { color: #b53228; background: rgba(200, 50, 40, .1); }
+[data-zn-theme="white"].zs-fault.is-warning .zs-fault-mark { color: rgba(146, 92, 6, .95); background: rgba(180, 120, 20, .12); }
+
+.zs-fault-body { min-width: 0; min-height: 0; display: grid; gap: 6px; }
+.zs-fault-title {
+  min-width: 0; margin: 0;
+  overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+  color: var(--zn-text); font-size: 12.5px; font-weight: 600; letter-spacing: -.008em; line-height: 1.35;
+}
+.zs-fault-message, .zs-fault-hint {
+  margin: 0; overflow: hidden;
+  display: -webkit-box; -webkit-box-orient: vertical;
+}
+.zs-fault-message { -webkit-line-clamp: 3; color: var(--zn-text-2); font-size: 11.5px; line-height: 1.45; }
+/* `--zn-text-3` é o tom das legendas passivas; aqui o texto é a instrução que resolve o
+   problema, e a esse tamanho sobre superfície clara não se lia. */
+/* Três linhas, não duas: a 282px de coluna útil a instrução de recuperação do aviso de
+   configuração ocupa três, e a duas ficava cortada a meio do nome do ficheiro. */
+.zs-fault-hint { -webkit-line-clamp: 3; color: var(--zn-text-2); font-size: 10.5px; line-height: 1.45; }
+
+/* O despejo do Windows, e o único sítio onde ele pode estar. A raiz do `App` é
+   `select-none`: sem `user-select: text` aqui nem selecionar à mão dava. */
+.zs-fault-raw {
+  max-height: 168px; margin: 2px 0 0; padding: var(--zn-2); overflow: auto;
+  color: var(--zn-text-2);
+  border: 1px solid var(--zn-line); border-radius: var(--zn-r-chip); background: var(--zn-sunken);
+  font: 450 10.5px/1.5 var(--font-mono, ui-monospace, SFMono-Regular, Consolas, monospace);
+  white-space: pre-wrap; overflow-wrap: anywhere; tab-size: 2;
+  user-select: text;
+  scrollbar-color: var(--zn-line-strong) transparent;
+}
+
+.zs-fault-actions { display: flex; align-items: center; gap: var(--zn-1); margin-top: 2px; }
+.zs-fault-actions button {
+  height: var(--zn-ctl-sm); display: inline-flex; align-items: center; padding-inline: var(--zn-2);
+  color: var(--zn-text-2); border: 1px solid var(--zn-line); border-radius: var(--zn-r-chip);
+  background: transparent; cursor: pointer;
+  font: 450 10.5px/1 var(--font-ui);
+  transition: color .15s var(--zn-ease), border-color .15s var(--zn-ease), background .15s var(--zn-ease);
+}
+.zs-fault-actions button:hover { color: var(--zn-text); border-color: var(--zn-line-strong); background: var(--zn-hover); }
+.zs-fault-actions button:active { background: var(--zn-pressed); }
+
+.zs-fault-close {
+  width: var(--zn-ctl-sm); height: var(--zn-ctl-sm); display: grid; place-items: center; padding: 0;
+  color: var(--zn-text-3); border: 0; border-radius: var(--zn-r-chip); background: transparent; cursor: pointer;
+  transition: color .15s var(--zn-ease), background .15s var(--zn-ease);
+}
+.zs-fault-close:hover { color: var(--zn-text); background: var(--zn-raised); }
+
+/* Janelas estreitas (Windows a 150–175%): o cartão passa a ocupar a largura útil. */
+@media (max-width: 460px) {
+  .zs-fault-stack,
+  .zs-fault-stack.is-glance {
+    left: var(--zn-3); right: var(--zn-3); bottom: var(--zn-3);
+    width: auto; justify-items: stretch;
+  }
+  .zs-fault { width: 100%; }
+}
+
 /* ── Escala / viewport ──────────────────────────────────────────────────── */
 
 /* Windows 150–175%: o viewport CSS encolhe. Colapsa a nav para ícones antes
