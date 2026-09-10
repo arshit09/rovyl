@@ -1309,6 +1309,14 @@ function showMenuAtCursor(source = "shortcut") {
    */
   let keepExistingPanelWindow = false;
   if (
+    /**
+     * Not when the dimming fills the window. This shortcut's whole trick is drawing the radial
+     * inside SETTINGS' frame, and a scrim with no falloff left would paint that frame solid — a
+     * black rectangle the size of the panel, on a bright desktop. Tuning the dimming and then
+     * firing the wheel to look at it is the obvious way to meet that, so it takes the slower
+     * hide-and-resize path instead and gets the monitor, which is what it asked for.
+     */
+    !radialFullBleed &&
     nativeWindowSizeMode === "windowed" &&
     rendererPanelVisible &&
     isMainWindowOnScreen()
@@ -1367,7 +1375,7 @@ function showMenuAtCursor(source = "shortcut") {
   if (!wasMinimized && !keepExistingPanelWindow) {
     try {
       const currentBounds = mainWindow.getBounds();
-      const desiredBounds = radialModeBounds(targetDisplay.bounds, radialCenter);
+      const desiredBounds = radialOpenBounds(targetDisplay.bounds, radialCenter);
       nativeResizeRisk =
         mainWindow.isVisible() && !boundsApproxEqual(currentBounds, desiredBounds);
     } catch (e) {
@@ -1432,7 +1440,7 @@ function showMenuAtCursor(source = "shortcut") {
        * payload can — and should — anticipate the geometry that will be applied on restore.
        */
       const bounds = wasMinimized
-        ? radialModeBounds(targetDisplay.bounds, radialCenter)
+        ? radialOpenBounds(targetDisplay.bounds, radialCenter)
         : mainWindow.getBounds();
       radialWindowOrigin = { x: bounds.x, y: bounds.y };
       radialClientPosition = {
@@ -1664,12 +1672,22 @@ function showMenuAtCursor(source = "shortcut") {
  * has to be well bigger than the circle, or a wide gesture leaves the window and the selection never confirms.
  */
 let radialViewportSize = 988;
+/**
+ * The box is off. Set by the renderer when "Background dimming" is high enough that the scrim still
+ * has alpha where the box would end (`radialScrimNeedsFullBleed`): a dim that stops at an invisible
+ * rectangle is not a dimmed screen, it is a dark rectangle with four hard edges on a bright desktop.
+ *
+ * Only the OPEN window grows — idle keeps the compact box through `smallModeBounds`, so the DWM
+ * still has no monitor-sized layered surface to compose for the 99.9% of the time nothing is open.
+ */
+let radialFullBleed = false;
 ipcMain.on("set-radial-viewport", (_event, payload) => {
   if (!payload || typeof payload !== "object") return;
   const n = Number(payload.size);
   if (Number.isFinite(n) && n >= 320 && n <= 4096) {
     radialViewportSize = Math.round(n);
   }
+  radialFullBleed = !!payload.fullBleed;
 });
 
 /**
@@ -1987,6 +2005,24 @@ function radialModeBounds(displayBounds, point) {
 }
 
 /**
+ * Where the radial actually opens. The box above, unless the dimming reaches its edge — then the
+ * monitor, because that edge would otherwise be drawn on screen as a rectangle.
+ *
+ * Every caller that computes the open bounds has to go through here, including the one that only
+ * compares them against the current bounds to decide whether to hide before resizing: two callers
+ * disagreeing about the target is a visible DWM flash.
+ */
+function radialOpenBounds(displayBounds, point) {
+  if (!radialFullBleed) return radialModeBounds(displayBounds, point);
+  return {
+    x: Math.round(displayBounds.x),
+    y: Math.round(displayBounds.y),
+    width: Math.round(displayBounds.width),
+    height: Math.round(displayBounds.height),
+  };
+}
+
+/**
  * Stable idle: the transparent surface uses exactly the radial's bounds.
  * Opening then needs no hide/show and no resize; since the mouse is ignored, the area does not block the desktop.
  */
@@ -2102,6 +2138,8 @@ function updateWindowSize(mode, anchorScreenPoint) {
      * the radial while already fullscreen must not lose the panel.
      */
     const keepPanelWindow =
+      /** Same reason as `keepExistingPanelWindow`: a flat scrim must not be cut to the panel's rect. */
+      !radialFullBleed &&
       previousMode === "windowed" &&
       rendererPanelVisible &&
       isMainWindowOnScreen();
@@ -2122,7 +2160,7 @@ function updateWindowSize(mode, anchorScreenPoint) {
       const stableBounds = mainWindow.getBounds();
       setRadialMouseBlocking(stableBounds, b);
     } else {
-      const radialRect = radialBoundsUnionWithPanel(radialModeBounds(b, point), b);
+      const radialRect = radialBoundsUnionWithPanel(radialOpenBounds(b, point), b);
       if (!boundsApproxEqual(mainWindow.getBounds(), radialRect)) {
         mainWindow.setBounds(radialRect);
       }

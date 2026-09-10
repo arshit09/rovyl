@@ -13,6 +13,7 @@ import {
   parseWorkspacePickIndex,
 } from '../utils/workspaceRadial';
 import { clampDwellMs, directionCommitPx } from '../constants/radialDwell';
+import { radialScrimGradient } from '../utils/radialScrim';
 
 // PERF FIX #3: Module-level weather cache — persists across menu open/close cycles
 // Prevents a new HTTP fetch on every menu open; refreshes only after 10 minutes or location change
@@ -171,26 +172,6 @@ export function computeRadialLayout({
   }
 
   return { actualMenuRadius: targetRadius, actualIconSize: currentIconSize };
-}
-
-/**
- * Radial scrim: a radial pool in smoothstep across 9 stops (2 stops that wide band at 8-bit, and
- * banding reads as blur). Shared with the licence gate.
- */
-export function radialScrimGradient(
-  position: { x: number; y: number },
-  backdropOpacity: number,
-  backdropRadius: number,
-): string {
-  const scrimPeak = 0.22 + backdropOpacity * 0.3;
-  const scrimRadius = Math.round(backdropRadius * 2);
-  const stops = [0, 0.12, 0.25, 0.38, 0.5, 0.62, 0.75, 0.88, 1]
-    .map((t) => {
-      const falloff = 1 - (3 * t * t - 2 * t * t * t);
-      return `rgba(4,5,7,${(scrimPeak * falloff).toFixed(3)}) ${Math.round(t * scrimRadius)}px`;
-    })
-    .join(', ');
-  return `radial-gradient(circle at ${Math.round(position.x)}px ${Math.round(position.y)}px, ${stops})`;
 }
 
 interface RadialMenuProps {

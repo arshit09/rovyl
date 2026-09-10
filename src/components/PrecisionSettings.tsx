@@ -916,8 +916,10 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
           kind: 'bool', enabled: config.alwaysShowAppLabels,
           onToggle: () => update('alwaysShowAppLabels', !config.alwaysShowAppLabels),
         },
-        range('backdrop', 'Presence', 'Background dimming', 'How much the rest of the screen recedes.',
-          config.backdropOpacity ?? 1, 0, 1, (value) => update('backdropOpacity', value), (value) => `${Math.round(value * 100)}%`,
+        range('backdrop', 'Presence', 'Background dimming',
+          'How much the rest of the screen recedes. At 100% it goes: the desktop is covered edge to edge.',
+          config.backdropOpacity ?? DEFAULT_UI_CONFIG.backdropOpacity, 0, 1,
+          (value) => update('backdropOpacity', value), (value) => `${Math.round(value * 100)}%`,
           0.01, 'backdropOpacity'),
       ],
       spaces: [

@@ -1,5 +1,6 @@
 import React, { useMemo } from 'react';
-import { computeRadialLayout, getLabelPlacement, radialScrimGradient } from './RadialMenu';
+import { computeRadialLayout, getLabelPlacement } from './RadialMenu';
+import { radialScrimGradient } from '../utils/radialScrim';
 import { getIcon } from '../iconMap';
 import { SmartIcon } from './SmartIcon';
 import type { AppItem, UIConfig } from '../types';
@@ -131,9 +132,14 @@ export const WheelPreview: React.FC<{ config: UIConfig; apps: AppItem[] }> = ({ 
    * The dimming is drawn on the stage rather than inside the scaled layer, with the radius scaled
    * to match: a gradient inside a `scale()` would shrink its own falloff and report the setting as
    * gentler than it is.
+   *
+   * Centred on the stage, because that is where the wheel is. It used to be built at (0, 0) — the
+   * top-left CORNER of a scrim that is `inset: 0` — so the pool the slider draws was pushed off
+   * into the corner and the wheel sat in the undimmed part of it. The one control on this page
+   * whose whole job is to be judged against the preview was the one the preview did not show.
    */
   const scrim = radialScrimGradient(
-    { x: 0, y: 0 },
+    { x: stageWidth / 2, y: STAGE_HEIGHT / 2 },
     backdropOpacity,
     Math.max(actualMenuRadius * scale, 1),
   );

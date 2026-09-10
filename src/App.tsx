@@ -14,6 +14,11 @@ import { preloadIconsByName } from './iconMap';
 import { isRemoteIconUrl, isStoredIconRef, isWebShortcutItem } from './iconRef';
 import { useIconHealing } from './hooks/useIconHealing';
 import { mirrorPersistenceToLocalStorage } from './persistenceMirror';
+import {
+  BACKDROP_DIM_SCALE,
+  legacyBackdropOpacityToDim,
+  radialScrimNeedsFullBleed,
+} from './utils/radialScrim';
 /** `import type` is erased at compile time: `launchFailure.ts` stays only in the late card chunk. */
 import type { ExecutionErrorDetails, FaultShortcutRef, SurfacedFault } from './launchFailure';
 /** Erased too — a value import here would put the whole settings module in the wheel's chunk. */
@@ -616,8 +621,14 @@ export default function App() {
     window.electron.setRadialViewport({
       size,
       fixed: true,
+      /**
+       * Past a certain dimming the scrim no longer fades out inside that box, and a box that shows
+       * its own edge has to stop being a box: main opens the radial over the whole monitor instead.
+       * It is the setting that decides, so the decision travels with the size, well before an open.
+       */
+      fullBleed: radialScrimNeedsFullBleed(config.backdropOpacity),
     });
-  }, [config.menuRadius, config.iconSize]);
+  }, [config.menuRadius, config.iconSize, config.backdropOpacity]);
 
   /**
    * Click-free execution: the renderer is the one that knows it is on, but the one that has to park
@@ -923,6 +934,29 @@ export default function App() {
       const loadedConfig = finalData?.config;
       if (loadedConfig && !('hasSeenOnboarding' in loadedConfig)) {
         nextConfig = { ...nextConfig, hasSeenOnboarding: true };
+      }
+
+      /**
+       * "Background dimming" used to top out at half a pool; it now reaches an opaque screen. The
+       * saved number therefore means something darker than it did, and the default was the top of
+       * the old scale — so left alone, every existing profile would have blacked the screen out on
+       * the first open after updating, having changed nothing.
+       *
+       * Converted once, to the value that paints exactly the pixels the person already had. The
+       * test is the missing marker, not the value: 1 was both the default and a deliberate choice,
+       * and the two are indistinguishable here — which does not matter, because they looked the
+       * same on screen and so they still do.
+       */
+      if (loadedConfig && Number(loadedConfig.backdropDimScale) !== BACKDROP_DIM_SCALE) {
+        nextConfig = {
+          ...nextConfig,
+          backdropDimScale: BACKDROP_DIM_SCALE,
+          backdropOpacity: legacyBackdropOpacityToDim(
+            'backdropOpacity' in loadedConfig
+              ? Number(loadedConfig.backdropOpacity)
+              : 1,
+          ),
+        };
       }
 
       window.electron?.savePersistenceLog?.(

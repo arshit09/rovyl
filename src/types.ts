@@ -101,7 +101,18 @@ export interface UIConfig {
    * old configs (normalized to `true` on hydration). Do not expose it in settings again.
    */
   fixedPosition: boolean;
+  /**
+   * "Background dimming", 0..1. At 1 the desktop is gone: an opaque fill over the whole monitor.
+   * Read it through `radialScrimAlphas` — the number is not an alpha, and how it maps to one
+   * changed. `backdropDimScale` says which mapping the saved value belongs to.
+   */
   backdropOpacity: number;
+  /**
+   * Which scale `backdropOpacity` is written on (`BACKDROP_DIM_SCALE`). ABSENT means the config
+   * predates the scale that reaches a black screen, and hydration converts the value once so the
+   * dimming looks exactly as it did before the upgrade.
+   */
+  backdropDimScale?: number;
   menuBackgroundStyle: "circle" | "fullscreen";
   appSpacing: number; // New: spacing between apps in radial menu
   activationThreshold: number;
@@ -318,8 +329,12 @@ export interface ElectronAPI {
   reapplySmallOverlay?: () => Promise<boolean>;
   /** Idle: shrinks the HWND into the corner (no fullscreen transparent layer). */
   collapseIdleOverlay?: () => Promise<boolean>;
-  /** Side of the radial's box (px) + whether the position is fixed — the main sizes the menu window with this. */
-  setRadialViewport?: (payload: { size: number; fixed: boolean }) => void;
+  /**
+   * Side of the radial's box (px) + whether the position is fixed — the main sizes the menu window
+   * with this. `fullBleed` overrides the box entirely: the dimming reaches the edge, so the window
+   * has to be the monitor (see `radialScrimNeedsFullBleed`).
+   */
+  setRadialViewport?: (payload: { size: number; fixed: boolean; fullBleed?: boolean }) => void;
   /**
    * Click-free launching on: when the radial opens, the main stores where the cursor was, puts it
    * at the center of the wheel and returns it on close. This is what makes the pointer hideable (it

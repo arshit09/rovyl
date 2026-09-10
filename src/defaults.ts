@@ -1,4 +1,5 @@
 import { AppItem, UIConfig, Workspace } from "./types";
+import { BACKDROP_DIM_SCALE } from "./utils/radialScrim";
 
 export const DEFAULT_APPS: AppItem[] = [
   {
@@ -217,7 +218,13 @@ export const DEFAULT_UI_CONFIG: UIConfig = {
   menuRadius: 140,
   iconSize: 64,
   fixedPosition: true,
-  backdropOpacity: 1,
+  /**
+   * Not 1 any more, and not a weaker default either: 0.6 on the scale that reaches a black screen
+   * paints the same alpha (0.5) that 1 painted on the scale that topped out at half. The slider
+   * simply has somewhere to go above the shipped look now. See `radialScrimAlphas`.
+   */
+  backdropOpacity: 0.6,
+  backdropDimScale: BACKDROP_DIM_SCALE,
   menuBackgroundStyle: "circle",
   appSpacing: 10, // Default spacing between apps
   activationThreshold: 60,

@@ -23,6 +23,7 @@
     "test:launch-result": "node scripts/launch-result-smoke.mjs",
     "test:tray-menu": "node scripts/tray-menu-smoke.mjs",
     "test:radial-filter": "node scripts/radial-filter-smoke.mjs",
+    "test:backdrop-dim": "node scripts/backdrop-dim-smoke.mjs",
     "test:icon-store": "node scripts/icon-store-smoke.mjs",
     "test:persistence-mirror": "node scripts/persistence-mirror-smoke.mjs",
     "test:foreground-snapshot": "node scripts/foreground-snapshot-smoke.mjs",
