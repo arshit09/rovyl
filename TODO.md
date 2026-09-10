@@ -39,13 +39,25 @@ its section, and a retired one keeps its number rather than being reused.
   `deviceLimit`, `trialEndsAt` in `src/types.ts`; activation/deactivation IPC in main. Decide: keep
   and gate, or strip entirely from this fork.
 - [ ] **2.5** **`radialInstantActivate: 'swipe'`** reserved in the type, never implemented — build or remove.
-- [ ] **2.6** Prune deps once the above lands — verify `active-win`, `sql.js`,
+- [x] **2.6** Prune deps once the above lands — verify `active-win`, `sql.js`,
   `node-global-key-listener` each still earn their install size. Measured while fixing §3's font
   item: `app.asar` is 69.7 MB and 5,385 of its 5,430 entries are `node_modules`, because
   `build.files` never mentions node_modules but electron-builder packs the production dependency
   tree anyway. `lucide-react` alone is 2,738 entries, `framer-motion` 379 — both are bundled into
   `dist/` by Vite and never `require`d at runtime, so like the fonts they belong in
   `devDependencies`. `electron-updater` (212) and `active-win` (37) are genuinely runtime.
+  **Done:** the shipped closure is 19 packages / 433 files / 27.3 MiB, from 135 / 4,807 / ~67 MiB.
+  `react`, `react-dom`, `framer-motion`, `lucide-react`, `tailwindcss` and `@tailwindcss/vite`
+  moved to `devDependencies` — Vite compiles them into `dist/` and the main process never
+  `require`s them. `active-win` did not merely move: it was deleted. It was reached for four Win32
+  calls (`GetForegroundWindow`, `GetWindowThreadProcessId`, `GetWindowText`, `GetWindowRect`) and
+  charged `node-gyp` + `@mapbox/node-pre-gyp` for them — 11 of the tree's 18 deprecated packages,
+  its only critical advisory, and a GitHub fetch on every install. `backend/foreground-focus.ps1`
+  was already a warm PowerShell host one pipe away from those calls, so it answers `FG` with the
+  same `{title, owner.path, bounds}` the addon returned, at p50 0.31ms / p95 0.69ms over 200
+  round-trips. Store apps keep working because the `ApplicationFrameHost.exe` child-window walk
+  came across with it. `sql.js` (18 MB, the largest remaining item), `electron-updater` and
+  `node-global-key-listener` stay: all three are `require`d by the main process.
 
 ## 3. Performance / RAM / CPU
 

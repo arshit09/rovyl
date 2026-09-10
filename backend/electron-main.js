@@ -46,6 +46,7 @@ const win32Launch = require("./win32-launch");
 const { buildTrayMenuTemplate } = require("./tray-menu.cjs");
 const { normalizeFullPersistenceBlob } = require("./persistence-normalize.cjs");
 const { detectGameExecutable } = require("./game-detection.cjs");
+const { parseForegroundSnapshot, createLineSplitter } = require("./foreground-snapshot.cjs");
 const crypto = require("crypto");
 const { GlobalKeyboardListener } = require("node-global-key-listener");
 const http = require("http");
@@ -2351,16 +2352,6 @@ function openSettingsFromMainProcess() {
   }
 }
 
-/** Lazy — native binding may fail on some installs; fail-open (allow radial). */
-function getActiveWinModule() {
-  try {
-    return require("active-win");
-  } catch (e) {
-    diagLog(`[GameMode] active-win require failed: ${e.message}`);
-    return null;
-  }
-}
-
 /**
  * The window rect covers the whole monitor (real fullscreen), not the typical maximized (workArea).
  */
@@ -2601,7 +2592,7 @@ function isZenithOwnExePath(exeLower) {
   }
 }
 
-/** active-win: exe + title (no native command line). */
+/** The fast snapshot: exe + title, no native command line. */
 function foregroundMatchesBlockedList(win, tokens) {
   if (!win || !tokens.length) return false;
   const ownerPath = ((win.owner && win.owner.path) || "")
@@ -2667,13 +2658,10 @@ const shouldOpenMenu = async () => {
   const autoDetectGames = mode === "list" && !!gameModeConfig.autoDetectGames;
 
   let activeResult = null;
-  const aw = getActiveWinModule();
-  if (aw) {
-    try {
-      activeResult = await aw();
-    } catch (e) {
-      diagLog(`[GameMode] active-win() failed: ${e.message}`);
-    }
+  try {
+    activeResult = await getForegroundSnapshotFast();
+  } catch (e) {
+    diagLog(`[GameMode] foreground snapshot failed: ${e.message}`);
   }
 
   if (mode === "all") {
@@ -2682,14 +2670,14 @@ const shouldOpenMenu = async () => {
       return false;
     }
     /**
-     * Fast path for everyday productivity: `active-win` covers the normal fullscreen case.
-     * The PowerShell fallback was used on every open and can cost 1-2s on Windows.
+     * Fast path for everyday productivity: the warm helper covers the normal fullscreen case.
+     * Spawning a fresh PowerShell on every open cost 1-2s on Windows.
      */
     if (activeResult) return true;
   }
 
   /**
-   * `active-win` already hands over the executable, title and bounds of the active
+   * The snapshot already hands over the executable, title and bounds of the active
    * window. In list mode that is all we need to decide the normal case. Before, even
    * with that data valid, every trigger still started a new PowerShell; that process
    * creation happened before `showMenuAtCursor` and was felt as radial lag.
@@ -2934,15 +2922,12 @@ app.whenReady().then(async () => {
   configureAutoUpdates();
 
   /**
-   * Loads and runs `active-win` during startup. The native binding's first load
-   * must not happen on the radial's very first trigger.
+   * Starts the foreground helper during startup, for the same reason the mouse blocker starts
+   * here: its first run compiles the P/Invoke types and takes about 750ms, which must not land on
+   * the radial's very first trigger. It would have started within seconds anyway — the first open
+   * asks it to steal the foreground — so this moves the cost rather than adding it.
    */
-  const activeWinWarmup = getActiveWinModule();
-  if (activeWinWarmup) {
-    Promise.resolve(activeWinWarmup()).catch((e) => {
-      diagLog(`[Perf] active-win warmup failed: ${e.message}`);
-    });
-  }
+  ensureForegroundFocusHelper();
 
   try {
     const codeCacheDir = path.join(app.getPath("userData"), "v8-code-cache");
@@ -6697,6 +6682,8 @@ let foregroundFocusHelper = null;
 let foregroundFocusHelperReady = false;
 let pendingForegroundHwnd = null;
 let foregroundStealBusyUntil = 0;
+/** One resolver per outstanding `FG`, answered in the order the replies arrive. */
+const foregroundSnapshotWaiters = [];
 
 function foregroundFocusAssetPath() {
   const p = path.join(__dirname, "foreground-focus.ps1");
@@ -6712,9 +6699,16 @@ function ensureForegroundFocusHelper() {
     { windowsHide: true },
   );
   foregroundFocusHelper = child;
-  child.stdout.on("data", (data) => {
-    const text = data.toString().trim();
-    if (text.includes("READY")) {
+  /**
+   * Framed by line, and matched by exact text rather than by `includes`.
+   *
+   * Both matter now that `FG` replies share this pipe. A chunk is not a message — one `data` event
+   * can carry two replies or half of one — and the old readiness test was a substring search for
+   * "READY" against the whole chunk, so any window whose *title* contained that word would have
+   * been read as the helper announcing itself and swallowed the snapshot with it.
+   */
+  const readHelperLine = createLineSplitter((text) => {
+    if (text === "READY") {
       foregroundFocusHelperReady = true;
       if (pendingForegroundHwnd) {
         const hwnd = pendingForegroundHwnd;
@@ -6723,14 +6717,22 @@ function ensureForegroundFocusHelper() {
       }
       return;
     }
+    if (text.startsWith("FG|")) {
+      const waiter = foregroundSnapshotWaiters.shift();
+      if (waiter) waiter(parseForegroundSnapshot(text.slice(3)));
+      return;
+    }
     diagLog(`[Foreground] ${text}`);
   });
+  child.stdout.on("data", (data) => readHelperLine(data.toString()));
   child.stderr.on("data", (data) => diagLog(`[Foreground] ${data.toString().trim()}`));
   child.on("exit", () => {
     if (foregroundFocusHelper === child) {
       foregroundFocusHelper = null;
       foregroundFocusHelperReady = false;
     }
+    // A reply that will never arrive still has a trigger waiting behind it.
+    while (foregroundSnapshotWaiters.length) foregroundSnapshotWaiters.shift()(null);
   });
   child.on("error", (err) => diagLog(`[Foreground] failed: ${err.message}`));
 }
@@ -6747,8 +6749,54 @@ function writeForegroundFocus(hwnd) {
   }
 }
 
+/**
+ * Asks the warm helper what is in the foreground, in the shape `active-win` used to return.
+ *
+ * Resolves `null` only when the helper is unavailable or silent, which is the caller's signal to
+ * fall back to spawning `get-foreground-exe.ps1`. Measured round-trip on a live host is 0.3-3ms,
+ * so the timeout is set well above the noise: it exists to keep a wedged helper from holding the
+ * wheel closed, not to bound normal operation.
+ */
+function getForegroundSnapshotFast() {
+  if (process.platform !== "win32") return Promise.resolve(null);
+  return new Promise((resolve) => {
+    ensureForegroundFocusHelper();
+    if (!foregroundFocusHelper || !foregroundFocusHelperReady || !foregroundFocusHelper.stdin?.writable) {
+      return resolve(null);
+    }
+
+    let settled = false;
+    const finish = (value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(value);
+    };
+    const drop = () => {
+      const index = foregroundSnapshotWaiters.indexOf(finish);
+      if (index >= 0) foregroundSnapshotWaiters.splice(index, 1);
+    };
+    const timer = setTimeout(() => {
+      drop();
+      diagLog("[Foreground] FG timed out");
+      finish(null);
+    }, 150);
+    timer.unref?.();
+
+    foregroundSnapshotWaiters.push(finish);
+    try {
+      foregroundFocusHelper.stdin.write("FG\n");
+    } catch (e) {
+      drop();
+      diagLog(`[Foreground] FG write failed: ${e.message}`);
+      finish(null);
+    }
+  });
+}
+
 function stopForegroundFocusHelper() {
   pendingForegroundHwnd = null;
+  while (foregroundSnapshotWaiters.length) foregroundSnapshotWaiters.shift()(null);
   if (!foregroundFocusHelper) return;
   const child = foregroundFocusHelper;
   foregroundFocusHelper = null;

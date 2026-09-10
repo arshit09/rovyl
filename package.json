@@ -12,9 +12,9 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build && node scripts/verify-radial-windowing.mjs && node scripts/verify-renderer-budget.mjs && node scripts/generate-win-icon.mjs && node scripts/generate-appx-assets.mjs",
-    "electron": "wait-on tcp:5173 && cross-env NODE_ENV=development node scripts/launch-electron.js",
+    "electron": "node scripts/launch-electron.js",
     "start": "node scripts/start-local-runtime.cjs",
-    "start:runtime": "concurrently -k \"npm run dev\" \"npm run electron\"",
+    "start:runtime": "node scripts/dev-runtime.cjs",
     "dist": "npm run build && node scripts/run-electron-builder.mjs",
     "test:win32-launch": "node --test backend/win32-launch.test.cjs",
     "test:persistence-shape": "node scripts/persistence-normalize-smoke.mjs",
@@ -25,6 +25,7 @@
     "test:radial-filter": "node scripts/radial-filter-smoke.mjs",
     "test:icon-store": "node scripts/icon-store-smoke.mjs",
     "test:persistence-mirror": "node scripts/persistence-mirror-smoke.mjs",
+    "test:foreground-snapshot": "node scripts/foreground-snapshot-smoke.mjs",
     "test:trigger-gesture": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/trigger-gesture-smoke.ps1",
     "icons:tray": "node scripts/generate-tray-icons.mjs",
     "verify:radial-windowing": "node scripts/verify-radial-windowing.mjs",
@@ -33,35 +34,36 @@
     "release:check": "node scripts/release.mjs --check",
     "dist:store": "npm run build && node scripts/run-electron-builder.mjs --win appx --publish never"
   },
+  "_comment_dependencies": "Runtime only. electron-builder bundles the whole production closure into app.asar, so anything the main process does not require() belongs in devDependencies — Vite compiles the renderer's imports into dist/ and the packages themselves never ship.",
   "dependencies": {
-    "@tailwindcss/vite": "^4.3.0",
-    "active-win": "^8.2.1",
     "electron-updater": "^6.8.9",
-    "framer-motion": "^10.16.4",
-    "lucide-react": "^0.292.0",
     "node-global-key-listener": "^0.1.1",
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0",
-    "sql.js": "^1.14.1",
-    "tailwindcss": "^4.3.0"
+    "sql.js": "^1.14.2"
   },
   "devDependencies": {
     "@fontsource-variable/instrument-sans": "^5.3.0",
-    "@fontsource-variable/inter": "^5.2.8",
-    "@fontsource-variable/space-grotesk": "^5.2.10",
-    "@types/react": "^18.2.37",
+    "@fontsource-variable/inter": "^5.3.0",
+    "@fontsource-variable/space-grotesk": "^5.3.0",
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/react": "^18.3.31",
     "@types/react-dom": "^18.2.15",
-    "@vitejs/plugin-react": "^6.0.5",
-    "concurrently": "^8.2.2",
-    "cross-env": "^7.0.3",
+    "@vitejs/plugin-react": "^6.1.1",
     "electron": "^28.3.3",
     "electron-builder": "^24.9.1",
-    "png-to-ico": "^3.0.1",
+    "framer-motion": "^10.16.4",
+    "lucide-react": "^0.292.0",
+    "png-to-ico": "^3.0.2",
     "rcedit": "^4.0.1",
-    "sharp": "^0.35.3",
-    "typescript": "^5.2.2",
-    "vite": "^8.2.1",
-    "wait-on": "^7.1.0"
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "sharp": "^0.35.4",
+    "tailwindcss": "^4.3.3",
+    "typescript": "^5.9.3",
+    "vite": "^8.2.2"
+  },
+  "_comment_overrides": "tar<=7.5.20 carries the tree's only critical advisory (hardlink path traversal) and reaches app.asar through app-builder-lib. Its one call site there packs tar.gz/xz/bz2 targets, which this project does not build — build.win.target is nsis. glob and rimraf are deliberately NOT overridden: glob>=9 makes @electron/asar's promisified crawl hang forever, and rimraf>=4 throws on load inside cacache.",
+  "overrides": {
+    "tar": "^7.5.22"
   },
   "build": {
     "appId": "com.henry.rovyl",
@@ -77,8 +79,7 @@
     "asarUnpack": [
       "backend/*.ps1",
       "resources/bin/**/*",
-      "node_modules/sql.js/dist/sql-wasm.wasm",
-      "node_modules/active-win/**/*"
+      "node_modules/sql.js/dist/sql-wasm.wasm"
     ],
     "directories": {
       "output": "build-out"
