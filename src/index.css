@@ -252,6 +252,19 @@
   transition: color .15s var(--zn-ease), background .15s var(--zn-ease);
 }
 .zs-nav button span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.zs-nav-label { flex: 1; }
+/* How many settings are in there, answered without a click. Tabular figures so the column does not
+   jitter between a 2 and a 12 as the workspace list grows. */
+.zs-nav-count {
+  flex: none; color: var(--zn-text-3); font-size: 11px; font-variant-numeric: tabular-nums;
+}
+.zs-nav button.is-active .zs-nav-count { color: var(--zn-text-2); }
+/* Something in this section no longer matches the shipped default. Not a `span`: the collapse rule
+   above hides those, and this is the half worth keeping on a 60px rail. */
+.zs-nav-dot {
+  flex: none; width: 5px; height: 5px; border-radius: 50%;
+  background: var(--zn-text-2); opacity: .8;
+}
 .zs-nav button svg { flex: none; color: var(--zn-text-3); transition: color .15s var(--zn-ease); }
 .zs-nav button:hover { color: var(--zn-text); background: var(--zn-hover); }
 .zs-nav button:hover svg { color: var(--zn-text-2); }

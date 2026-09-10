@@ -170,8 +170,8 @@ its section, and a retired one keeps its number rather than being reused.
 
 ## 4. UX and intuitiveness
 
-- [ ] **4.14** Settings sections are discoverable only by clicking each; consider group counts and a
-  recently-changed marker.
+All done. Ids 4.1–4.14 are retired and will not be reused; what each one changed is in the commit
+that closed it. The section stays because §8 points into it and because a later UX item takes 4.15.
 
 ## 5. Accessibility
 

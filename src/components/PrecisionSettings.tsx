@@ -973,6 +973,30 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
 
   const isEmpty = results.length === 0;
 
+  /**
+   * What each section holds, so the sidebar stops being five words with nothing behind them.
+   *
+   * Two facts, both free. The count answers "is there anything in there" without a click. The dot
+   * marks a section holding something that no longer matches `DEFAULT_UI_CONFIG` — which is a
+   * better answer to "what have I changed here" than a recency stamp would be: it needs no clock,
+   * no per-setting timestamp in the config, and it stays true a month later, when "recently" has
+   * stopped meaning anything.
+   *
+   * It reuses exactly what the per-row revert reuses, so a row and its section can never disagree
+   * about whether it has been touched.
+   */
+  const sectionMeta = useMemo(() => {
+    const meta = {} as Record<SectionId, { count: number; changed: boolean }>;
+    for (const section of SECTIONS) {
+      const rows = sections[section.id] ?? [];
+      meta[section.id] = {
+        count: rows.length,
+        changed: rows.some((row) => row.configKey && !isAtDefault(row.configKey)),
+      };
+    }
+    return meta;
+  }, [sections, isAtDefault]);
+
   if (!isOpen) return null;
 
   return (
@@ -1023,7 +1047,17 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
                   onClick={() => { setSectionId(section.id); setQuery(''); }}
                 >
                   <Icon size={15} strokeWidth={1.8} />
-                  <span>{section.label}</span>
+                  <span className="zs-nav-label">{section.label}</span>
+                  {/*
+                    The count is a `span` so the existing collapse rule takes it away with the label
+                    — a bare number beside an icon says nothing. The dot is deliberately NOT one: it
+                    is the half that still reads at 60px, and it is what makes a collapsed rail
+                    worth looking at.
+                  */}
+                  <span className="zs-nav-count">{sectionMeta[section.id].count}</span>
+                  {sectionMeta[section.id].changed && (
+                    <i className="zs-nav-dot" role="img" aria-label="Changed from default" title="Changed from default" />
+                  )}
                 </button>
               );
             })}
