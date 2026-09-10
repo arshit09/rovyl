@@ -2445,6 +2445,25 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
             </div>
           )}
 
+          {/*
+            How to leave without launching anything — the one thing direction mode gives no way to
+            work out. The pointer is HIDDEN in this mode, so the usual answer (move away and click
+            nothing) is not available, and until now the countdown arc was the only thing on screen
+            that acknowledged the mode at all.
+
+            Only until the hand moves. From that moment the arc is the explanation and the user is
+            aiming, not deciding whether to; a hint that stayed would be furniture on every open for
+            anyone who uses this daily. It costs nothing to show again next time, because next time
+            is another moment of not having moved yet.
+          */}
+          {isOpen && bloom && directionMode && !hasMoved && !typeAhead && rawLevelApps.length > 0 && (
+            <div className="zn-radial-filter is-hint" role="note">
+              <span className="zn-radial-filter-count">
+                Push toward a target to open it — or press <kbd>Esc</kbd> to close the wheel.
+              </span>
+            </div>
+          )}
+
           {/* Menu Container */}
           <div
             ref={menuRef}

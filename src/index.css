@@ -993,6 +993,15 @@
 /* Same plate, one message instead of two: the discovery notice has no query to sit beside. */
 .zn-radial-filter.is-notice { padding: 10px 18px; }
 .zn-radial-filter.is-notice .zn-radial-filter-count { color: rgba(255, 255, 255, .82); font-size: 12.5px; }
+/* The direction-mode hint. Quieter than the notice: it is an offer, not news, and it sits under a
+   wheel the user is about to aim at. */
+.zn-radial-filter.is-hint { padding: 8px 14px; border-color: rgba(255, 255, 255, .14); }
+.zn-radial-filter.is-hint .zn-radial-filter-count { color: rgba(255, 255, 255, .66); font-size: 11.5px; }
+.zn-radial-filter.is-hint kbd {
+  display: inline-block; padding: 2px 5px; margin: 0 1px;
+  color: rgba(255, 255, 255, .82); border: 1px solid rgba(255, 255, 255, .26); border-radius: 4px;
+  background: rgba(255, 255, 255, .07); font: 500 10.5px/1 var(--font-ui);
+}
 
 /* ── First run ──────────────────────────────────────────────────────────────
    Above the settings surface and below the fault card: an error still has to be readable, even on

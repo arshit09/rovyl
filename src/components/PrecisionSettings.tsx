@@ -727,8 +727,9 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
           1, 'activationThreshold'),
         {
           key: 'instant', configKey: 'radialInstantActivate', group: 'Hands-free', title: 'Launch without clicking',
+          /** The way OUT belongs in the description: with the pointer hidden, it is not guessable. */
           description:
-            'Hides the pointer and picks by direction — move toward a target and it opens by itself.',
+            'Hides the pointer and picks by direction — move toward a target and it opens by itself. Escape closes the wheel without opening anything.',
           /**
            * Interruptor, não segmentado. Todo o binário deste painel é `bool`; um segmentado é
            * sempre uma escolha entre pares com nome (Picker/Keys, Click/Hold, Direction/Pointer) e

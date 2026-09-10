@@ -170,7 +170,6 @@ its section, and a retired one keeps its number rather than being reused.
 
 ## 4. UX and intuitiveness
 
-- [ ] **4.13** **Dwell mode has no in-app cancel explanation** — the arc is the only signal.
 - [ ] **4.14** Settings sections are discoverable only by clicking each; consider group counts and a
   recently-changed marker.
 
