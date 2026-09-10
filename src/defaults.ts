@@ -218,7 +218,6 @@ export const DEFAULT_UI_CONFIG: UIConfig = {
   iconSize: 64,
   fixedPosition: true,
   backdropOpacity: 1,
-  menuOpacity: 0.8,
   menuBackgroundStyle: "circle",
   appSpacing: 10, // Default spacing between apps
   activationThreshold: 60,

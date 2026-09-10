@@ -102,7 +102,6 @@ export interface UIConfig {
    */
   fixedPosition: boolean;
   backdropOpacity: number;
-  menuOpacity: number;
   menuBackgroundStyle: "circle" | "fullscreen";
   appSpacing: number; // New: spacing between apps in radial menu
   activationThreshold: number;

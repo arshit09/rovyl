@@ -42,6 +42,7 @@ import { SmartIcon } from './SmartIcon';
 import { IconPicker } from './IconPicker';
 import '../fonts-display.css';
 import { NativeAppIcon, useInstalledApps, type InstalledApp } from './installedApps';
+import { WheelPreview } from './WheelPreview';
 
 interface PrecisionSettingsProps {
   isOpen: boolean;
@@ -179,6 +180,14 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
     [setNav],
   );
   const [editor, setEditor] = useState<Editor>(null);
+  /**
+   * What the preview draws — the same rule `App` uses to decide what the wheel draws, and it has
+   * to stay the same rule: a preview of a different list is worse than no preview.
+   */
+  const previewApps = useMemo(() => {
+    const workspace = config.workspaces[config.activeWorkspaceIndex];
+    return workspace?.apps?.length ? workspace.apps : apps;
+  }, [config.workspaces, config.activeWorkspaceIndex, apps]);
   /** Survives only until `WorkspaceManager` has expanded the row; `nav` is cleared immediately. */
   const [focusAppId, setFocusAppId] = useState<string | null>(null);
   const [query, setQuery] = useState('');
@@ -649,8 +658,6 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
           kind: 'bool', enabled: config.alwaysShowAppLabels,
           onToggle: () => update('alwaysShowAppLabels', !config.alwaysShowAppLabels),
         },
-        range('opacity', 'Presence', 'Wheel opacity', 'Make the interface more solid or subtle.',
-          config.menuOpacity, 0.35, 1, (value) => update('menuOpacity', value), (value) => `${Math.round(value * 100)}%`, 0.01),
         range('backdrop', 'Presence', 'Background dimming', 'How much the rest of the screen recedes.',
           config.backdropOpacity ?? 1, 0, 1, (value) => update('backdropOpacity', value), (value) => `${Math.round(value * 100)}%`, 0.01),
       ],
@@ -862,6 +869,14 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
                   animate={{ opacity: 1, y: 0 }}
                   transition={{ duration: 0.2, ease: [0.22, 1, 0.36, 1] }}
                 >
+                  {/*
+                    Only on Appearance, and only outside search. Every setting it answers to lives
+                    in this section, and a search result set is a list of rows from anywhere — a
+                    wheel drawn over it would be illustrating settings that are not on screen.
+                  */}
+                  {sectionId === 'appearance' && !trimmedQuery && (
+                    <WheelPreview config={config} apps={previewApps} />
+                  )}
                   {results.map((group) => (
                     <section className="zs-group" key={group.name}>
                       <h2 className="zs-group-title">{group.name}</h2>

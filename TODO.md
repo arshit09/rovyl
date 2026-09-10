@@ -170,8 +170,6 @@ its section, and a retired one keeps its number rather than being reused.
 
 ## 4. UX and intuitiveness
 
-- [ ] **4.2** **No live preview in settings.** Changing orbital radius, icon size, spacing, opacity or
-  backdrop means closing settings and triggering the wheel to see the effect. Add an inline preview.
 - [ ] **4.3** **`window.confirm` for workspace deletion** (`PrecisionSettings.tsx:332`) — a native blocking
   dialog inside a frameless transparent window, and untranslated. Replace with in-app confirm, or
   better: delete + undo toast.

@@ -280,6 +280,56 @@
 
 /* Composição contínua: os divisores separam, não caixas. */
 .zs-rows { border-top: 1px solid var(--zn-line); }
+
+/* ── Wheel preview (Appearance) ─────────────────────────────────────────────
+   Sticky, because the sliders it answers to run past the fold: "Background
+   dimming" is the last row of the section, and a preview that had scrolled
+   away by then is a preview for the first two settings only. */
+.zs-wheel-preview {
+  position: sticky; top: 0; z-index: 5; margin-bottom: var(--zn-5);
+  background: var(--zn-bg); padding-bottom: var(--zn-2);
+}
+.zs-wheel-stage {
+  position: relative; overflow: hidden; border-radius: var(--zn-r-control);
+  border: 1px solid var(--zn-line);
+}
+/* The desktop the wheel is drawn over. Deliberately light, and deliberately plain: "Background
+   dimming" darkens whatever is behind the wheel, so it can only be judged against something bright
+   enough to lose. A wallpaper with any character would get judged instead of the setting. */
+.zs-wheel-desk {
+  position: absolute; inset: 0;
+  background: linear-gradient(135deg, #8d97ad 0%, #6f7891 45%, #4d5468 100%);
+}
+.zs-wheel-scrim { position: absolute; inset: 0; }
+.zs-wheel-layer { position: absolute; left: 50%; top: 50%; width: 0; height: 0; }
+/* The hub carries the workspace glyph on the real wheel. Here it is a disc with a ring, so it
+   reads as the centre control it is and not as a hole punched in the middle. */
+.zs-wheel-hub {
+  position: absolute; left: 0; top: 0; display: grid; place-items: center;
+  transform: translate(-50%, -50%);
+  border-radius: 50%; border: 2px solid; background: rgba(10, 11, 14, .92);
+  box-shadow: 0 0 0 1px rgba(0,0,0,.5), 0 8px 22px rgba(0,0,0,.42);
+}
+.zs-wheel-hub::after {
+  content: ''; width: 34%; height: 34%; border-radius: 50%;
+  border: 2px solid rgba(255,255,255,.32);
+}
+.zs-wheel-slot { position: absolute; left: 0; top: 0; }
+.zs-wheel-tile {
+  display: grid; place-items: center; border-radius: 18px; border: 1px solid;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.08), 0 0 0 1px rgba(0,0,0,.5), 0 8px 22px rgba(0,0,0,.42);
+}
+.zs-wheel-tile img { width: 70%; height: 70%; object-fit: contain; }
+.zs-wheel-label {
+  position: absolute; left: 50%; top: 50%; white-space: nowrap;
+  padding: 6px 12px; border-radius: 999px; border: 1px solid;
+  font: 500 13px/1 var(--font-ui);
+  box-shadow: 0 0 0 1px rgba(0,0,0,.45), 0 6px 18px rgba(0,0,0,.45);
+}
+.zs-wheel-caption {
+  margin: var(--zn-2) 0 0; color: var(--zn-text-3); font-size: 10.5px; line-height: 1.4;
+}
+
 .zs-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--zn-6); padding-block: var(--zn-3); border-bottom: 1px solid var(--zn-line); }
 .zs-row.is-openable { cursor: pointer; }
 .zs-row-copy { min-width: 0; }
