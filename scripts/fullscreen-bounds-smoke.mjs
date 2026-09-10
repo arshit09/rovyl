@@ -3,8 +3,11 @@ import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
 const {
+  MAX_FRAME_OVERHANG_DIP,
   displayNearestPoint,
   scaleRectToDip,
+  workAreaOverhang,
+  isMaximizedOnWorkArea,
   isDipRectFullscreen,
   isPhysicalRectFullscreen,
 } = require("../backend/fullscreen-bounds.cjs");
@@ -232,22 +235,129 @@ check("nothing to measure means not fullscreen", () => {
 
 check("a display with no workArea is measured against its bounds", () => {
   const bare = [{ bounds: { x: 0, y: 0, width: 1920, height: 1080 }, scaleFactor: 1 }];
-  assert.equal(isDipRectFullscreen({ x: 0, y: 0, width: 1920, height: 1080 }, bare), false);
+  // Falling back to bounds makes this precisely a panel that reserves nothing, so it earns that
+  // panel's verdicts: flush with the monitor is fullscreen, a resize-border overhang is maximized,
+  // and a window that covers neither is neither.
+  assert.equal(isDipRectFullscreen({ x: 0, y: 0, width: 1920, height: 1080 }, bare), true);
+  assert.equal(isDipRectFullscreen({ x: -8, y: -8, width: 1936, height: 1096 }, bare), false);
   assert.equal(isDipRectFullscreen({ x: 0, y: 0, width: 900, height: 500 }, bare), false);
 });
 
 // ---------------------------------------------------------------------------
-// A known limitation, recorded rather than fixed: unrelated to DPI, present at every scale.
+// A panel that reserves no taskbar — common on a secondary monitor, and on any panel whose taskbar
+// auto-hides. workArea == bounds, so there is no uncovered strip to tell maximized from fullscreen
+// and the whole verdict rests on the resize-border overhang.
 // ---------------------------------------------------------------------------
-check("KNOWN: on a panel with no reserved taskbar, maximized still reads as fullscreen", () => {
-  // With workArea == bounds there is no uncovered strip left to tell the two apart, and the
-  // maximized early-return misses because the invisible resize border makes the rect 16 DIP wider
-  // than the work area while the slack is 10. Identical verdict at 100% and at 150%, so this is
-  // not the DPI bug — it is the slack being narrower than the frame overhang.
-  for (const scale of [1, 1.5]) {
-    const { displays, toDip } = layout([{ physW: 1920, physH: 1080, scale, taskbarDip: 0 }]);
-    assert.equal(isPhysicalRectFullscreen(maximizedPhys(displays[0]), displays, toDip), true, `${scale}`);
+for (const scale of [1, 1.25, 1.5, 1.75, 2]) {
+  const pct = `${scale * 100}%`;
+  const { displays, toDip } = layout([{ physW: 1920, physH: 1080, scale, taskbarDip: 0 }]);
+  const [panel] = displays;
+
+  check(`taskbar-less panel: maximized is not fullscreen @ ${pct}`, () => {
+    // Pinned as a KNOWN over-block until the maximized test learned about the frame. With no
+    // reserved strip there is nothing for the fullscreen test to miss, so it passed on an ordinary
+    // maximized window — and the early return meant to stop that was out of reach, the rect being
+    // 16 DIP larger than the work area in each axis while the slack was 10. It read the same at
+    // 100% as at 150%, which is how we knew it was never the DPI bug.
+    assert.equal(isPhysicalRectFullscreen(maximizedPhys(panel), displays, toDip), false);
+  });
+
+  check(`taskbar-less panel: true fullscreen is fullscreen @ ${pct}`, () => {
+    // The same panel got this wrong in the other direction, which went unrecorded: a fullscreen rect
+    // here equals both bounds and workArea, so the flush work-area comparison matched it and a real
+    // game read as merely maximized. It is also the regression to watch while fixing the line above
+    // — a maximized test that simply allowed more slack would swallow this rect again.
+    assert.equal(isPhysicalRectFullscreen(fullscreenPhys(panel), displays, toDip), true);
+  });
+
+  check(`taskbar-less panel: borderless fullscreen is fullscreen @ ${pct}`, () => {
+    // Covers the panel exactly like the exclusive-mode one; no geometry separates them.
+    const borderless = { x: 0, y: 0, width: 1920, height: 1080 };
+    assert.equal(isPhysicalRectFullscreen(borderless, displays, toDip), true);
+  });
+
+  check(`taskbar-less panel: a half-screen window is not fullscreen @ ${pct}`, () => {
+    const half = { x: 0, y: 0, width: 960, height: 1080 };
+    assert.equal(isPhysicalRectFullscreen(half, displays, toDip), false);
+  });
+}
+
+check("a desktop whose secondary panel reserves no taskbar", () => {
+  // The layout this actually shows up on: Windows reserves the taskbar on one panel, and a window
+  // maximized on the other has no strip behind it. Both panels have to answer correctly at once,
+  // and the secondary is at a different scale factor so the DIP conversion is in play too.
+  const { displays, toDip } = layout([
+    { physW: 1920, physH: 1080, scale: 1, taskbarDip: 40, label: "primary, taskbar" },
+    { physW: 2560, physH: 1440, scale: 1.25, taskbarDip: 0, physX: 1920, label: "secondary, none" },
+  ]);
+  for (const display of displays) {
+    assert.equal(isPhysicalRectFullscreen(maximizedPhys(display), displays, toDip), false, display.label);
+    assert.equal(isPhysicalRectFullscreen(fullscreenPhys(display), displays, toDip), true, display.label);
   }
+});
+
+check("a taskbar thin enough to look like slack still separates the two", () => {
+  // An auto-hiding taskbar reserves nothing or next to nothing. Two DIP is inside the slack, so the
+  // work area counts as uninset and the overhang is again the only thing doing the work — which is
+  // the point: the verdict must not depend on the reserved strip being thick enough to notice.
+  for (const taskbarDip of [2, 24]) {
+    const { displays, toDip } = layout([{ physW: 1920, physH: 1080, scale: 1.5, taskbarDip }]);
+    const [panel] = displays;
+    assert.equal(isPhysicalRectFullscreen(maximizedPhys(panel), displays, toDip), false, `max ${taskbarDip}`);
+    assert.equal(isPhysicalRectFullscreen(fullscreenPhys(panel), displays, toDip), true, `fs ${taskbarDip}`);
+  }
+});
+
+check("the frame overhang stays one border per side in DIP, at every scale factor", () => {
+  // Why the tolerance can be a tight 12 and not a guess: both metrics behind the border scale with
+  // the DPI, so converting back to DIP always lands on the same 8 — the conversion rounds each edge
+  // independently, and this pins that the rounding never drifts into a second digit.
+  for (const scale of [1, 1.25, 1.5, 1.75, 2]) {
+    for (const taskbarDip of [0, 40]) {
+      const { displays, toDip } = layout([{ physW: 1920, physH: 1080, scale, taskbarDip }]);
+      const [panel] = displays;
+      const overhang = workAreaOverhang(toDip(maximizedPhys(panel)), panel.workArea);
+      assert.deepEqual(overhang, [BORDER_DIP, BORDER_DIP, BORDER_DIP, BORDER_DIP], `${scale}/${taskbarDip}`);
+      assert.ok(BORDER_DIP <= MAX_FRAME_OVERHANG_DIP, "the tolerance has to cover the real border");
+    }
+  }
+});
+
+check("the overhang tolerance is bounded at both ends", () => {
+  // On a taskbar-less panel the overhang is the only evidence there is, so what counts as a frame
+  // has to be exact at both edges: zero is a fullscreen window sitting flush, and anything past the
+  // tolerance is a window larger than the panel rather than one wearing a border.
+  const db = { x: 0, y: 0, width: 1920, height: 1080 };
+  const wa = { ...db };
+  const inflate = (by) => ({ x: -by, y: -by, width: 1920 + 2 * by, height: 1080 + 2 * by });
+  const maximized = (by) => isMaximizedOnWorkArea(inflate(by), wa, db, 10);
+
+  assert.equal(maximized(0), false, "flush is fullscreen, not maximized");
+  assert.equal(maximized(1), true, "the thinnest possible frame still counts");
+  assert.equal(maximized(BORDER_DIP), true, "the real border");
+  assert.equal(maximized(MAX_FRAME_OVERHANG_DIP), true, "the last value inside the tolerance");
+  assert.equal(maximized(MAX_FRAME_OVERHANG_DIP + 1), false, "one DIP past it is not a frame");
+
+  // Uneven overhangs are not a maximized window either: every edge has to wear the same frame, and
+  // a window that covers three edges of the work area but falls short of the fourth is just a
+  // window. Only the fullscreen test behind this one gets to speak for those.
+  assert.equal(isMaximizedOnWorkArea({ x: -8, y: -8, width: 1936, height: 1080 }, wa, db, 10), false);
+  assert.equal(isMaximizedOnWorkArea({ x: 0, y: -8, width: 1928, height: 1096 }, wa, db, 10), false);
+});
+
+check("a frameless maximized window on a taskbar-less panel is called fullscreen", () => {
+  // Not a bug to fix later — there is nothing left to measure. A window maximized with no resize
+  // frame is flush with the work area, and on this panel the work area is the monitor, so its rect
+  // is identical to a borderless game's. The tie goes to fullscreen: refusing to open the wheel
+  // over a maximized window is a smaller harm than opening it over a game.
+  const { displays, toDip } = layout([{ physW: 1920, physH: 1080, scale: 1, taskbarDip: 0 }]);
+  const frameless = { x: 0, y: 0, width: 1920, height: 1080 };
+  assert.equal(isPhysicalRectFullscreen(frameless, displays, toDip), true);
+
+  // On a panel that does reserve a strip the same window is unambiguous, and stays let through.
+  const withTaskbar = layout([{ physW: 1920, physH: 1080, scale: 1, taskbarDip: 40 }]);
+  const flush = { x: 0, y: 0, width: 1920, height: 1040 };
+  assert.equal(isPhysicalRectFullscreen(flush, withTaskbar.displays, withTaskbar.toDip), false);
 });
 
 let failed = 0;

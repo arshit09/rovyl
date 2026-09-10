@@ -9,6 +9,10 @@
  * loudly — it just starts answering "fullscreen" for windows that are merely maximized, and game
  * mode refuses to open the wheel over an ordinary maximized window.
  *
+ * The other silent trap is that a maximized window's rect is not the work area: Windows fits its
+ * *visible* area there and lets the invisible resize border hang off all four edges. What separates
+ * maximized from fullscreen is that overhang, not size — see `isMaximizedOnWorkArea`.
+ *
  * Nothing in here touches Electron, so `scripts/fullscreen-bounds-smoke.mjs` can walk a whole
  * matrix of scale factors and monitor layouts that no single development machine has.
  */
@@ -20,6 +24,22 @@
  * verdict for every unscaled display is bit-for-bit what it was before the units were fixed.
  */
 const FULLSCREEN_SLACK_DIP = 10;
+
+/**
+ * How far a maximized window's rect hangs off each edge of the work area.
+ *
+ * Windows maximizes a window by fitting its *visible* area to the work area, so the rect itself
+ * comes out one invisible resize border larger on every side — SM_CXSIZEFRAME + SM_CXPADDEDBORDER,
+ * 8 DIP on the default Windows 10/11 themes, and 8 in DIP at every scale factor because both
+ * metrics scale with the DPI. Twelve rather than eight leaves room for a rounded conversion and for
+ * a theme that pads its borders differently, while staying far below the thinnest taskbar anyone
+ * docks, so this tolerance can never be mistaken for a reserved strip.
+ *
+ * Deliberately not folded into FULLSCREEN_SLACK_DIP: widening the global slack to 16 would also
+ * widen how far short of the monitor a window may fall and still count as covering it, which is the
+ * one direction that must stay tight — that test is what catches real fullscreen.
+ */
+const MAX_FRAME_OVERHANG_DIP = 12;
 
 /**
  * Windows never hands out a window smaller than this as a fullscreen surface, and rejecting it
@@ -117,12 +137,64 @@ function scaleRectToDip(rect, displays) {
 }
 
 /**
+ * How far a rect extends past each edge of a work area: `[left, top, right, bottom]`, positive
+ * outwards. A rect sitting entirely inside the work area answers with four negative numbers.
+ */
+function workAreaOverhang(rect, wa) {
+  return [
+    wa.x - rect.x,
+    wa.y - rect.y,
+    rect.x + rect.width - (wa.x + wa.width),
+    rect.y + rect.height - (wa.y + wa.height),
+  ];
+}
+
+/**
+ * Is this a maximized window rather than a fullscreen one?
+ *
+ * The honest signal is the invisible resize border. A maximized window hangs off all four edges of
+ * the work area by it; a fullscreen window is flush with the *monitor*, so measured against the work
+ * area at least one of its edges sits exactly on the boundary — and the edge a taskbar is docked on
+ * overhangs by the whole reserved strip, far more than a border. "Covers the work area and overhangs
+ * every edge of it, by no more than a frame" is therefore a shape only maximizing produces.
+ *
+ * That test is what the flush comparison below cannot do alone. On a panel that reserves a taskbar
+ * the flush test misses every real maximized window — the rect is ~16 DIP larger than the work area
+ * in each axis, wider than any sane slack — and the reserved strip quietly covers for it, because
+ * the fullscreen test behind it fails anyway: the rect does not reach the edge the taskbar sits on.
+ * On a panel that reserves nothing there is no strip to cover for it, and both halves of the verdict
+ * came out wrong — a maximized window read as fullscreen, and a real fullscreen game read as
+ * maximized, since with workArea == bounds a flush fullscreen rect matches the work area exactly.
+ *
+ * Hence the flush test now only speaks when the work area is genuinely inset from the monitor. A
+ * window maximized *without* a resize frame is flush with the work area, and on a taskbar-less panel
+ * that rect is indistinguishable from a borderless-fullscreen one — same origin, same size, no
+ * geometry left to tell them apart. Such a tie is called fullscreen, because interrupting a game is
+ * the costlier of the two mistakes.
+ */
+function isMaximizedOnWorkArea(rect, wa, db, slack) {
+  const overhang = workAreaOverhang(rect, wa);
+  if (overhang.every((gap) => gap > 0 && gap <= MAX_FRAME_OVERHANG_DIP)) return true;
+
+  const reservesStrip =
+    Math.abs(wa.width - db.width) > slack || Math.abs(wa.height - db.height) > slack;
+  if (!reservesStrip) return false;
+
+  return (
+    Math.abs(rect.x - wa.x) <= slack &&
+    Math.abs(rect.y - wa.y) <= slack &&
+    Math.abs(rect.width - wa.width) <= slack &&
+    Math.abs(rect.height - wa.height) <= slack
+  );
+}
+
+/**
  * The verdict, given a rect and a display list that are finally in the same units.
  *
- * Two questions, in order. A rect that matches the work area is a maximized window and is let
- * through immediately; anything that reaches all four edges of the monitor is fullscreen. The
- * order is what makes the units load-bearing: with a physical rect the first test can never match
- * a DIP work area, so it was being skipped, and the second then passed on nothing more than a
+ * Two questions, in order. A rect shaped like a maximized window is let through immediately;
+ * anything else that reaches all four edges of the monitor is fullscreen. The order is what makes
+ * the units load-bearing: with a physical rect neither shape can be recognized against a DIP work
+ * area, so the first test was being skipped, and the second then passed on nothing more than a
  * physical width being a larger number than a DIP one.
  *
  * @param {{x:number,y:number,width:number,height:number}} dipRect
@@ -140,15 +212,10 @@ function isDipRectFullscreen(dipRect, displays, slack = FULLSCREEN_SLACK_DIP) {
   if (!display) return false;
 
   const db = display.bounds;
-  const wa = isFiniteRect(display.workArea) ? display.workArea : db;
   if (!isFiniteRect(db)) return false;
+  const wa = isFiniteRect(display.workArea) ? display.workArea : db;
 
-  const matchesWorkArea =
-    Math.abs(x - wa.x) <= slack &&
-    Math.abs(y - wa.y) <= slack &&
-    Math.abs(width - wa.width) <= slack &&
-    Math.abs(height - wa.height) <= slack;
-  if (matchesWorkArea) return false;
+  if (isMaximizedOnWorkArea(dipRect, wa, db, slack)) return false;
 
   return (
     x <= db.x + slack &&
@@ -182,9 +249,12 @@ function isPhysicalRectFullscreen(rect, displays, toDip) {
 
 module.exports = {
   FULLSCREEN_SLACK_DIP,
+  MAX_FRAME_OVERHANG_DIP,
   MIN_FULLSCREEN_DIP,
   displayNearestPoint,
   scaleRectToDip,
+  workAreaOverhang,
+  isMaximizedOnWorkArea,
   isDipRectFullscreen,
   isPhysicalRectFullscreen,
 };
