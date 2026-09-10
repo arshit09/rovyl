@@ -870,6 +870,20 @@
   color: var(--zn-on-solid); border-radius: var(--zn-r-control); background: var(--zn-solid);
   box-shadow: var(--zn-elev); font-size: 12px; font-weight: 500;
 }
+/* A toast that is only reporting cannot be clicked through; one offering Undo has to be. */
+.zs-toast.has-action { padding-right: var(--zn-2); max-width: min(420px, calc(100% - var(--zn-8))); }
+.zs-toast-text { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.zs-toast-action {
+  flex: none; margin-left: var(--zn-1);
+  height: var(--zn-ctl-sm); padding-inline: var(--zn-3);
+  color: inherit; border: 1px solid currentColor; border-radius: var(--zn-r-chip);
+  background: transparent; cursor: pointer;
+  font: 600 11.5px/1 var(--font-ui);
+  transition: background .15s var(--zn-ease);
+}
+/* `currentColor` on a solid plate: the wash has to come from the text colour, not a fixed alpha. */
+.zs-toast-action:hover { background: color-mix(in srgb, currentColor 14%, transparent); }
+.zs-toast-action:active { background: color-mix(in srgb, currentColor 24%, transparent); }
 
 /* ══ Falha de arranque ═════════════════════════════════════════════════════
    O cartão vive FORA de `.zs-shell` — é irmão do painel, não filho — por isso

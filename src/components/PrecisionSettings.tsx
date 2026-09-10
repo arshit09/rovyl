@@ -32,6 +32,7 @@ import {
   Shield,
   SquareStack,
   Trash2,
+  Undo2,
   X,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
@@ -191,7 +192,15 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
   /** Survives only until `WorkspaceManager` has expanded the row; `nav` is cleared immediately. */
   const [focusAppId, setFocusAppId] = useState<string | null>(null);
   const [query, setQuery] = useState('');
-  const [toast, setToast] = useState<string | null>(null);
+  /**
+   * A toast that can undo what it is reporting.
+   *
+   * `seq` is what restarts the timer: two deletions in a row produce two toasts with the same
+   * words, and without it the second one inherits the first one's countdown and can vanish almost
+   * as it appears.
+   */
+  const [toast, setToast] = useState<{ seq: number; message: string; undo?: () => void } | null>(null);
+  const toastSeq = useRef(0);
   /** Versão do executável (não existe fora do Electron — o rodapé fica só com o nome). */
   const [appVersion, setAppVersion] = useState<string | null>(null);
   /** Ativou a licença: o conteúdo sai em fade antes de a janela fechar. */
@@ -305,13 +314,22 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
     }));
   };
 
-  const showToast = (message: string) => setToast(message);
+  const showToast = (message: string, undo?: () => void) => {
+    toastSeq.current += 1;
+    setToast({ seq: toastSeq.current, message, undo });
+  };
 
+  /** Nobody reads a toast they are reaching for: while the pointer is on it, it has no timer. */
+  const [toastHeld, setToastHeld] = useState(false);
   useEffect(() => {
-    if (!toast) return;
-    const timer = window.setTimeout(() => setToast(null), 2200);
+    if (!toast || toastHeld) return;
+    /**
+     * An undo has to outlast the reaction it is asking for. 2.2 s is right for "Workspace created",
+     * which is only telling you something, and far too short for a decision.
+     */
+    const timer = window.setTimeout(() => setToast(null), toast.undo ? 7000 : 2200);
     return () => window.clearTimeout(timer);
-  }, [toast]);
+  }, [toast, toastHeld]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -416,6 +434,19 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
     showToast('Workspace created');
   };
 
+  /**
+   * Delete now, offer it back for seven seconds.
+   *
+   * This asked `window.confirm` first: a native modal, drawn by Windows, in front of a frameless
+   * transparent window it knows nothing about — and it blocks the renderer while it is up. The
+   * question it asked was also the wrong one, because a yes/no before the fact makes the user
+   * predict whether they will regret it, and they answer it the same way every time until the one
+   * time they should not have. Undo asks nothing and is still there after they have seen the
+   * result.
+   *
+   * The undo re-inserts the workspace it took rather than restoring a snapshot of the whole array,
+   * so a rename or a reorder made during those seven seconds survives being undone.
+   */
   const deleteWorkspace = useCallback((index: number) => {
     const workspace = config.workspaces[index];
     if (!workspace) return;
@@ -423,7 +454,7 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
       showToast('Keep at least one workspace');
       return;
     }
-    if (!window.confirm(`Delete “${workspace.name}”? Its shortcuts will also be removed.`)) return;
+    const previousActiveIndex = config.activeWorkspaceIndex;
 
     setConfig((current) => {
       if (current.workspaces.length <= 1 || !current.workspaces[index]) return current;
@@ -437,8 +468,28 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
       return { ...current, workspaces, activeWorkspaceIndex };
     });
     setEditor((current) => current?.kind === 'workspace' && current.index === index ? null : current);
-    showToast('Workspace deleted');
-  }, [config.workspaces, setConfig]);
+
+    const shortcuts = workspace.apps?.length ?? 0;
+    showToast(
+      shortcuts > 0
+        ? `Deleted “${workspace.name}” and ${shortcuts} ${shortcuts === 1 ? 'shortcut' : 'shortcuts'}`
+        : `Deleted “${workspace.name}”`,
+      () => {
+        setConfig((current) => {
+          /** Undo twice, or undo something that came back another way, must not duplicate it. */
+          if (current.workspaces.some((item) => item.id === workspace.id)) return current;
+          const workspaces = [...current.workspaces];
+          workspaces.splice(Math.min(index, workspaces.length), 0, workspace);
+          return {
+            ...current,
+            workspaces: withPositionalHotkeys(workspaces),
+            activeWorkspaceIndex: Math.min(previousActiveIndex, workspaces.length - 1),
+          };
+        });
+        setToast(null);
+      },
+    );
+  }, [config.workspaces, config.activeWorkspaceIndex, setConfig]);
 
   /**
    * Reordenar workspaces por arrasto.
@@ -913,6 +964,7 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
               config={config}
               update={update}
               updateWorkspace={updateWorkspace}
+              deleteWorkspace={deleteWorkspace}
               setConfig={setConfig}
               apps={apps}
               gameMode={gameMode}
@@ -928,14 +980,26 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
         <AnimatePresence>
           {toast && (
             <motion.div
-              className="zs-toast"
+              key={toast.seq}
+              className={`zs-toast${toast.undo ? ' has-action' : ''}`}
+              role="status"
+              aria-live="polite"
               initial={{ opacity: 0, y: 6 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0 }}
               transition={{ duration: 0.18, ease: [0.22, 1, 0.36, 1] }}
+              onMouseEnter={() => setToastHeld(true)}
+              onMouseLeave={() => setToastHeld(false)}
+              onFocusCapture={() => setToastHeld(true)}
+              onBlurCapture={(event) => {
+                if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setToastHeld(false);
+              }}
             >
-              <Check size={13} strokeWidth={2.2} />
-              {toast}
+              {toast.undo ? <Undo2 size={13} strokeWidth={2.2} /> : <Check size={13} strokeWidth={2.2} />}
+              <span className="zs-toast-text">{toast.message}</span>
+              {toast.undo && (
+                <button type="button" className="zs-toast-action" onClick={toast.undo}>Undo</button>
+              )}
             </motion.div>
           )}
         </AnimatePresence>
@@ -1272,6 +1336,7 @@ function SettingsEditor({
   config,
   update,
   updateWorkspace,
+  deleteWorkspace,
   setConfig,
   apps,
   gameMode,
@@ -1286,6 +1351,8 @@ function SettingsEditor({
   config: UIConfig;
   update: <K extends keyof UIConfig>(key: K, value: UIConfig[K]) => void;
   updateWorkspace: (index: number, patch: Partial<Workspace>) => void;
+  /** The one delete: it renumbers the positional hotkeys and offers the workspace back. */
+  deleteWorkspace: (index: number) => void;
   setConfig: PrecisionSettingsProps['setConfig'];
   apps: AppItem[];
   gameMode: UIConfig['gameMode'];
@@ -1335,14 +1402,13 @@ function SettingsEditor({
         onFocusApplied={onFocusApplied}
         updateWorkspace={updateWorkspace}
         makeActive={() => update('activeWorkspaceIndex', index)}
-        deleteWorkspace={() => {
-          setConfig((current) => ({
-            ...current,
-            activeWorkspaceIndex: Math.max(0, Math.min(current.activeWorkspaceIndex, current.workspaces.length - 2)),
-            workspaces: current.workspaces.filter((_, i) => i !== index),
-          }));
-          close();
-        }}
+        /**
+         * The same delete as the list's, and it was not before. This branch filtered the array
+         * inline and skipped `withPositionalHotkeys`, so removing anything but the last workspace
+         * left the survivors holding their old numbers — key 1 bound to nothing, key 3 opening
+         * what had become the second workspace. Two paths, one of them wrong; now one path.
+         */
+        deleteWorkspace={() => deleteWorkspace(index)}
       />
     );
   }
