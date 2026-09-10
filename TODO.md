@@ -170,8 +170,6 @@ its section, and a retired one keeps its number rather than being reused.
 
 ## 4. UX and intuitiveness
 
-- [ ] **4.7** **Tray menu is two items** (Open Settings / Quit). Add: open wheel, pause trigger for N
-  minutes, switch workspace, check for updates, version.
 - [ ] **4.8** **No keyboard entry to settings search** — bind Ctrl+K / Ctrl+F to `#zs-search-input`.
 - [ ] **4.9** **No wheel type-ahead.** Past ~12 shortcuts the slices get thin; "start typing to filter"
   scales the wheel beyond what aiming alone supports.

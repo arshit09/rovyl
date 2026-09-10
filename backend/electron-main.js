@@ -43,6 +43,7 @@ const { exec, spawn, execFile, execFileSync } = require("child_process");
 const os = require("os");
 const fs = require("fs");
 const win32Launch = require("./win32-launch");
+const { buildTrayMenuTemplate } = require("./tray-menu.cjs");
 const { normalizeFullPersistenceBlob } = require("./persistence-normalize.cjs");
 const { detectGameExecutable } = require("./game-detection.cjs");
 const crypto = require("crypto");
@@ -2631,8 +2632,30 @@ function foregroundLooksLikeGame(exePath, cmdline = "") {
 }
 
 // Main function to decide if we should open (atalho global + botão do meio)
+/**
+ * "Pause trigger" from the tray, as an instant in time rather than a flag.
+ *
+ * An instant needs no timer to stay honest: a machine that sleeps through the pause wakes with it
+ * already over, where a `setTimeout` would still be holding the triggers down. The timer that does
+ * exist only redraws the tray menu, so a stale one costs a wrong label, never a dead trigger.
+ */
+let triggersPausedUntil = 0;
+const triggersArePaused = () => triggersPausedUntil > Date.now();
+/** Set once the tray exists. Held at module scope because the config syncer above it has to call it. */
+let refreshTrayMenuRef = () => {};
+
+/**
+ * Every trigger asks this before opening — the global shortcut, the click and the hold — so the
+ * pause belongs here rather than in three places. The tray's own "Open wheel" does not ask: it is
+ * a request, not a trigger, and refusing an explicit click because the triggers are paused is
+ * refusing the one way out that is left.
+ */
 const shouldOpenMenu = async () => {
   const decisionStartedAt = Date.now();
+  if (triggersArePaused()) {
+    diagLog(`[Trigger] Paused for another ${Math.ceil((triggersPausedUntil - Date.now()) / 1000)}s`);
+    return false;
+  }
   if (!gameModeConfig.enabled) return true;
 
   const mode = gameModeConfig.mode === "all" ? "all" : "list";
@@ -2926,6 +2949,15 @@ app.whenReady().then(async () => {
     if (Array.isArray(ui.workspaces)) {
       currentSettings.workspaces = ui.workspaces;
     }
+    if (Number.isInteger(ui.activeWorkspaceIndex)) {
+      currentSettings.activeWorkspaceIndex = ui.activeWorkspaceIndex;
+    }
+    /**
+     * The tray menu names the workspaces and ticks the current one, and a menu is a snapshot: it
+     * has to be rebuilt or it goes on showing the set that existed when it was built. Cheap, and
+     * this runs on config saves rather than on anything hot.
+     */
+    refreshTrayMenuRef();
   };
 
   const saveSettings = (newSettings) => {
@@ -4028,25 +4060,94 @@ app.whenReady().then(async () => {
     }
   };
 
-  const buildTrayMenu = () => {
-    const settingsIcon = menuIcon("tray-settings");
-    const quitIcon = menuIcon("tray-power");
-    return Menu.buildFromTemplate([
-      {
-        label: "Open Settings",
-        ...(settingsIcon ? { icon: settingsIcon } : {}),
-        click: () => {
-          void openSettingsFromTray();
-        },
-      },
-      { type: "separator" },
-      {
-        label: "Quit",
-        ...(quitIcon ? { icon: quitIcon } : {}),
-        click: () => app.quit(),
-      },
-    ]);
+  /** Explicit request, so it skips `shouldOpenMenu`: game mode and the pause both gate TRIGGERS. */
+  const openWheelFromTray = async () => {
+    if (isAppQuitting) return;
+    try {
+      await ensureMainWindow();
+      if (isAppQuitting) return;
+      showMenuAtCursor("tray");
+    } catch (e) {
+      diagLog(`[Tray] Abrir a roda: ${e.message}`);
+    }
   };
+
+  const switchWorkspaceFromTray = async (index) => {
+    if (isAppQuitting) return;
+    try {
+      await ensureMainWindow();
+      if (!mainWindow || mainWindow.isDestroyed()) return;
+      mainWindow.webContents.send("switch-workspace", index);
+      /** The tick follows the renderer's save coming back round, not this send. */
+      diagLog(`[Tray] switch-workspace -> ${index}`);
+    } catch (e) {
+      diagLog(`[Tray] Trocar de workspace: ${e.message}`);
+    }
+  };
+
+  /** Redraws the label the pause is counting down, and nothing else depends on it firing. */
+  let pauseExpiryTimer = null;
+  const setTriggerPause = (minutes) => {
+    triggersPausedUntil = minutes > 0 ? Date.now() + minutes * 60_000 : 0;
+    if (pauseExpiryTimer) {
+      clearTimeout(pauseExpiryTimer);
+      pauseExpiryTimer = null;
+    }
+    if (minutes > 0) {
+      pauseExpiryTimer = setTimeout(() => {
+        pauseExpiryTimer = null;
+        refreshTrayMenu();
+      }, minutes * 60_000 + 500);
+    }
+    diagLog(`[Tray] Triggers ${minutes > 0 ? `paused for ${minutes} min` : "resumed"}`);
+    refreshTrayMenu();
+  };
+
+  const buildTrayMenu = () =>
+    Menu.buildFromTemplate(
+      buildTrayMenuTemplate({
+        workspaces: Array.isArray(currentSettings.workspaces) ? currentSettings.workspaces : [],
+        activeWorkspaceIndex: Number.isInteger(currentSettings.activeWorkspaceIndex)
+          ? currentSettings.activeWorkspaceIndex
+          : 0,
+        pausedUntil: triggersPausedUntil,
+        now: Date.now(),
+        version: app.getVersion(),
+        /** The Store owns updates for an MSIX build, and an unpackaged one has no updater at all. */
+        canCheckUpdates: app.isPackaged && process.platform === "win32" && !isStoreBuild(),
+        icons: {
+          wheel: menuIcon("tray-wheel"),
+          spaces: menuIcon("tray-spaces"),
+          pause: menuIcon("tray-pause"),
+          settings: menuIcon("tray-settings"),
+          update: menuIcon("tray-update"),
+          power: menuIcon("tray-power"),
+        },
+        actions: {
+          openWheel: () => { void openWheelFromTray(); },
+          switchWorkspace: (index) => { void switchWorkspaceFromTray(index); },
+          setPause: setTriggerPause,
+          openSettings: () => { void openSettingsFromTray(); },
+          checkForUpdates: () => { void runManualUpdateCheck(); },
+          quit: () => app.quit(),
+        },
+      }),
+    );
+
+  /**
+   * The menu is a snapshot: item labels, icons and checkmarks are fixed when it is built, so every
+   * state it shows — the pause countdown, which workspace is current — means rebuilding it.
+   */
+  const refreshTrayMenu = () => {
+    if (!tray || tray.isDestroyed()) return;
+    try {
+      tray.setContextMenu(buildTrayMenu());
+      tray.setToolTip(triggersArePaused() ? "Rovyl — trigger paused" : "Rovyl");
+    } catch (e) {
+      diagLog(`[Tray] rebuild menu: ${e.message}`);
+    }
+  };
+  refreshTrayMenuRef = refreshTrayMenu;
 
   try {
     const iconPath = uiAssetPath("icon.png");
@@ -4060,14 +4161,7 @@ app.whenReady().then(async () => {
     tray.setContextMenu(buildTrayMenu());
 
     /** A menu item's icon is fixed at build time, so a theme flip means rebuilding the menu. */
-    nativeTheme.on("updated", () => {
-      if (!tray || tray.isDestroyed()) return;
-      try {
-        tray.setContextMenu(buildTrayMenu());
-      } catch (e) {
-        diagLog(`[Tray] rebuild menu for theme: ${e.message}`);
-      }
-    });
+    nativeTheme.on("updated", refreshTrayMenu);
 
     /**
      * On Windows a context menu does NOT swallow the left button — that constraint is macOS's.
@@ -6649,7 +6743,8 @@ ipcMain.handle("get-update-state", () => lastKnownUpdate);
  * Verificação a pedido. O arranque já verifica sozinho passados 10 s; isto é para quem quer
  * confirmar agora — e para dar uma resposta visível a quem carrega no botão.
  */
-ipcMain.handle("check-for-updates", async () => {
+/** One check, two callers: the Settings row and the tray item. */
+const runManualUpdateCheck = async () => {
   if (!app.isPackaged || process.platform !== "win32") {
     return { ok: false, code: "UNSUPPORTED", state: lastKnownUpdate.state };
   }
@@ -6668,7 +6763,9 @@ ipcMain.handle("check-for-updates", async () => {
     diagLog(`[Update] Manual check failed: ${error?.message || error}`);
     return { ok: false, code: "CHECK_FAILED", error: error?.message || String(error) };
   }
-});
+};
+
+ipcMain.handle("check-for-updates", runManualUpdateCheck);
 
 /** Reinício para instalar — o utilizador escolhe o momento, na linha das Definições. */
 ipcMain.on("install-update-now", () => {

@@ -20,7 +20,7 @@ import { renderToStaticMarkup } from "react-dom/server";
  * detection — unflagged only from 20.19 on, and this repo's `engines` says `>=20`. Pulling the
  * whole barrel costs nothing in a script that runs once by hand.
  */
-import { Settings, Power } from "lucide-react";
+import { Settings, Power, CircleDot, PauseCircle, Layers, RefreshCw } from "lucide-react";
 import sharp from "sharp";
 import { writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -31,6 +31,11 @@ const outDir = join(dirname(fileURLToPath(import.meta.url)), "..", "public");
 const ICONS = [
   { name: "tray-settings", Icon: Settings },
   { name: "tray-power", Icon: Power },
+  /** The wheel itself: a ring around a centre, which is what the thing being opened looks like. */
+  { name: "tray-wheel", Icon: CircleDot },
+  { name: "tray-pause", Icon: PauseCircle },
+  { name: "tray-spaces", Icon: Layers },
+  { name: "tray-update", Icon: RefreshCw },
 ];
 
 /**
