@@ -4226,7 +4226,7 @@ app.whenReady().then(async () => {
                   diagLog(
                     `[Shortcuts] Failed to register app shortcut: ${appShortcut} for ${app.label} (Likely reserved by OS)`,
                   );
-                  // Não enviar execution-error: save-full-config re-regista atalhos muitas vezes e inundava o UI.
+                  // Não avisar o UI: save-full-config re-regista atalhos muitas vezes e inundava-o.
                 }
               } catch (e) {
                 diagLog(
@@ -5656,7 +5656,7 @@ const escapeCommand = (cmd) => {
 };
 
 /**
- * Os factos que acompanham a string de erro no canal `execution-error`.
+ * Os factos que acompanham a string de erro no resultado de `execute-command`.
  *
  * A string continua a ser a de sempre — quem só a lê não muda de comportamento. O que vai aqui já
  * estava em memória neste sítio, e sem isso o renderer teria de adivinhar a partir de prosa do
@@ -5705,17 +5705,78 @@ const describeExecutionFailure = (
   };
 };
 
+/**
+ * O resultado que o renderer recebe de volta. `ok: false` é a única forma de uma falha de arranque
+ * chegar ao UI — o canal `execution-error`, que transmitia a falha a quem estivesse à escuta,
+ * deixou de existir. O renderer emparelhava esse aviso com o item que tinha acabado de despachar
+ * comparando comandos dentro de uma janela de 15 s; agora a falha volta pelo mesmo `invoke` que a
+ * pediu e o item é conhecido sem adivinhar.
+ */
+const launchOk = (method) => ({ ok: true, method: method || null });
+const launchFailed = (error, details) => ({ ok: false, error, details });
+
+/**
+ * Um alvo que já não existe nunca chega à shell — e é por isso que o cartão de erro aparece.
+ *
+ * `shell.openPath` e `start ""` respondem a um ficheiro apagado com uma CAIXA DE DIÁLOGO do
+ * Windows ("O Windows não consegue encontrar…"), dona da nossa janela. A promessa não resolve, o
+ * `exec` não chama de volta, e a escada fica pendurada até alguém carregar em OK — com o resto da
+ * app parada atrás dela. Medido com um `.exe` inexistente: `shell.openPath` não resolveu em 8 s,
+ * e o `start` a seguir também não. Enquanto o `execute-command` era um envio sem resposta isto
+ * passava por "não aconteceu nada"; agora era a resposta que ficava por dar, precisamente no caso
+ * que o cartão existe para explicar.
+ *
+ * Sonda só o que é seguro sondar: uma letra de unidade. UNC (`\\servidor\...`) espera pelo timeout do SMB no
+ * processo principal, e AUMIDs, aliases e URLs não são ficheiros — para esses devolve `null` e a
+ * escada corre como sempre.
+ *
+ * Um "não existe" daqui é de confiar. `splitWin32SpawnExeAndArgs` só desce ao primeiro espaço
+ * depois de não encontrar NENHUM prefixo que seja um ficheiro real, por isso um caminho com
+ * espaços que esteja lá é sempre reconhecido inteiro.
+ */
+const missingTargetFailure = (trimmedCommand, resolvedCommand, commandType) => {
+  if (process.platform !== "win32" || commandType === "url") return null;
+  const line = String(resolvedCommand || "").trim();
+  if (!line) return null;
+
+  let target;
+  try {
+    target =
+      commandType === "folder"
+        ? line.replace(/^"([\s\S]*)"$/, "$1")
+        : win32Launch.splitWin32SpawnExeAndArgs(line).exe;
+  } catch (e) {
+    return null;
+  }
+  if (!target || !/^[A-Za-z]:[\\/]/.test(target)) return null;
+
+  try {
+    if (fs.existsSync(target)) return null;
+  } catch (e) {
+    /** Um disco que não responde não é um atalho partido: deixar a escada tentar. */
+    return null;
+  }
+
+  const shown = line.length > 50 ? `${line.substring(0, 50)}...` : line;
+  const what = commandType === "folder" ? "folder" : "file";
+  diagLog(`[Exec] Target missing on disk, not handing it to the shell: ${target}`);
+  return launchFailed(`Failed to run "${shown}". Error: Windows cannot find the ${what} specified: ${target}`, {
+    command: trimmedCommand,
+    resolvedCommand: line,
+    commandType,
+    method: "exists-probe",
+    errorCode: "ENOENT",
+    exeExists: false,
+    raw: `Rovyl checked the path before launching it and Windows reports no such ${what}:
+${target}`,
+  });
+};
+
 // IPC: Recebe comando do React para executar app
-ipcMain.on("execute-command", async (event, command, commandType, options = {}) => {
+const runExecuteCommand = async (command, commandType, options = {}) => {
   if (!command || typeof command !== "string" || command.trim() === "") {
     console.warn("EXEC_ERROR: Received empty or invalid command");
-    if (mainWindow) {
-      mainWindow.webContents.send(
-        "execution-error",
-        "Empty or invalid command",
-      );
-    }
-    return;
+    return launchFailed("Empty or invalid command", undefined);
   }
 
   const trimmedCommand = command.trim();
@@ -5802,7 +5863,15 @@ ipcMain.on("execute-command", async (event, command, commandType, options = {}) 
 
     if (vks.length === 0) {
       console.error("  ✗ [shortcut] No valid keys found for simulation.");
-      return;
+      return launchFailed(`Failed to start key simulator: no usable keys in "${keys}"`, {
+        command: trimmedCommand,
+        resolvedCommand: trimmedCommand,
+        commandType,
+        method: "simulate-keys",
+        errorCode: null,
+        exeExists: null,
+        raw: `No virtual-key code matches any of: ${keys}`,
+      });
     }
 
     // PowerShell script using keybd_event from user32.dll
@@ -5815,26 +5884,52 @@ ipcMain.on("execute-command", async (event, command, commandType, options = {}) 
       `[Shortcut Simulation] Calling script: ${scriptPath} with VKS: ${vksString}`,
     );
 
-    spawn("powershell", [
-      "-NoProfile",
-      "-ExecutionPolicy",
-      "RemoteSigned",
-      "-File",
-      scriptPath,
-      "-vks",
-      vksString,
-    ]).on("error", (err) => {
-      console.error("  ✗ [shortcut] Failed to spawn simulation script:", err);
-      if (mainWindow) {
-        mainWindow.webContents.send(
-          "execution-error",
-          "Failed to start key simulator",
-        );
-      }
+    /**
+     * Esperar pelo `spawn`/`error` do processo em vez de devolver a seguir ao pedido.
+     *
+     * Enquanto isto era um envio sem resposta, o erro do `spawn` — que o Node emite um tick depois
+     * — chegava sempre DEPOIS de o handler ter terminado, e ia por um canal à parte. Agora a falha
+     * tem de caber no valor de retorno, e o `ChildProcess` emite `spawn` assim que o processo
+     * arranca de facto: é essa a corrida que se espera aqui, e não uma qualquer.
+     */
+    const spawnOutcome = await new Promise((resolve) => {
+      let settled = false;
+      const child = spawn("powershell", [
+        "-NoProfile",
+        "-ExecutionPolicy",
+        "RemoteSigned",
+        "-File",
+        scriptPath,
+        "-vks",
+        vksString,
+      ]);
+      child.on("error", (err) => {
+        if (settled) return;
+        settled = true;
+        console.error("  ✗ [shortcut] Failed to spawn simulation script:", err);
+        resolve(err);
+      });
+      child.on("spawn", () => {
+        if (settled) return;
+        settled = true;
+        resolve(null);
+      });
     });
 
+    if (spawnOutcome) {
+      return launchFailed(`Failed to start key simulator. Error: ${spawnOutcome.message}`, {
+        command: trimmedCommand,
+        resolvedCommand: trimmedCommand,
+        commandType,
+        method: "simulate-keys",
+        errorCode: spawnOutcome.code ?? null,
+        exeExists: null,
+        raw: String(spawnOutcome.message || "").slice(0, 4000),
+      });
+    }
+
     console.log("  ✓ [shortcut] Simulation script spawned.");
-    return;
+    return launchOk("simulate-keys");
   }
 
   const isShellApp = (cmd) => {
@@ -6110,28 +6205,34 @@ ipcMain.on("execute-command", async (event, command, commandType, options = {}) 
       diagLog(
         `\n✓✓✓ EXEC_SUCCESS: Launched URL with 'shell.openExternal' ✓✓✓\n`,
       );
-      return; 
+      return launchOk("shell.openExternal");
     }
 
     if (commandType === "folder") {
       diagLog("  → Detected: Explicit Folder (from commandType)");
+
+      const gone = missingTargetFailure(trimmedCommand, resolvedCommand, commandType);
+      if (gone) return gone;
+
       
       if (options?.openTerminal || (options?.terminalCommands && options.terminalCommands.length > 0)) {
         diagLog("  → Folder + Open Terminal (or AutoCommands) requested");
         try {
           await runAutoCommands(options.terminalCommands, resolvedCommand, options?.openTerminal, options?.workingDirectory);
           diagLog(`\n✓✓✓ EXEC_SUCCESS: Terminal(s) spawned for folder ✓✓✓\n`);
+          return launchOk("runAutoCommands");
         } catch (err) {
           diagLog(`[Exec] Failed to run auto-commands, falling back to basic folder open: ${err.message}`);
           await tryExecution("shell.openPath", resolvedCommand);
+          return launchOk("shell.openPath");
         }
-      } else {
-        await tryExecution("shell.openPath", resolvedCommand);
-        diagLog(
-          `\n✓✓✓ EXEC_SUCCESS: Opened Folder with 'shell.openPath' ✓✓✓\n`,
-        );
       }
-      return;
+
+      await tryExecution("shell.openPath", resolvedCommand);
+      diagLog(
+        `\n✓✓✓ EXEC_SUCCESS: Opened Folder with 'shell.openPath' ✓✓✓\n`,
+      );
+      return launchOk("shell.openPath");
     }
 
     let methodsToTry = [];
@@ -6183,8 +6284,8 @@ ipcMain.on("execute-command", async (event, command, commandType, options = {}) 
               diagLog(`[Exec] Launching IDE Folder with AutoCommands: ${finalCommand}`);
               await runAutoCommands(options?.terminalCommands, finalCommand, options?.openTerminal, options?.workingDirectory);
             }
-            
-            return;
+
+            return launchOk("exec_silent_spawn");
           } catch (e) {
             diagLog(`[Exec] Mapped CLI silent spawn failed: ${e.message}. Falling back to original AUMID sequence.`);
           }
@@ -6256,6 +6357,14 @@ ipcMain.on("execute-command", async (event, command, commandType, options = {}) 
       ];
     }
 
+    /**
+     * A última paragem antes da shell, e a única depois de `resolvedCommand` estar decidido: o
+     * ramo do IDE reescreve-o a meio, e sondar antes disso sondava um caminho que já não é o que
+     * vai ser lançado.
+     */
+    const gone = missingTargetFailure(trimmedCommand, resolvedCommand, commandType);
+    if (gone) return gone;
+
     // Try each method in order
     let lastError = null;
     /** Qual dos degraus da escada produziu o erro que sobrou — o renderer classifica melhor com ele. */
@@ -6267,7 +6376,7 @@ ipcMain.on("execute-command", async (event, command, commandType, options = {}) 
           await runAutoCommands(options.terminalCommands, resolvedCommand, options?.openTerminal, options?.workingDirectory);
         }
         console.log(`\n✓✓✓ EXEC_SUCCESS: Launched with '${method}' ✓✓✓\n`);
-        return; // Success! Exit early
+        return launchOk(method); // Success! Exit early
       } catch (err) {
         lastError = err;
         lastMethod = method;
@@ -6278,23 +6387,41 @@ ipcMain.on("execute-command", async (event, command, commandType, options = {}) 
     // If we get here, all methods failed
     const finalError = `Failed to run "${resolvedCommand.substring(0, 50)}${resolvedCommand.length > 50 ? "..." : ""}". Error: ${lastError?.message || "Unknown"}`;
     console.error(`\n✗✗✗ EXEC_ABORT: ${finalError} ✗✗✗\n`);
-    if (mainWindow) {
-      mainWindow.webContents.send(
-        "execution-error",
-        finalError,
-        describeExecutionFailure(trimmedCommand, resolvedCommand, commandType, lastMethod, lastError),
-      );
-    }
+    return launchFailed(
+      finalError,
+      describeExecutionFailure(trimmedCommand, resolvedCommand, commandType, lastMethod, lastError),
+    );
   } catch (err) {
     const finalError = `Unexpected error while running command: ${err.message}`;
     console.error(`\n✗✗✗ EXEC_ABORT: ${finalError} ✗✗✗\n`);
-    if (mainWindow) {
-      mainWindow.webContents.send(
-        "execution-error",
-        finalError,
-        describeExecutionFailure(trimmedCommand, resolvedCommand, commandType, null, err),
-      );
-    }
+    return launchFailed(
+      finalError,
+      describeExecutionFailure(trimmedCommand, resolvedCommand, commandType, null, err),
+    );
+  }
+};
+
+/**
+ * `handle`, e não `on`: quem lançou fica a saber se lançou.
+ *
+ * O renderer nunca soube que um atalho apontava para um ficheiro que já não existe — o envio não
+ * tinha resposta e a falha saía por um canal de difusão que só levava o comando. É esta resposta
+ * que dá ao cartão de erro o botão "Fix shortcut": o item que falhou é o item deste `invoke`.
+ */
+ipcMain.handle("execute-command", async (_event, command, commandType, options = {}) => {
+  try {
+    return await runExecuteCommand(command, commandType, options);
+  } catch (err) {
+    /** Uma exceção fora do `try` interno (resolveShellPath, canonicalize) não pode virar rejeição. */
+    console.error("EXEC_ABORT: execute-command threw outside the ladder:", err);
+    return launchFailed(`Unexpected error while running command: ${err?.message || err}`, {
+      command: typeof command === "string" ? command : "",
+      commandType,
+      method: null,
+      errorCode: err?.code ?? null,
+      exeExists: null,
+      raw: String(err?.stack || err?.message || err).slice(0, 4000),
+    });
   }
 });
 

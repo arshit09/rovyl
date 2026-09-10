@@ -754,6 +754,12 @@
 .zs-workspace-item-editor { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--zn-3); padding: 0 var(--zn-1) var(--zn-3) 46px; }
 /* Um campo de nome esticado à largura do painel lê-se como caixa de texto longa; o valor é curto. */
 .zs-workspace-item-editor > .zs-field { max-width: 340px; }
+/* Um caminho de ficheiro é longo e o botão que o troca tem de caber ao lado — este é o único
+   campo do editor que quer a largura toda. */
+.zs-workspace-item-editor > .zs-field.is-with-action { max-width: none; }
+.zs-field-row { display: flex; align-items: center; gap: var(--zn-2); }
+.zs-field-row input { min-width: 0; flex: 1; }
+.zs-field-row .zs-btn { flex: none; }
 .zs-launch-options { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--zn-3); padding: var(--zn-3); border: 1px solid var(--zn-line); border-radius: var(--zn-r-control); background: var(--zn-sunken); }
 .zs-launch-options b { display: block; color: var(--zn-text); font-size: 11.5px; font-weight: 550; }
 .zs-launch-options small { display: block; max-width: 520px; margin-top: 2px; color: var(--zn-text-3); font-size: 9.5px; line-height: 1.4; }
@@ -935,6 +941,11 @@
 }
 .zs-fault-actions button:hover { color: var(--zn-text); border-color: var(--zn-line-strong); background: var(--zn-hover); }
 .zs-fault-actions button:active { background: var(--zn-pressed); }
+/* "Fix shortcut" — the only action that changes anything, so the only one that reads as a button. */
+.zs-fault-actions button.is-primary {
+  gap: 5px; color: var(--zn-text); border-color: var(--zn-line-strong); background: var(--zn-raised);
+}
+.zs-fault-actions button.is-primary:hover { background: var(--zn-pressed); }
 
 .zs-fault-close {
   width: var(--zn-ctl-sm); height: var(--zn-ctl-sm); display: grid; place-items: center; padding: 0;

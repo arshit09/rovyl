@@ -1,7 +1,12 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
-import { AlertTriangle, X } from 'lucide-react';
-import { humanizeExecutionError, type HumanFault, type SurfacedFault } from '../launchFailure';
+import { AlertTriangle, Wrench, X } from 'lucide-react';
+import {
+  humanizeExecutionError,
+  type FaultShortcutRef,
+  type HumanFault,
+  type SurfacedFault,
+} from '../launchFailure';
 
 /**
  * What appears when something went wrong — and it is one card.
@@ -50,7 +55,8 @@ const FaultCard: React.FC<{
   theme: 'black' | 'white';
   interactive: boolean;
   onDismiss: (seq: number) => void;
-}> = ({ fault, theme, interactive, onDismiss }) => {
+  onFixShortcut?: (target: FaultShortcutRef) => void;
+}> = ({ fault, theme, interactive, onDismiss, onFixShortcut }) => {
   const reduceMotion = useReducedMotion();
   const [expanded, setExpanded] = useState(false);
   /**
@@ -95,6 +101,11 @@ const FaultCard: React.FC<{
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [interactive, human.sticky, dismiss]);
+
+  const fixTarget = fault.kind === 'launch' && onFixShortcut ? fault.shortcut : undefined;
+  const fix = useCallback(() => {
+    if (fixTarget) onFixShortcut?.(fixTarget);
+  }, [fixTarget, onFixShortcut]);
 
   const copy = useCallback(() => {
     const text = human.report;
@@ -158,6 +169,16 @@ const FaultCard: React.FC<{
 
         {interactive && (
           <div className="zs-fault-actions">
+            {/*
+              First, and the only one that is a verb: reading the error is not what the user came
+              to do. It is offered only when the failure carries the shortcut it belongs to — a
+              button that opened Settings on nothing in particular would be worse than no button.
+            */}
+            {fixTarget && (
+              <button type="button" className="is-primary" onClick={fix}>
+                <Wrench size={12} strokeWidth={1.9} aria-hidden /> Fix shortcut
+              </button>
+            )}
             {human.raw && (
               <button
                 type="button"
@@ -197,7 +218,9 @@ export const ErrorOverlays: React.FC<{
    */
   interactive: boolean;
   onDismiss: (seq: number) => void;
-}> = ({ faults, theme, interactive, onDismiss }) => (
+  /** Opens Settings on the shortcut that failed. Absent → the card offers no repair. */
+  onFixShortcut?: (target: FaultShortcutRef) => void;
+}> = ({ faults, theme, interactive, onDismiss, onFixShortcut }) => (
   <div className={`zs-fault-stack${interactive ? '' : ' is-glance'}`}>
     {/* No `initial={false}`: this container is only ever mounted once a fault already exists, so
         suppressing the first entrance just made the very first card of a session appear without
@@ -210,6 +233,7 @@ export const ErrorOverlays: React.FC<{
           theme={theme}
           interactive={interactive}
           onDismiss={onDismiss}
+          onFixShortcut={onFixShortcut}
         />
       ))}
     </AnimatePresence>

@@ -1,8 +1,15 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("electron", {
+  /**
+   * Resolve com `{ ok: true, method }` ou `{ ok: false, error, details }` — nunca rejeita.
+   *
+   * Era um `send` sem resposta, e a falha voltava por `execution-error`, um canal de difusão que
+   * não dizia QUAL atalho falhou. O renderer emparelhava-o com o último despacho comparando
+   * comandos dentro de 15 s; ao voltar por aqui, o item é o da própria chamada.
+   */
   executeCommand: (command, commandType, options) =>
-    ipcRenderer.send("execute-command", command, commandType, options),
+    ipcRenderer.invoke("execute-command", command, commandType, options),
   hideWindow: () => ipcRenderer.send("hide-window"),
   showWindow: () => ipcRenderer.send("show-window"),
   /** Superfícies com campo de texto (gate da licença) precisam do HWND em foreground para receber teclas. */
@@ -147,12 +154,6 @@ contextBridge.exposeInMainWorld("electron", {
     ipcRenderer.invoke("get-installed-apps", forceRefresh),
   getOnboardingApps: () => ipcRenderer.invoke("get-onboarding-apps"),
   getStartupApps: () => ipcRenderer.invoke("get-startup-apps"),
-  onExecutionError: (callback) => {
-    /** `details` é opcional: os dois envios literais deste canal continuam a mandar só a string. */
-    const listener = (event, errorMsg, details) => callback(errorMsg, details);
-    ipcRenderer.on("execution-error", listener);
-    return () => ipcRenderer.removeListener("execution-error", listener);
-  },
   relaunchApp: () => ipcRenderer.send("relaunch-app"),
   // Settings
   getSettings: () => ipcRenderer.invoke("get-settings"),

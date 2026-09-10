@@ -70,6 +70,12 @@ try {
     versionedExeTitle: "python3.11 is no longer here",
     missingBrazilianCode: "missing-file",
 
+    // The pre-flight probe: no shell wrote this text, so only `exeExists` can classify it.
+    preflightMissingAppCode: "missing-file",
+    preflightMissingAppTitle: "Zed is no longer here",
+    preflightMatchesUninstalled: true,
+    preflightMissingFolderCode: "folder-missing",
+
     bodyIsSingleLine: true,
     bodyExcludesStderr: true,
     bodyIsCapped: true,

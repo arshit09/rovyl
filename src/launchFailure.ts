@@ -1,5 +1,5 @@
 /**
- * What the main process reports on `execution-error`, turned into a sentence a person can read.
+ * What `execute-command` answers with when it fails, turned into a sentence a person can read.
  *
  * The string that arrives is still the one that was always sent — `Failed to run "…". Error: <stderr>`
  * — and, since the change that accompanies this file, a second optional argument carrying the facts
@@ -61,9 +61,31 @@ export interface HumanFault {
   report: string;
 }
 
+/**
+ * Where the shortcut that failed lives, so the card can offer to open it.
+ *
+ * By id and not by index: the card outlives the launch by seconds, and a reorder or a delete in
+ * Settings during those seconds would make an index point at a different shortcut. An id that no
+ * longer resolves simply opens the workspace, which is the honest outcome.
+ */
+export interface FaultShortcutRef {
+  workspaceIndex: number;
+  /** The item as stored — for a shortcut nested in a group, its top-level ancestor is `rootId`. */
+  appId: string;
+  rootId: string;
+}
+
 /** What `App.tsx` holds: either a failure still to be translated, or a notice already written by hand. */
 export type SurfacedFault =
-  | { kind: 'launch'; seq: number; raw: string; details?: ExecutionErrorDetails; appLabel?: string }
+  | {
+      kind: 'launch';
+      seq: number;
+      raw: string;
+      details?: ExecutionErrorDetails;
+      appLabel?: string;
+      /** Absent when the launch had no item behind it — a centre button bound to a raw command. */
+      shortcut?: FaultShortcutRef;
+    }
   | { kind: 'notice'; seq: number; title: string; message: string; hint?: string };
 
 /** A PowerShell stderr brings eight lines; one that goes badly brings a thousand. */

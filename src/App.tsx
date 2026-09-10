@@ -15,7 +15,7 @@ import { isRemoteIconUrl, isStoredIconRef, isWebShortcutItem } from './iconRef';
 import { useIconHealing } from './hooks/useIconHealing';
 import { mirrorPersistenceToLocalStorage } from './persistenceMirror';
 /** `import type` is erased at compile time: `launchFailure.ts` stays only in the late card chunk. */
-import type { SurfacedFault } from './launchFailure';
+import type { ExecutionErrorDetails, FaultShortcutRef, SurfacedFault } from './launchFailure';
 /** Erased too — a value import here would put the whole settings module in the wheel's chunk. */
 import type { SettingsNav } from './components/PrecisionSettings';
 
@@ -143,6 +143,18 @@ const findAppRecursive = (items: AppItem[], id: string): AppItem | undefined => 
       const found = findAppRecursive(item.children, id);
       if (found) return found;
     }
+  }
+  return undefined;
+};
+
+/**
+ * The top-level item an id belongs to. Settings lists a workspace one row deep — a shortcut inside
+ * a group has no row of its own — so "open the shortcut that failed" can only mean its group.
+ */
+const findRootAncestorId = (items: AppItem[], id: string): string | undefined => {
+  for (const item of items) {
+    if (item.id === id) return item.id;
+    if (item.children?.length && findAppRecursive(item.children, id)) return item.id;
   }
   return undefined;
 };
@@ -351,8 +363,6 @@ export default function App() {
    */
   const [configNotice, setConfigNotice] = useState<SurfacedFault | null>(null);
   const faultSeqRef = useRef(0);
-  /** The label only exists on this side: IPC carries the command, not the item. See `executeAction`. */
-  const lastDispatchRef = useRef<{ label: string; command: string; at: number } | null>(null);
   /** Latches on the first failure so the overlay chunk is fetched then, and never before. */
   const [errorOverlaysNeeded, setErrorOverlaysNeeded] = useState(false);
   useEffect(() => {
@@ -505,6 +515,40 @@ export default function App() {
   const targetWorkspaceIndexRef = useRef(config.activeWorkspaceIndex);
   targetWorkspaceIndexRef.current = config.activeWorkspaceIndex;
   const switchDebounceTimer = useRef<NodeJS.Timeout | null>(null);
+
+  /**
+   * One failed launch → one card, with the item that failed attached.
+   *
+   * Behind a ref because `executeAction` is re-created on every render and the promise it starts
+   * outlives several of them: reading the current function at settle time is the only way the
+   * failure is filed against the config as it is now, rather than as it was when the wheel opened.
+   */
+  const reportLaunchFailure = useCallback(
+    (result: { ok: false; error: string; details?: ExecutionErrorDetails }, item?: AppItem) => {
+      console.error('Execution failed:', result.error);
+      const cfg = configRef.current;
+      const workspaceIndex = cfg.activeWorkspaceIndex;
+      const workspaceApps = cfg.workspaces[workspaceIndex]?.apps || [];
+      const rootId = item ? findRootAncestorId(workspaceApps, item.id) : undefined;
+      faultSeqRef.current += 1;
+      setLaunchFault({
+        kind: 'launch',
+        seq: faultSeqRef.current,
+        raw: result.error,
+        details: result.details,
+        /** Main knows the command; only this side knows the name that was on the wheel. */
+        appLabel: item?.label || undefined,
+        /**
+         * No `rootId`, no offer to fix: the item is not in the workspace Settings would open —
+         * a centre button bound to a raw command, or a shortcut deleted between wheel and card.
+         */
+        shortcut: item && rootId ? { workspaceIndex, appId: item.id, rootId } : undefined,
+      });
+    },
+    [],
+  );
+  const reportLaunchFailureRef = useRef(reportLaunchFailure);
+  reportLaunchFailureRef.current = reportLaunchFailure;
 
   /**
    * A config that only names curated glyphs never pays for the full Lucide chunk; one that does
@@ -676,47 +720,6 @@ export default function App() {
     localStorage.setItem('zenith_icon_normalization_version', ICON_NORMALIZATION_VERSION);
     // console.log('[Icons] Cache-busted: re-fetching icons with new normalization.');
   }, [isLoaded]);
-
-  // Listen for execution errors from backend
-  useEffect(() => {
-    if (!window.electron?.onExecutionError) return;
-    const unsubscribe = window.electron.onExecutionError((errorMsg, details) => {
-      console.error('Execution error received:', errorMsg);
-      /**
-       * Global-shortcut registration noise: `save-full-config` re-registers everything many times
-       * and this used to flood the UI. It stays HERE, and not in the classifier, so a failure
-       * nobody will see does not go and fetch the card's chunk (and `framer-motion` with it).
-       */
-      const normalized = errorMsg.toLowerCase();
-      const isGlobalShortcutRegistrationError =
-        normalized.includes('atalho global') ||
-        normalized.includes('global shortcut') ||
-        normalized.includes('registar o atalho');
-      if (isGlobalShortcutRegistrationError) {
-        window.electron?.savePersistenceLog?.(`suppressed global shortcut toast: ${errorMsg}`);
-        return;
-      }
-
-      /** Main does not know the name the user read on the wheel; this side does, if it is the same command. */
-      const dispatched = lastDispatchRef.current;
-      const appLabel =
-        dispatched?.label &&
-        Date.now() - dispatched.at < 15000 &&
-        (!details?.command || details.command === dispatched.command)
-          ? dispatched.label
-          : undefined;
-
-      faultSeqRef.current += 1;
-      setLaunchFault({
-        kind: 'launch',
-        seq: faultSeqRef.current,
-        raw: errorMsg,
-        details,
-        appLabel,
-      });
-    });
-    return unsubscribe;
-  }, []);
 
   /** 241 lines of re-fetch and retry bookkeeping, and none of it is anyone else's business. */
   useIconHealing({ isLoaded, config, setConfig });
@@ -2085,6 +2088,25 @@ export default function App() {
       });
     });
   };
+  const handleOpenSettingsRef = useRef(handleOpenSettings);
+  handleOpenSettingsRef.current = handleOpenSettings;
+
+  /**
+   * "Fix shortcut" on a launch failure: Settings, on the workspace, with that row already open.
+   *
+   * The wheel closed the moment the launch was dispatched, so this both re-opens the panel and
+   * hands `PrecisionSettings` the destination — it is mounted lazily and remounted often, and
+   * anything told to it after it appears would race its own first render.
+   */
+  const handleFixShortcut = useCallback((target: FaultShortcutRef) => {
+    setLaunchFault(null);
+    setSettingsNav((current) => ({
+      ...current,
+      sectionId: 'spaces',
+      focusShortcut: { workspaceIndex: target.workspaceIndex, appId: target.rootId },
+    }));
+    handleOpenSettingsRef.current();
+  }, []);
 
   /** Fecha apenas a superfície de Settings; o processo, tray e atalhos continuam ativos. */
   const handleClosePanelToBackground = useCallback(() => {
@@ -2170,10 +2192,25 @@ export default function App() {
 
     if (isDesktopMode && window.electron) {
       // console.log("Calling electron.executeCommand...");
-      /** Recorded before the send: if it fails, this is the name the card puts in the sentence. */
-      /** Trimmed to match what main echoes back in `details.command`; the ref is only a match key. */
-      lastDispatchRef.current = { label: itemForFault?.label ?? '', command: command.trim(), at: Date.now() };
-      window.electron.executeCommand(command, commandType, options);
+      /**
+       * The launch answers for itself now. While this was a fire-and-forget send, a shortcut whose
+       * target had been uninstalled did exactly what a working one did — the wheel closed and
+       * nothing happened — and the failure that main knew about arrived on a broadcast channel
+       * carrying only a command string, which this side matched back to an item by comparing
+       * commands inside a 15-second window.
+       */
+      void Promise.resolve(window.electron.executeCommand(command, commandType, options))
+        .then((result) => {
+          if (!result || result.ok !== false) return;
+          reportLaunchFailureRef.current(result, itemForFault);
+        })
+        .catch((error) => {
+          /** A rejection means the IPC itself broke; the ladder answers with `ok: false` instead. */
+          reportLaunchFailureRef.current(
+            { ok: false, error: `Unexpected error while running command: ${error?.message || error}` },
+            itemForFault,
+          );
+        });
       setTimeout(() => {
         const g = electronShrinkGateRef.current;
         if (!g.panelSurfaceOpen) {
@@ -2570,7 +2607,7 @@ export default function App() {
                       setIsAppReady(false);
                       setIsLoaded(false);
                       /** Repor tudo e reabrir em Advanced, onde se carregou no botão, seria estranho. */
-                      setSettingsNav({ sectionId: 'general', isSidebarCollapsed: false });
+                      setSettingsNav({ sectionId: 'general', isSidebarCollapsed: false, focusShortcut: null });
                     } catch(e) {}
                     setApps(MINIMAL_MAIN_WORKSPACE_APPS); 
                     setConfig(DEFAULT_UI_CONFIG); 
@@ -2664,6 +2701,7 @@ export default function App() {
               }
               theme={panelTheme}
               interactive={!isDesktopMode || panelSurfaceOpen}
+              onFixShortcut={handleFixShortcut}
               onDismiss={(seq) => {
                 setLaunchFault((current) => (current?.seq === seq ? null : current));
                 setConfigNotice((current) => (current?.seq === seq ? null : current));

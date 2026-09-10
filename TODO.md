@@ -170,9 +170,6 @@ its section, and a retired one keeps its number rather than being reused.
 
 ## 4. UX and intuitiveness
 
-- [ ] **4.1** **Launch failures are silent.** `execute-command` is `ipcMain.on`, not `handle`
-  (`electron-main.js:5069`) — the renderer never learns a target is missing. Return a result; toast
-  with a "fix this shortcut" action.
 - [ ] **4.2** **No live preview in settings.** Changing orbital radius, icon size, spacing, opacity or
   backdrop means closing settings and triggering the wheel to see the effect. Add an inline preview.
 - [ ] **4.3** **`window.confirm` for workspace deletion** (`PrecisionSettings.tsx:332`) — a native blocking
@@ -261,5 +258,5 @@ Pointers into the sections above, not items in their own right — each line nam
 - [x] **8.3** Trim font subsets in `src/main.tsx`. → **3.2**.
 - [x] **8.4** Replace `dist/folder.svg`. → **3.7**.
 - [ ] **8.5** Raise `--zn-text-3` contrast. → **5.3**.
-- [ ] **8.6** Make `execute-command` return a result and toast on failure. → **4.1**.
+- [x] **8.6** Make `execute-command` return a result and toast on failure. → **4.1** (done).
 - [ ] **8.7** Correct the two false claims in `README.md`. → **1.3**, **1.4**.

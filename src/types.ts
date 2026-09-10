@@ -188,12 +188,20 @@ export interface RadialState {
   activeItemIndex: number | null;
 }
 
+/**
+ * O que `execute-command` devolve. Nunca rejeita: uma falha é um `ok: false`, porque quem chama
+ * quer saber SE arrancou, e um `throw` obrigava cada ponto de lançamento a ter o seu `try`.
+ */
+export type LaunchResult =
+  | { ok: true; method: string | null }
+  | { ok: false; error: string; details?: ExecutionErrorDetails };
+
 export interface ElectronAPI {
   executeCommand: (
     command: string,
     commandType: "app" | "url" | "folder",
     options?: { openTerminal?: boolean; terminalCommands?: string[]; workingDirectory?: string; launchMode?: "normal" | "reuse" | "prewarm" },
-  ) => void;
+  ) => Promise<LaunchResult>;
   hideWindow: () => void;
   showWindow: () => void;
   requestKeyboardFocus?: () => void;
@@ -328,10 +336,6 @@ export interface ElectronAPI {
   getInstalledApps: (forceRefresh?: boolean) => Promise<any[]>;
   getOnboardingApps: () => Promise<any[]>;
   getStartupApps: () => Promise<any[]>;
-  /** `details` só chega dos dois envios finais do `execute-command`; os literais mandam só a string. */
-  onExecutionError: (
-    callback: (errorMsg: string, details?: ExecutionErrorDetails) => void,
-  ) => () => void;
   relaunchApp: () => void;
   getSettings: () => Promise<any>;
   setSettings: (settings: any) => void;

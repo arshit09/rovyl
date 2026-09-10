@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import {
   DWELL_MS_MAX,
@@ -77,6 +77,17 @@ export type SectionId = 'general' | 'trigger' | 'appearance' | 'spaces' | 'advan
 export interface SettingsNav {
   sectionId: SectionId;
   isSidebarCollapsed: boolean;
+  /**
+   * "Take me to this shortcut" — set by the Fix action on a launch-failure card, and cleared the
+   * moment it is honoured.
+   *
+   * It travels through `nav` because that is the one piece of settings state that survives this
+   * component being unmounted, and the request is made while it is unmounted: the wheel is what
+   * was on screen when the launch failed. A prop read once on mount would be missed by a panel
+   * that is already open, and a prop read on every render would re-open the editor after the user
+   * closed it.
+   */
+  focusShortcut?: { workspaceIndex: number; appId: string } | null;
 }
 
 /** O modal fica reservado ao que não cabe numa linha: listas longas, gravação e edição. */
@@ -168,6 +179,8 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
     [setNav],
   );
   const [editor, setEditor] = useState<Editor>(null);
+  /** Survives only until `WorkspaceManager` has expanded the row; `nav` is cleared immediately. */
+  const [focusAppId, setFocusAppId] = useState<string | null>(null);
   const [query, setQuery] = useState('');
   const [toast, setToast] = useState<string | null>(null);
   /** Versão do executável (não existe fora do Electron — o rodapé fica só com o nome). */
@@ -316,6 +329,21 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [isOpen, editor, onClose]);
+
+  /**
+   * Honour a pending "open this shortcut" and take the request out of `nav` in the same tick.
+   *
+   * Clearing it here rather than in `WorkspaceManager` matters: `nav` outlives this component, so a
+   * request left in it would re-open the editor every time Settings was opened afterwards. The row
+   * id moves to local state, which is unmounted with the panel — exactly the lifetime it needs.
+   */
+  useEffect(() => {
+    const target = nav.focusShortcut;
+    if (!target) return;
+    setEditor({ kind: 'workspace', index: target.workspaceIndex });
+    setFocusAppId(target.appId);
+    setNav((current) => ({ ...current, focusShortcut: null }));
+  }, [nav.focusShortcut, setNav]);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -876,6 +904,8 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
               updateGameMode={updateGameMode}
               onCloseSettings={dismissWithFade}
               reduceMotion={Boolean(reduceMotion)}
+              focusAppId={focusAppId}
+              onFocusApplied={() => setFocusAppId(null)}
             />
           )}
         </AnimatePresence>
@@ -1233,6 +1263,8 @@ function SettingsEditor({
   updateGameMode,
   onCloseSettings,
   reduceMotion,
+  focusAppId,
+  onFocusApplied,
 }: {
   editor: Exclude<Editor, null>;
   close: () => void;
@@ -1246,6 +1278,9 @@ function SettingsEditor({
   /** Ativar a licença fecha o painel: o utilizador veio destrancar a roda, não configurar. */
   onCloseSettings?: () => void;
   reduceMotion: boolean;
+  /** A shortcut a launch failure asked to have open. Consumed once, then reported back. */
+  focusAppId?: string | null;
+  onFocusApplied?: () => void;
 }) {
   let title = 'Edit setting';
   let description = 'Changes are applied immediately.';
@@ -1281,6 +1316,8 @@ function SettingsEditor({
         workspaceIndex={index}
         isActive={config.activeWorkspaceIndex === index}
         canDelete={config.workspaces.length > 1}
+        focusAppId={focusAppId}
+        onFocusApplied={onFocusApplied}
         updateWorkspace={updateWorkspace}
         makeActive={() => update('activeWorkspaceIndex', index)}
         deleteWorkspace={() => {
@@ -1413,6 +1450,25 @@ function launchModeRisk(commandType: AppItem['commandType'], mode: 'normal' | 'r
       : 'Reuses the process already running: an IDE can switch the project open in the current window instead of opening another. Apps without support fall back to a normal launch.';
   }
   return 'Keeps executable data in memory, so RAM stays in use in the background even after you close the app. Some apps show a splash or a second instance when reused, and unsupported ones fall back to a normal launch.';
+}
+
+/**
+ * Whether an application's launch line is worth showing the user — i.e. whether it is a path.
+ *
+ * The row deliberately hides an application's command, because for a Store app it is an AUMID
+ * (`Microsoft.WindowsTerminal_8wekyb3d8bbwe!App`) that tells nobody anything. That reasoning does
+ * not extend to `D:\Tools\thing.exe`: there the command is the target, and when a launch fails
+ * because the file moved, editing it is the whole repair. So the field appears for path-like
+ * commands only, and AUMIDs stay hidden as before.
+ */
+function isPathLikeCommand(command: string): boolean {
+  const value = (command || '').trim().replace(/^"([\s\S]*)"$/, '$1');
+  if (!value) return false;
+  return (
+    /^[A-Za-z]:[\\/]/.test(value) ||
+    value.startsWith('\\\\') ||
+    /\.(exe|lnk|bat|cmd|com)(\s|$)/i.test(value)
+  );
 }
 
 function itemFallbackIcon(item: AppItem) {
@@ -1635,6 +1691,8 @@ function WorkspaceManager({
   updateWorkspace,
   makeActive,
   deleteWorkspace,
+  focusAppId,
+  onFocusApplied,
 }: {
   workspace: Workspace;
   workspaceIndex: number;
@@ -1643,6 +1701,9 @@ function WorkspaceManager({
   updateWorkspace: (index: number, patch: Partial<Workspace>) => void;
   makeActive: () => void;
   deleteWorkspace: () => void;
+  /** Set when the user clicked "Fix shortcut" on a failed launch: expand that row and show it. */
+  focusAppId?: string | null;
+  onFocusApplied?: () => void;
 }) {
   const [addMode, setAddMode] = useState<WorkspaceAddMode>(null);
   const { apps: installedApps, loading: loadingApps, error: appsError, reload: loadInstalledApps } =
@@ -1654,6 +1715,27 @@ function WorkspaceManager({
   const [folderLabel, setFolderLabel] = useState('');
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [isIconPickerOpen, setIsIconPickerOpen] = useState(false);
+  const itemRefs = useRef(new Map<string, HTMLDivElement>());
+
+  /**
+   * The row a failed launch asked for: expanded, and scrolled to.
+   *
+   * By id, because the index is not stable — the card can sit on screen while the list is
+   * reordered. If the id is gone (deleted between the failure and the click) the workspace simply
+   * stays open, which is still where the user needs to be.
+   */
+  useEffect(() => {
+    if (!focusAppId) return;
+    const index = workspace.apps.findIndex((item) => item.id === focusAppId);
+    if (index >= 0) {
+      setEditingIndex(index);
+      /** After paint: the row is only tall enough to be worth centring once its editor is in it. */
+      requestAnimationFrame(() => {
+        itemRefs.current.get(focusAppId)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      });
+    }
+    onFocusApplied?.();
+  }, [focusAppId, workspace.apps, onFocusApplied]);
 
   /** Um modal que só fecha com o rato é um modal que prende quem usa o teclado. */
   useEffect(() => {
@@ -2064,6 +2146,10 @@ function WorkspaceManager({
                 + `${itemDropEdge?.index === index && itemDropEdge.edge === 'above' ? ' is-drop-above' : ''}`
                 + `${itemDropEdge?.index === index && itemDropEdge.edge === 'below' ? ' is-drop-below' : ''}`}
               key={`${item.id}-${index}`}
+              ref={(node) => {
+                if (node) itemRefs.current.set(item.id, node);
+                else itemRefs.current.delete(item.id);
+              }}
               draggable={itemDragArmed === index && editingIndex !== index}
               onDragStart={(event) => {
                 event.dataTransfer.setData('text/plain', String(index));
@@ -2131,6 +2217,26 @@ function WorkspaceManager({
                     <label className="zs-field">
                       <span>{item.commandType === 'url' ? 'URL' : 'Folder path'}</span>
                       <input value={item.command} onChange={(event) => updateItem(index, { command: event.target.value })} />
+                    </label>
+                  )}
+                  {item.type !== 'folder' && item.commandType === 'app' && isPathLikeCommand(item.command) && (
+                    <label className="zs-field is-with-action">
+                      <span>Target</span>
+                      <div className="zs-field-row">
+                        <input
+                          value={item.command}
+                          spellCheck={false}
+                          onChange={(event) => updateItem(index, { command: event.target.value })}
+                        />
+                        <button
+                          type="button"
+                          className="zs-btn"
+                          onClick={async () => {
+                            const picked = await window.electron?.selectFile?.();
+                            if (picked) updateItem(index, { command: picked });
+                          }}
+                        ><FolderOpen size={13} /> Change</button>
+                      </div>
                     </label>
                   )}
                   {item.type !== 'folder' && item.commandType !== 'folder' && (

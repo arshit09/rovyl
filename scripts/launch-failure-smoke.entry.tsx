@@ -205,6 +205,42 @@ export function collect() {
     { command: "x", commandType: "app", raw: "noise ".repeat(5000) },
   );
 
+  /**
+   * The pre-flight probe, which is a different failure from a launch that was attempted and lost.
+   *
+   * `shell.openPath` and `start ""` answer a deleted file with a modal Windows dialog that owns
+   * the app's window, so the ladder never returns and no card ever appears. Main now stats the
+   * target first and reports this instead — a message no shell wrote, so nothing in it matches the
+   * stderr patterns. It has to classify on `exeExists` alone, and it has to say the same thing to
+   * the user as the launch that failed the long way round.
+   */
+  const preflightMissingApp = humanizeExecutionError(
+    'Failed to run "C:\\Apps\\Zed\\zed.exe". Error: Windows cannot find the file specified: C:\\Apps\\Zed\\zed.exe',
+    {
+      command: "C:\\Apps\\Zed\\zed.exe",
+      resolvedCommand: "C:\\Apps\\Zed\\zed.exe",
+      commandType: "app",
+      method: "exists-probe",
+      errorCode: "ENOENT",
+      exeExists: false,
+      raw: "Rovyl checked the path before launching it and Windows reports no such file:" + String.fromCharCode(10) + "C:\\Apps\\Zed\\zed.exe",
+    },
+    "Zed",
+  );
+
+  const preflightMissingFolder = humanizeExecutionError(
+    'Failed to run "D:\\Projects\\gone". Error: Windows cannot find the folder specified: D:\\Projects\\gone',
+    {
+      command: "D:\\Projects\\gone",
+      resolvedCommand: "D:\\Projects\\gone",
+      commandType: "folder",
+      method: "exists-probe",
+      errorCode: "ENOENT",
+      exeExists: false,
+      raw: "Rovyl checked the path before launching it and Windows reports no such folder:" + String.fromCharCode(10) + "D:\\Projects\\gone",
+    },
+  );
+
   const everyCase = [
     telegram,
     telegramLegacy,
@@ -222,10 +258,18 @@ export function collect() {
     unknown,
     versionedExe,
     missingBrazilian,
+    preflightMissingApp,
+    preflightMissingFolder,
     flood,
   ];
 
   return {
+    /** The probe must reach the same words as the launch that failed the long way round. */
+    preflightMissingAppCode: preflightMissingApp.code,
+    preflightMissingAppTitle: preflightMissingApp.title,
+    preflightMatchesUninstalled: preflightMissingApp.message === uninstalled.message,
+    preflightMissingFolderCode: preflightMissingFolder.code,
+
     // The screenshot names the real cause, and names the app the way the user does.
     telegramCode: telegram.code,
     telegramTitle: telegram.title,
