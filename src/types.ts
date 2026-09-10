@@ -200,6 +200,26 @@ export type LaunchResult =
   | { ok: true; method: string | null }
   | { ok: false; error: string; details?: ExecutionErrorDetails };
 
+
+/** Onde a app vai buscar atualizações — e se sequer vai. */
+export type UpdateChannel = 'store' | 'direct' | 'unsupported';
+
+/**
+ * Onde a atualização está. Uma linha da UI, um estado: o painel nunca mostra "Check for updates"
+ * ao lado de uma atualização já descarregada.
+ */
+export type UpdatePhase = 'idle' | 'checking' | 'current' | 'downloading' | 'ready' | 'error' | 'unsupported';
+
+export interface UpdateState {
+  state: UpdatePhase;
+  version?: string | null;
+  /** Percentagem da transferência, quando o servidor anuncia tamanho. */
+  percent?: number;
+  /** Momento da última verificação concluída. */
+  checkedAt?: number;
+  error?: string;
+}
+
 export interface ElectronAPI {
   executeCommand: (
     command: string,
@@ -210,13 +230,21 @@ export interface ElectronAPI {
   showWindow: () => void;
   requestKeyboardFocus?: () => void;
   getAppVersion?: () => Promise<string>;
-  /** Canal de distribuição: 'store' (MSIX) não tem atualização própria. */
-  getBuildChannel?: () => Promise<'store' | 'direct'>;
-  onUpdateState?: (
-    callback: (payload: { state: 'downloading' | 'ready'; version?: string }) => void,
-  ) => () => void;
-  getUpdateState?: () => Promise<{ state: string; version?: string | null }>;
-  checkForUpdates?: () => Promise<{ ok: boolean; state?: string; version?: string; code?: string; error?: string }>;
+  /**
+   * Canal de distribuição, do ponto de vista de quem atualiza: 'store' (MSIX) e 'unsupported'
+   * (build por empacotar) não têm atualização própria — a linha sai do painel.
+   */
+  getBuildChannel?: () => Promise<UpdateChannel>;
+  onUpdateState?: (callback: (payload: UpdateState) => void) => () => void;
+  getUpdateState?: () => Promise<UpdateState & { channel?: UpdateChannel }>;
+  checkForUpdates?: () => Promise<{
+    ok: boolean;
+    state?: UpdatePhase;
+    version?: string;
+    percent?: number;
+    code?: string;
+    error?: string;
+  }>;
   installUpdateNow?: () => void;
   wasOpenedAtLogin?: () => Promise<boolean>;
   /** O main confirma se a app tem mesmo um perfil de IDE com MRU (não adivinhar por nome). */

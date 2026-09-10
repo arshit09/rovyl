@@ -28,6 +28,8 @@ const withIcon = (icon) => (icon ? { icon } : {});
  * @param {number} state.now
  * @param {string} state.version
  * @param {boolean} state.canCheckUpdates
+ * @param {string} state.updateState idle | checking | current | downloading | ready | error
+ * @param {string|null} state.updateVersion version the updater is working on, when it knows one
  * @param {Record<string, unknown>} state.icons resolved images by base name, any may be null
  * @param {object} actions every click handler, so this module never reaches for one
  */
@@ -38,6 +40,8 @@ function buildTrayMenuTemplate({
   now = Date.now(),
   version = "",
   canCheckUpdates = false,
+  updateState = "idle",
+  updateVersion = null,
   icons = {},
   actions = {},
 }) {
@@ -103,11 +107,36 @@ function buildTrayMenuTemplate({
    * unpackaged one has no updater at all. Elsewhere the row could only ever fail.
    */
   if (canCheckUpdates) {
-    items.push({
-      label: "Check for updates",
-      ...withIcon(icons.update),
-      click: actions.checkForUpdates,
-    });
+    /**
+     * One row, whatever the updater is doing — never a "Check for updates" sitting next to an
+     * update that is already downloaded. Mid-flight the row is a status line, not a button: there
+     * is nothing to ask for while the answer is on its way.
+     */
+    if (updateState === "ready") {
+      items.push({
+        label: updateVersion ? `Restart to update to ${updateVersion}` : "Restart to update",
+        ...withIcon(icons.update),
+        click: actions.installUpdate,
+      });
+    } else if (updateState === "downloading") {
+      items.push({
+        label: updateVersion ? `Downloading ${updateVersion}…` : "Downloading update…",
+        ...withIcon(icons.update),
+        enabled: false,
+      });
+    } else if (updateState === "checking") {
+      items.push({
+        label: "Checking for updates…",
+        ...withIcon(icons.update),
+        enabled: false,
+      });
+    } else {
+      items.push({
+        label: "Check for updates",
+        ...withIcon(icons.update),
+        click: actions.checkForUpdates,
+      });
+    }
   }
 
   items.push({ type: "separator" });

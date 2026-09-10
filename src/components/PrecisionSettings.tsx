@@ -37,7 +37,7 @@ import {
   X,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
-import type { AppItem, UIConfig, Workspace } from '../types';
+import type { AppItem, UIConfig, UpdateChannel, UpdateState, Workspace } from '../types';
 import { DEFAULT_UI_CONFIG } from '../defaults';
 import { getIcon } from '../iconMap';
 import { resolveWebsiteIconFields } from '../siteFavicon';
@@ -137,6 +137,8 @@ interface SettingItem {
   onRun?: () => void;
   actionLabel?: string;
   actionIcon?: LucideIcon;
+  /** Ação que existe mas ainda não se pode pedir — a transferência que já vai a meio. */
+  actionDisabled?: boolean;
   /**
    * A second press, in the row, for an action nothing can take back.
    *
@@ -270,20 +272,28 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
   /**
    * Atualização: o painel é agora o único sítio com a AÇÃO — a caixa nativa do Windows foi
    * removida. O selo no hub do radial avisa; aqui decide-se o quê e o quando.
+   *
+   * UM estado, UMA linha. Havia duas: "Version X is ready / Restart now" e, logo por baixo, um
+   * "Check for updates" que continuava lá com o instalador já em disco. Carregar nele voltava a
+   * transferir o mesmo ficheiro e punha a linha de novo em "downloading" — a UI andava para trás,
+   * e a pergunta "então afinal está pronta ou não?" era justa. O estado vem do main; a linha é a
+   * sua projeção.
    */
-  const [updateInfo, setUpdateInfo] = useState<{ state: string; version?: string | null }>({ state: 'idle' });
-  const [updateBusy, setUpdateBusy] = useState(false);
-  const [updateNote, setUpdateNote] = useState<string | null>(null);
+  const [updateInfo, setUpdateInfo] = useState<UpdateState>({ state: 'idle' });
   /**
-   * Build da Store: quem atualiza e a loja. Um botao "Check now" que devolve sempre erro e pior
-   * do que botao nenhum -- as duas linhas de atualizacao saem da lista.
+   * Canal: só o `direct` (instalador NSIS) tem updater. Na Store atualiza a loja, e numa build por
+   * empacotar não há nada para chamar — um botão que só sabe devolver erro é pior do que nenhum.
    */
-  const [isStoreBuild, setIsStoreBuild] = useState(false);
+  const [updateChannel, setUpdateChannel] = useState<UpdateChannel>(
+    /** Até o main responder não sabemos: mais vale a linha aparecer tarde do que aparecer morta. */
+    'unsupported',
+  );
+  const canUpdate = updateChannel === 'direct';
 
   useEffect(() => {
     let cancelled = false;
     void window.electron?.getBuildChannel?.().then((channel) => {
-      if (!cancelled) setIsStoreBuild(channel === 'store');
+      if (!cancelled && channel) setUpdateChannel(channel);
     }).catch(() => undefined);
     return () => { cancelled = true; };
   }, []);
@@ -302,30 +312,94 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
     };
   }, []);
 
+  /**
+   * O botão não decide nada: pede, e o main responde com o estado em que ficou. Uma verificação
+   * já a decorrer junta-se à que existe, e com algo descarregado o main recusa — por isso o
+   * `checking` local existe só para a janela entre o clique e a primeira resposta.
+   */
+  const [updateChecking, setUpdateChecking] = useState(false);
   const runUpdateCheck = useCallback(async () => {
     if (!window.electron?.checkForUpdates) return;
-    setUpdateBusy(true);
-    setUpdateNote(null);
+    setUpdateChecking(true);
     try {
       const result = await window.electron.checkForUpdates();
-      if (!result?.ok) {
-        setUpdateNote(
-          result?.code === 'UNSUPPORTED'
-            ? 'Updates run in the installed app only.'
-            : 'Could not reach the update server.',
+      if (result && !result.ok && result.code !== 'CHECK_FAILED') {
+        /** Sem updater neste build: esconder a linha em vez de a deixar a explicar um erro. */
+        setUpdateChannel(result.code === 'STORE_BUILD' ? 'store' : 'unsupported');
+      } else if (result?.ok && result.state) {
+        /** Eco do main; o evento `update-state` costuma chegar primeiro, e diz o mesmo. */
+        setUpdateInfo((current) =>
+          current.state === result.state ? current : { ...current, state: result.state!, version: result.version ?? current.version },
         );
-      } else if (result.state === 'current') {
-        setUpdateNote(`You're on the latest version (${result.version}).`);
-      } else {
-        setUpdateNote(`Version ${result.version} is downloading.`);
-        setUpdateInfo({ state: 'downloading', version: result.version });
+      } else if (result && !result.ok) {
+        setUpdateInfo((current) => ({ ...current, state: 'error', error: result.error }));
       }
     } catch (e) {
-      setUpdateNote('Could not reach the update server.');
+      setUpdateInfo((current) => ({ ...current, state: 'error' }));
     } finally {
-      setUpdateBusy(false);
+      setUpdateChecking(false);
     }
   }, []);
+
+  /**
+   * A linha de atualização, derivada do estado — não uma linha por cada coisa que pode acontecer.
+   *
+   * A regra que faltava: enquanto algo está a decorrer (`checking`, `downloading`) a linha é
+   * informação, não botão. E depois de `ready` deixa de haver o que verificar — o instalador já
+   * está em disco, e a única ação que resta é escolher o momento de reiniciar.
+   */
+  const updateRow = useMemo(() => {
+    /** O updater sabe quase sempre a versão, mas "Version  is ready" não pode chegar ao ecrã. */
+    const version = updateInfo.version || null;
+
+    if (updateInfo.state === 'ready') {
+      return {
+        title: version ? `Version ${version} is ready` : 'An update is ready',
+        description: 'Downloaded and verified. Rovyl restarts to finish.',
+        kind: 'action' as const,
+        actionLabel: 'Restart now',
+        actionIcon: ArrowUpFromLine,
+        onRun: () => window.electron?.installUpdateNow?.(),
+      };
+    }
+
+    if (updateInfo.state === 'downloading') {
+      return {
+        title: version ? `Downloading version ${version}` : 'Downloading an update',
+        description:
+          typeof updateInfo.percent === 'number'
+            ? `${updateInfo.percent}% done. You can keep working — Rovyl installs it when you restart.`
+            : 'You can keep working — Rovyl installs it when you restart.',
+        kind: 'action' as const,
+        actionLabel: 'Downloading…',
+        actionIcon: ArrowDownToLine,
+        actionDisabled: true,
+        onRun: () => {},
+      };
+    }
+
+    const checking = updateChecking || updateInfo.state === 'checking';
+    const description = checking
+      ? 'Looking for a newer version…'
+      : updateInfo.state === 'error'
+        ? 'Could not reach the update server.'
+        : updateInfo.state === 'current'
+          ? version
+            ? `You're on the latest version (${version}).`
+            : "You're on the latest version."
+          : 'Rovyl checks automatically a few seconds after launch.';
+
+    return {
+      title: 'Check for updates',
+      description,
+      kind: 'action' as const,
+      actionLabel: checking ? 'Checking…' : updateInfo.state === 'error' ? 'Try again' : 'Check now',
+      actionIcon: ArrowDownToLine,
+      actionDisabled: checking,
+      onRun: () => void runUpdateCheck(),
+    };
+  }, [updateInfo, updateChecking, runUpdateCheck]);
+
   const reduceMotion = useReducedMotion();
 
   /**
@@ -867,34 +941,7 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
         },
       ],
       advanced: [
-        ...(!isStoreBuild && updateInfo.state === 'ready'
-          ? [{
-              key: 'update-ready',
-              group: 'Updates',
-              title: `Version ${updateInfo.version ?? ''} is ready`.replace(/\s+/g, ' ').trim(),
-              description: 'Downloaded and verified. Rovyl restarts to finish.',
-              kind: 'action' as const,
-              actionLabel: 'Restart now',
-              actionIcon: ArrowUpFromLine,
-              onRun: () => window.electron?.installUpdateNow?.(),
-            }]
-          : []),
-        ...(isStoreBuild
-          ? []
-          : [{
-              key: 'update-check',
-              group: 'Updates',
-              title: 'Check for updates',
-              description:
-                updateNote ??
-                (updateInfo.state === 'downloading'
-                  ? `Downloading version ${updateInfo.version ?? ''}…`.replace(/\s+/g, ' ')
-                  : 'Rovyl checks automatically a few seconds after launch.'),
-              kind: 'action' as const,
-              actionLabel: updateBusy ? 'Checking…' : 'Check now',
-              actionIcon: ArrowDownToLine,
-              onRun: () => void runUpdateCheck(),
-            }]),
+        ...(canUpdate ? [{ key: 'update', group: 'Updates', ...updateRow }] : []),
         {
           key: 'performance', group: 'Performance', title: 'Precision mode',
           description: 'Prioritize immediate response and reduce visual effects.',
@@ -948,7 +995,7 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
         },
       ],
     };
-  }, [config, gameMode, theme, apps, update, updateInfo, updateBusy, updateNote, isStoreBuild, runUpdateCheck, onReset, deleteWorkspace, reorderWorkspaces]);
+  }, [config, gameMode, theme, apps, update, updateRow, canUpdate, onReset, deleteWorkspace, reorderWorkspaces]);
 
   const trimmedQuery = query.trim().toLowerCase();
   const activeMeta = SECTIONS.find((section) => section.id === sectionId)!;
@@ -1420,7 +1467,13 @@ function SettingRow({
         )}
 
         {item.kind === 'action' && !item.confirm && (
-          <button type="button" className="zs-btn" onClick={item.onRun} aria-labelledby={`${item.key}-label`}>
+          <button
+            type="button"
+            className="zs-btn"
+            onClick={item.onRun}
+            disabled={item.actionDisabled}
+            aria-labelledby={`${item.key}-label`}
+          >
             {ActionIcon && <ActionIcon size={14} strokeWidth={1.9} />}
             {item.actionLabel}
           </button>

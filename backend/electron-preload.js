@@ -15,7 +15,7 @@ contextBridge.exposeInMainWorld("electron", {
   /** Superfícies com campo de texto (gate da licença) precisam do HWND em foreground para receber teclas. */
   requestKeyboardFocus: () => ipcRenderer.send("request-keyboard-focus"),
   getAppVersion: () => ipcRenderer.invoke("get-app-version"),
-  /** "store" quando a app corre a partir do pacote MSIX — as linhas de atualização somem. */
+  /** Quem atualiza: "store" (MSIX) e "unsupported" (por empacotar) não têm updater próprio. */
   getBuildChannel: () => ipcRenderer.invoke("get-build-channel"),
   getUpdateState: () => ipcRenderer.invoke("get-update-state"),
   checkForUpdates: () => ipcRenderer.invoke("check-for-updates"),

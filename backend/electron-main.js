@@ -2787,18 +2787,54 @@ let tray = null;
  * O renderer precisa de saber que há atualização para a assinalar na roda — um selo no hub, que
  * o utilizador vê quando abre o menu, sem ninguém lhe interromper o que está a fazer.
  */
-/** Última versão anunciada pelo updater — o painel pede-a ao abrir, para não depender do evento. */
+/**
+ * Estado do updater, em UM sítio.
+ *
+ * O painel e a bandeja liam antes duas coisas diferentes: um "há versão pronta" vindo do evento e
+ * um botão "Check for updates" que existia sempre, mesmo com o instalador já em disco. Carregar
+ * nele voltava a descarregar o que já estava descarregado e punha a linha de novo em
+ * "downloading" — a UI andava para trás. Agora há uma máquina de estados só, e quem pinta
+ * (`update-state`) e quem age (`check-for-updates`) leem-na a ela.
+ *
+ * `idle`        nunca se verificou nesta sessão
+ * `checking`    pedido em curso
+ * `current`     verificado, nada novo (`checkedAt` diz quando)
+ * `downloading` a transferir (`percent`, quando o servidor dá tamanho)
+ * `ready`       descarregado e verificado — só falta reiniciar. Estado FINAL: nada volta atrás
+ * `error`       a última verificação falhou (rede, servidor, assinatura)
+ * @type {{ state: string, version: string|null, percent?: number, checkedAt?: number, error?: string }}
+ */
 let lastKnownUpdate = { state: "idle", version: null };
 
-function notifyRendererUpdateState(state, version) {
-  lastKnownUpdate = { state, version: version ?? null };
+/** Verificação em curso — o segundo pedido junta-se ao primeiro em vez de abrir outro. */
+let pendingUpdateCheck = null;
+
+function notifyRendererUpdateState(state, version, extra = {}) {
+  /**
+   * `ready` é terminal. O instalador já está em disco e `quitAndInstall` continua a funcionar; um
+   * erro de rede posterior (ou uma verificação periódica que falha) não pode apagar da UI o único
+   * botão que importa — nem fazer a linha regredir para "a transferir".
+   */
+  if (lastKnownUpdate.state === "ready" && state !== "ready") return;
+
+  const previous = lastKnownUpdate;
+  lastKnownUpdate = { state, version: version ?? null, ...extra };
+  /**
+   * A bandeja mostra o mesmo estado que o painel — mas só quando ele MUDA. O menu nativo é
+   * reconstruído por inteiro a cada `setContextMenu`, e o `download-progress` dispara dezenas de
+   * vezes: reconstruí-lo a cada ponto percentual é trabalho puro, e pisca se estiver aberto.
+   */
+  if (previous.state !== state || previous.version !== lastKnownUpdate.version) refreshTrayMenuRef();
   if (!mainWindow || mainWindow.isDestroyed()) return;
   try {
-    mainWindow.webContents.send("update-state", { state, version });
+    mainWindow.webContents.send("update-state", { ...lastKnownUpdate });
   } catch (e) {
     /* ignore */
   }
 }
+
+/** A app vive na bandeja durante dias: verificar só uma vez no arranque não chega. */
+const UPDATE_RECHECK_INTERVAL_MS = 6 * 60 * 60_000;
 
 function configureAutoUpdates() {
   if (!app.isPackaged || process.platform !== "win32") return;
@@ -2818,11 +2854,37 @@ function configureAutoUpdates() {
 
   autoUpdater.on("error", (error) => {
     diagLog(`[Update] ${error?.message || error}`);
+    /** Já descarregado: o `notify` protege o estado `ready`, mas nem vale a pena repintar. */
+    notifyRendererUpdateState("error", lastKnownUpdate.version, {
+      error: error?.message || String(error),
+    });
+  });
+
+  autoUpdater.on("checking-for-update", () => {
+    notifyRendererUpdateState("checking", lastKnownUpdate.version);
+  });
+
+  /** Nada novo: dizer que se verificou vale mais do que ficar em silêncio no `idle`. */
+  autoUpdater.on("update-not-available", () => {
+    notifyRendererUpdateState("current", app.getVersion(), { checkedAt: Date.now() });
   });
 
   autoUpdater.on("update-available", (info) => {
     diagLog(`[Update] Downloading version ${info.version}`);
-    notifyRendererUpdateState("downloading", info.version);
+    notifyRendererUpdateState("downloading", info.version, { checkedAt: Date.now() });
+  });
+
+  autoUpdater.on("download-progress", (progress) => {
+    const raw = Number(progress?.percent);
+    if (!Number.isFinite(raw)) return;
+    const percent = Math.max(0, Math.min(100, Math.round(raw)));
+    /** Ao ponto percentual: o evento chega dezenas de vezes por segundo, a UI só mostra inteiros. */
+    if (lastKnownUpdate.percent === percent) return;
+    /** Só o número muda; manter o resto do estado para não perder o `checkedAt`. */
+    notifyRendererUpdateState("downloading", lastKnownUpdate.version, {
+      checkedAt: lastKnownUpdate.checkedAt,
+      percent,
+    });
   });
 
   /**
@@ -2835,15 +2897,22 @@ function configureAutoUpdates() {
    */
   autoUpdater.on("update-downloaded", (info) => {
     diagLog(`[Update] Downloaded version ${info.version}`);
-    notifyRendererUpdateState("ready", info.version);
+    notifyRendererUpdateState("ready", info.version, { checkedAt: Date.now() });
   });
 
   // Let the UI finish starting before the network request begins.
   setTimeout(() => {
-    autoUpdater.checkForUpdates().catch((error) => {
-      diagLog(`[Update] Check failed: ${error?.message || error}`);
-    });
+    void runUpdateCheck();
   }, 10_000).unref?.();
+
+  /**
+   * Reverificação periódica. Para quando houver algo em disco: a partir do `ready` não há nada
+   * que uma verificação possa descobrir, e `runUpdateCheck` já a recusaria.
+   */
+  setInterval(() => {
+    if (lastKnownUpdate.state === "ready" || lastKnownUpdate.state === "downloading") return;
+    void runUpdateCheck();
+  }, UPDATE_RECHECK_INTERVAL_MS).unref?.();
 }
 
 app.whenReady().then(async () => {
@@ -4114,7 +4183,14 @@ app.whenReady().then(async () => {
         now: Date.now(),
         version: app.getVersion(),
         /** The Store owns updates for an MSIX build, and an unpackaged one has no updater at all. */
-        canCheckUpdates: app.isPackaged && process.platform === "win32" && !isStoreBuild(),
+        canCheckUpdates: buildChannel() === "direct",
+        /**
+         * The tray reads the same state machine the Settings row does. With an installer already
+         * on disk the item is the restart, not another check — offering "Check for updates" there
+         * only invites a second download of what is already downloaded.
+         */
+        updateState: lastKnownUpdate.state,
+        updateVersion: lastKnownUpdate.version,
         icons: {
           wheel: menuIcon("tray-wheel"),
           spaces: menuIcon("tray-spaces"),
@@ -4128,7 +4204,8 @@ app.whenReady().then(async () => {
           switchWorkspace: (index) => { void switchWorkspaceFromTray(index); },
           setPause: setTriggerPause,
           openSettings: () => { void openSettingsFromTray(); },
-          checkForUpdates: () => { void runManualUpdateCheck(); },
+          checkForUpdates: () => { void runUpdateCheck(); },
+          installUpdate: () => installUpdateNow(),
           quit: () => app.quit(),
         },
       }),
@@ -6731,46 +6808,91 @@ ipcMain.handle("was-opened-at-login", () => {
 ipcMain.handle("get-app-version", () => app.getVersion());
 
 /**
- * O renderer esconde as linhas de atualização quando a app veio da Store — deixar lá um botão
- * "Check now" que devolve sempre erro é pior do que não ter botão nenhum.
+ * Canal de distribuição, do ponto de vista de QUEM atualiza:
+ *
+ * `store`       a loja trata disso — as linhas de atualização saem da UI
+ * `unsupported` build por empacotar (ou fora do Windows): não há updater nenhum para chamar
+ * `direct`      instalador NSIS — é aqui que a linha "Check for updates" faz sentido
+ *
+ * Antes só havia `store`/`direct`, e em desenvolvimento ficava um botão "Check now" que só sabia
+ * devolver erro. Um botão que nunca pode funcionar é pior do que botão nenhum.
  */
-ipcMain.handle("get-build-channel", () => (isStoreBuild() ? "store" : "direct"));
-
-/** Estado atual, para o painel se pintar mesmo que tenha aberto depois do evento. */
-ipcMain.handle("get-update-state", () => lastKnownUpdate);
-
-/**
- * Verificação a pedido. O arranque já verifica sozinho passados 10 s; isto é para quem quer
- * confirmar agora — e para dar uma resposta visível a quem carrega no botão.
- */
-/** One check, two callers: the Settings row and the tray item. */
-const runManualUpdateCheck = async () => {
-  if (!app.isPackaged || process.platform !== "win32") {
-    return { ok: false, code: "UNSUPPORTED", state: lastKnownUpdate.state };
-  }
-  /** Na Store o botão nem aparece; o guarda fica para o caso de alguém chamar o canal à mão. */
-  if (isStoreBuild()) {
-    return { ok: false, code: "STORE_BUILD", state: "idle" };
-  }
-  try {
-    const result = await autoUpdater.checkForUpdates();
-    const version = result?.updateInfo?.version;
-    if (version && version !== app.getVersion()) {
-      return { ok: true, state: "downloading", version };
-    }
-    return { ok: true, state: "current", version: app.getVersion() };
-  } catch (error) {
-    diagLog(`[Update] Manual check failed: ${error?.message || error}`);
-    return { ok: false, code: "CHECK_FAILED", error: error?.message || String(error) };
-  }
+const buildChannel = () => {
+  if (isStoreBuild()) return "store";
+  if (!app.isPackaged || process.platform !== "win32") return "unsupported";
+  return "direct";
 };
 
-ipcMain.handle("check-for-updates", runManualUpdateCheck);
+ipcMain.handle("get-build-channel", () => buildChannel());
+
+/** Estado atual, para o painel se pintar mesmo que tenha aberto depois do evento. */
+ipcMain.handle("get-update-state", () => ({ ...lastKnownUpdate, channel: buildChannel() }));
+
+/**
+ * Uma verificação, três chamadores: o arranque, o temporizador e o botão (painel ou bandeja).
+ *
+ * O que ela recusa é tão importante como o que faz. Com o instalador já em disco (`ready`) não há
+ * nada a descobrir: verificar outra vez só voltava a transferir o mesmo ficheiro e a fazer a UI
+ * regredir de "Restart now" para "a transferir". Com uma transferência a decorrer, o pedido
+ * junta-se à que já existe em vez de abrir outra.
+ */
+const runUpdateCheck = async () => {
+  const channel = buildChannel();
+  if (channel !== "direct") {
+    return {
+      ok: false,
+      code: channel === "store" ? "STORE_BUILD" : "UNSUPPORTED",
+      state: "unsupported",
+    };
+  }
+
+  if (lastKnownUpdate.state === "ready") {
+    return { ok: true, state: "ready", version: lastKnownUpdate.version };
+  }
+  if (lastKnownUpdate.state === "downloading") {
+    return {
+      ok: true,
+      state: "downloading",
+      version: lastKnownUpdate.version,
+      percent: lastKnownUpdate.percent,
+    };
+  }
+  if (pendingUpdateCheck) return pendingUpdateCheck;
+
+  pendingUpdateCheck = (async () => {
+    try {
+      const result = await autoUpdater.checkForUpdates();
+      const version = result?.updateInfo?.version;
+      if (version && version !== app.getVersion()) {
+        /** `update-available` já pôs o estado; devolver o que ele ficou, não o que se esperava. */
+        return { ok: true, state: lastKnownUpdate.state === "ready" ? "ready" : "downloading", version };
+      }
+      /** Rede de segurança: se `update-not-available` não chegou, marcar na mesma o momento. */
+      if (lastKnownUpdate.state !== "current") {
+        notifyRendererUpdateState("current", app.getVersion(), { checkedAt: Date.now() });
+      }
+      return { ok: true, state: "current", version: app.getVersion() };
+    } catch (error) {
+      const message = error?.message || String(error);
+      diagLog(`[Update] Check failed: ${message}`);
+      notifyRendererUpdateState("error", lastKnownUpdate.version, { error: message });
+      return { ok: false, code: "CHECK_FAILED", state: lastKnownUpdate.state, error: message };
+    } finally {
+      pendingUpdateCheck = null;
+    }
+  })();
+
+  return pendingUpdateCheck;
+};
+
+ipcMain.handle("check-for-updates", () => runUpdateCheck());
 
 /** Reinício para instalar — o utilizador escolhe o momento, na linha das Definições. */
-ipcMain.on("install-update-now", () => {
+const installUpdateNow = () => {
   if (isStoreBuild()) return;
+  /** Só há o que instalar depois de `update-downloaded`; antes disso não existe ficheiro. */
   if (lastKnownUpdate.state !== "ready") return;
+  if (updateInstallInProgress) return;
   diagLog("[Update] Instalação pedida pelo utilizador");
   updateInstallInProgress = true;
 
@@ -6790,7 +6912,9 @@ ipcMain.on("install-update-now", () => {
    * a abri-la à mão. Uma app que vive na bandeja simplesmente desaparecia depois de atualizar.
    */
   autoUpdater.quitAndInstall(false, true);
-});
+};
+
+ipcMain.on("install-update-now", installUpdateNow);
 
 ipcMain.on("request-keyboard-focus", () => {
   if (!mainWindow || mainWindow.isDestroyed()) return;

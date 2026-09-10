@@ -119,6 +119,39 @@ check("no updater, no row", () => {
   assert.ok(find(menu, "Open Settings"), "and the row above it stays");
 });
 
+check("downloaded: the row is the restart, and the check is gone", () => {
+  const menu = buildTrayMenuTemplate({ ...BASE, updateState: "ready", updateVersion: "1.5.1" });
+  assert.equal(find(menu, "Check for updates"), undefined, "checking again would re-download it");
+  assert.ok(find(menu, "Restart to update to 1.5.1"), labels(menu).join("|"));
+});
+
+check("the restart row installs, it does not check", () => {
+  const called = [];
+  const menu = buildTrayMenuTemplate({
+    ...BASE,
+    updateState: "ready",
+    updateVersion: "1.5.1",
+    actions: { installUpdate: () => called.push("install"), checkForUpdates: () => called.push("check") },
+  });
+  find(menu, "Restart to update to 1.5.1").click();
+  assert.deepEqual(called, ["install"]);
+});
+
+check("mid-flight the row is a status line, not a button", () => {
+  for (const [state, label] of [["downloading", "Downloading 1.5.1…"], ["checking", "Checking for updates…"]]) {
+    const menu = buildTrayMenuTemplate({ ...BASE, updateState: state, updateVersion: "1.5.1" });
+    const row = find(menu, label);
+    assert.ok(row, `expected "${label}" in ${labels(menu).join("|")}`);
+    assert.equal(row.enabled, false);
+    assert.equal(find(menu, "Check for updates"), undefined);
+  }
+});
+
+check("a failed check leaves something to press again", () => {
+  const menu = buildTrayMenuTemplate({ ...BASE, updateState: "error" });
+  assert.ok(find(menu, "Check for updates"), labels(menu).join("|"));
+});
+
 // ── Icons ─────────────────────────────────────────────────────────────────────
 check("a missing glyph omits the key rather than passing null", () => {
   const menu = buildTrayMenuTemplate({ ...BASE, icons: { wheel: null, settings: { fake: true } } });

@@ -233,10 +233,19 @@ export default function App() {
   const [updateReady, setUpdateReady] = useState(false);
 
   useEffect(() => {
+    let cancelled = false;
+    /**
+     * Perguntar, e não só esperar pelo evento: o `update-downloaded` dispara uma vez, e um
+     * renderer que recarregue depois dele nunca mais via o selo — a atualização continuava lá,
+     * pronta, sem nada no hub a dizê-lo.
+     */
+    void window.electron?.getUpdateState?.().then((state) => {
+      if (!cancelled) setUpdateReady(state?.state === 'ready');
+    }).catch(() => undefined);
     const off = window.electron?.onUpdateState?.((payload) => {
       setUpdateReady(payload?.state === 'ready');
     });
-    return () => { off?.(); };
+    return () => { cancelled = true; off?.(); };
   }, []);
 
   /** Esconde dashboard/definições antes do `await applyWindowSize('fullscreen')` — sem isto, ao restaurar da bandeja aparece um frame da última UI. */
