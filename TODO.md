@@ -170,8 +170,6 @@ its section, and a retired one keeps its number rather than being reused.
 
 ## 4. UX and intuitiveness
 
-- [ ] **4.9** **No wheel type-ahead.** Past ~12 shortcuts the slices get thin; "start typing to filter"
-  scales the wheel beyond what aiming alone supports.
 - [ ] **4.10** **No item-count guidance.** `360 / totalApps` with no cap — 20 items gives 18° slices, close to
   unaimable in `angle` mode. Warn in the editor, or auto-page.
 - [ ] **4.11** **First-run onboarding is gone** (WelcomeScreen is dead) — new users get a wheel and no

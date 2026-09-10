@@ -7,6 +7,7 @@ import { RovylLogo } from './RovylLogo';
 import { uiString } from '../strings';
 import { RadialHud } from './RadialHud';
 import {
+  filterRadialApps,
   getRootRadialApps,
   isWorkspacePickItem,
   parseWorkspacePickIndex,
@@ -859,7 +860,29 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
   // Folder Navigation State
   // Seeded with the root level, not the raw app list: in picker mode the two
   // differ, and mounting with the wrong one costs a frame of the wrong wheel.
-  const [currentLevelApps, setCurrentLevelApps] = useState<AppItem[]>(() => getRootRadialApps(config, apps));
+  const [rawLevelApps, setCurrentLevelApps] = useState<AppItem[]>(() => getRootRadialApps(config, apps));
+  /**
+   * Type-ahead: what has been typed since the wheel opened, and the level narrowed to match.
+   *
+   * Past about a dozen shortcuts a slice is 30° or less and aiming stops being the skill it was —
+   * the wheel that made eight targets effortless makes twenty a lottery. Typing narrows the ring
+   * until the remaining slices are wide again; aiming still does the launching.
+   *
+   * The narrowing is applied HERE, between the state and everything that reads it, and that is the
+   * whole implementation. Layout, hit-testing, the dwell timer, the folder stack and the render all
+   * read `currentLevelApps`; none of them needs to know a filter exists, and none of them can fall
+   * out of step with one. The twenty-six places that SET the level are equally untouched — they
+   * write the level, not the view of it.
+   */
+  const [typeAhead, setTypeAhead] = useState('');
+  const currentLevelApps = React.useMemo(
+    () => filterRadialApps(rawLevelApps, typeAhead),
+    [rawLevelApps, typeAhead],
+  );
+  const typeAheadRef = useRef(typeAhead);
+  typeAheadRef.current = typeAhead;
+  /** A level change is a new set of names, so whatever was typed no longer means anything. */
+  useEffect(() => { setTypeAhead(''); }, [rawLevelApps]);
   const [folderStack, setFolderStack] = useState<{ label: string, apps: AppItem[] }[]>([]);
   const [isLoadingRecents, setIsLoadingRecents] = useState(false);
   /**
@@ -1751,6 +1774,14 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
       // diagLog(`[RadialMenu.tsx] KeyDown detected: ${e.key}, Ctrl: ${e.ctrlKey}, Alt: ${e.altKey}, Shift: ${e.shiftKey}`);
       if (e.key === 'Escape') {
         e.preventDefault();
+        /**
+         * One Escape, one thing undone. With something typed, Escape gives back the whole ring —
+         * closing the wheel as well would throw away the gesture that opened it over a typo.
+         */
+        if (typeAheadRef.current) {
+          setTypeAhead('');
+          return;
+        }
         /** Ver `handleMouseDown`: cancelar tem de calar o temporizador antes de o React desmontar. */
         closingRef.current = true;
         cancelDwell();
@@ -1758,16 +1789,42 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
         return;
       }
 
+      if (e.key === 'Backspace') {
+        if (!typeAheadRef.current) return;
+        e.preventDefault();
+        setTypeAhead((current) => current.slice(0, -1));
+        return;
+      }
+
+      /**
+       * A modifier means the key belongs to someone else — Alt+Z reopening the wheel, Ctrl+anything
+       * — and a key name longer than one character is Tab, Shift, F5 or an arrow, none of which is
+       * a letter someone meant to type.
+       */
+      const isTypedCharacter =
+        e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey && e.key !== ' ';
+
       // Workspace Switching (1-9) — disabled in picker mode (user chooses workspace on the radial)
       if (
         onWorkspaceSwitch &&
         configRef.current.workspaceSwitchMode !== 'picker'
       ) {
         const num = parseInt(e.key);
-        if (!isNaN(num) && num >= 1 && num <= 9) {
+        /**
+         * The digits stay the workspace keys, and only while nothing has been typed. Once a filter
+         * is running they are characters like any other: an app called "Photoshop 2024" cannot be
+         * reached if the 2 keeps changing workspace.
+         */
+        if (!isNaN(num) && num >= 1 && num <= 9 && !typeAheadRef.current) {
           e.preventDefault();
           onWorkspaceSwitch(num - 1);
+          return;
         }
+      }
+
+      if (isTypedCharacter) {
+        e.preventDefault();
+        setTypeAhead((current) => (current.length >= 24 ? current : current + e.key));
       }
     };
 
@@ -2350,6 +2407,22 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
             batteryLevel={batteryLevel}
             weather={weather}
           />
+
+          {/*
+            What has been typed, and what it left. Fixed to the viewport rather than hung off the
+            ring: the ring's radius changes with every keystroke that changes the match count, and
+            a readout that moved while being read would be the one thing worse than no readout.
+          */}
+          {isOpen && typeAhead && (
+            <div className="zn-radial-filter" role="status" aria-live="polite">
+              <span className="zn-radial-filter-query">{typeAhead}</span>
+              <span className="zn-radial-filter-count">
+                {currentLevelApps.length === 0
+                  ? 'no matches'
+                  : `${currentLevelApps.length} of ${rawLevelApps.length}`}
+              </span>
+            </div>
+          )}
 
           {/* Menu Container */}
           <div
