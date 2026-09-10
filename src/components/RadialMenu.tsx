@@ -289,6 +289,28 @@ const PARK_TIMEOUT_MS = 400;
 /** Folga ate a borda da janela; passar disto pede um reencosto antes de o cursor sair (e reaparecer). */
 const PARK_STRAY_MARGIN_PX = 140;
 
+/**
+ * Eco de lançamento — a única janela em que o utilizador vê o que escolheu.
+ *
+ * Confirmar era um CORTE: a roda desaparecia no mesmo frame em que o comando era despachado, e o
+ * que vinha a seguir era o desktop nu durante o tempo que a app levasse a abrir — meio segundo
+ * numa app quente, vários numa fria. Nada nesse intervalo dizia qual dos ícones tinha sido
+ * apanhado, nem sequer que algum tinha: um lançamento bem sucedido e um clique que não acertou em
+ * nada eram, para os olhos, o mesmo acontecimento.
+ *
+ * O eco segura o ícone confirmado no sítio onde ele já estava, apaga tudo o resto à volta e manda
+ * uma onda para fora dele. É por isso que o atraso ANTECEDE o despacho em vez de correr por cima:
+ * a janela do radial é `alwaysOnTop` e a app que abre rouba o foreground — animar depois punha a
+ * onda a competir com a janela nova, ou escondida por trás dela.
+ *
+ * O custo é real e é este número: o comando parte `LAUNCH_ECHO_MS` mais tarde. Fica curto de
+ * propósito — longo o suficiente para o olho registar QUAL ícone, curto o suficiente para não se
+ * ler como lentidão do launcher.
+ */
+const LAUNCH_ECHO_MS = 520;
+/** `performanceMode` encurta tudo o resto da roda; o eco segue a mesma regra. */
+const LAUNCH_ECHO_FAST_MS = 340;
+
 interface RadialMenuItemProps {
   app: AppItem;
   index: number;
@@ -315,6 +337,14 @@ interface RadialMenuItemProps {
   dwellMs?: number;
   /** Id da tentativa. Mudar remonta o `<svg>` e é isso que reinicia a animação CSS. */
   dwellKey?: number;
+  /**
+   * Papel desta fatia no eco de lançamento: `fired` é a que foi confirmada (fica, pulsa e emite a
+   * onda), `faded` é todas as outras (saem já). `undefined` fora do eco — e é assim que o
+   * `React.memo` de toda a roda continua intacto na vida normal.
+   */
+  echo?: 'fired' | 'faded';
+  /** Duração do eco, para as animações CSS acompanharem o temporizador que despacha o comando. */
+  echoMs?: number;
   onClick: (app: AppItem) => void;
 }
 
@@ -349,6 +379,14 @@ function getSlicePresence(distance: number | null) {
   if (distance === 0) return { opacity: 1, scale: 1.06 };
   return { opacity: 0.9, scale: 1 };
 }
+
+/**
+ * A escala em que a fatia confirmada FICA durante o eco de lançamento — a mesma da fatia apontada,
+ * e não um valor novo. Confirmar por mira já a tinha aí: mudar o número faria a fatia dar um passo
+ * lateral no instante em que o utilizador está a lê-la. Só quem confirma por clique num tile que
+ * não estava apontado vê aqui movimento, e aí o pequeno salto é a própria resposta ao clique.
+ */
+const FIRED_SLICE_SCALE = 1.06;
 
 /**
  * Alinha um valor à grelha de pixels FÍSICOS do monitor. A roda posiciona cada fatia por
@@ -420,6 +458,8 @@ const RadialMenuItem = React.memo(({
   shortcutHint,
   dwellMs,
   dwellKey,
+  echo,
+  echoMs,
   onClick,
 }: RadialMenuItemProps) => {
   const Icon = getIcon(app.iconName);
@@ -492,6 +532,19 @@ const RadialMenuItem = React.memo(({
   const dwellRingRadius = Math.min(18 + dwellRingInset, (dwellRingSize - 2.5) / 2);
   const dwellRingPath = roundedRectPathFromTop(dwellRingSize, 1.25, dwellRingRadius);
 
+  /**
+   * A onda nasce com a forma do TILE, não como círculo: sai da silhueta do ícone que o utilizador
+   * acabou de apontar, e é essa continuidade que a faz ler-se como "isto partiu daqui" em vez de um
+   * efeito colado por cima. Ao escalar, o `border-radius` escala com ela e a forma abre para um
+   * quadrado cada vez mais redondo — o que é exatamente a leitura pretendida.
+   *
+   * Escala e opacidade e mais nada: os dois únicos atributos que o compositor anima sem tocar na
+   * main thread, que é onde a app a ser lançada já está a competir por tempo.
+   */
+  const fired = echo === 'fired';
+  const waveSize = actualIconSize + 6;
+  const waveRadius = 21;
+
   return (
     <div
       /**
@@ -502,14 +555,33 @@ const RadialMenuItem = React.memo(({
        * esquerdo do hub caía nela, sempre na mesma, e executava-a. Quem recebe o clique passa a
        * ser o tile, cuja área de acerto acompanha o transform e portanto coincide com o desenho.
        */
-      className="zn-radial-slice absolute top-0 left-0 pointer-events-none"
+      className={`zn-radial-slice absolute top-0 left-0 pointer-events-none${
+        echo ? ` zn-radial-slice--${echo}` : ''
+      }`}
       style={{
         /* Um único transform por fatia: posição + presença. O hover só troca este valor. */
         ['--zn-tf' as string]: bloom
-          ? `translate3d(${snapToDevicePixel(pos.x)}px, ${snapToDevicePixel(pos.y)}px, 0) scale(${presence.scale})`
+          ? `translate3d(${snapToDevicePixel(pos.x)}px, ${snapToDevicePixel(pos.y)}px, 0) scale(${
+              /**
+               * A confirmada fica FIXA no ponto onde já estava — mexê-la seria pedir ao olho que a
+               * seguisse no exato momento em que ele tem de a identificar. As outras encolhem um
+               * pouco ao sair, para a saída delas se ler como recuo e não como um apagar.
+               */
+              fired
+                ? FIRED_SLICE_SCALE
+                : echo === 'faded'
+                  ? presence.scale * 0.88
+                  : presence.scale
+            })`
           : 'translate3d(0px, 0px, 0) scale(0.2)',
-        ['--zn-op' as string]: bloom ? presence.opacity : 0,
-        zIndex: isActive ? 200 : 100,
+        /**
+         * A confirmada fica a 1 e é a animação de dentro que a apaga, para que a saída dela não se
+         * confunda com a das outras — todo o eco existe para as separar.
+         */
+        ['--zn-op' as string]: fired ? 1 : echo === 'faded' ? 0 : bloom ? presence.opacity : 0,
+        ...(echoMs ? { ['--zn-echo-ms' as string]: `${echoMs}ms` } : null),
+        /** A confirmada por cima de tudo: a onda dela atravessa o sítio dos vizinhos. */
+        zIndex: fired ? 300 : isActive ? 200 : 100,
       }}
       onMouseDown={(e) => e.stopPropagation()}
       onMouseUp={(e) => e.stopPropagation()}
@@ -585,9 +657,48 @@ const RadialMenuItem = React.memo(({
           </svg>
         )}
 
+        {/*
+          Onda de lançamento. Dois anéis desfasados, não um: um anel único lê-se como um contorno
+          que cresceu, dois lêem-se como algo que PARTIU do ícone. O segundo sai a meio do primeiro,
+          que é o intervalo em que o olho ainda está a seguir o primeiro e ganha a impressão de
+          continuidade em vez de repetição.
+
+          `z-0`, por baixo do tile: a onda passa por trás do ícone e sai por fora dele. Por cima,
+          cada anel cortava a placa do ícone ao atravessá-la — e o ícone é a única coisa que este
+          momento inteiro existe para mostrar.
+        */}
+        {fired && (
+          <>
+            <span
+              className="zn-launch-wave absolute pointer-events-none z-0"
+              style={{
+                left: '50%',
+                top: '50%',
+                width: `${waveSize}px`,
+                height: `${waveSize}px`,
+                borderRadius: `${waveRadius}px`,
+                border: `2px solid ${hoverColor}`,
+              }}
+              aria-hidden
+            />
+            <span
+              className="zn-launch-wave zn-launch-wave--late absolute pointer-events-none z-0"
+              style={{
+                left: '50%',
+                top: '50%',
+                width: `${waveSize}px`,
+                height: `${waveSize}px`,
+                borderRadius: `${waveRadius}px`,
+                border: `2px solid ${hoverColor}`,
+              }}
+              aria-hidden
+            />
+          </>
+        )}
+
         {/* WRAPPER FOR BADGE & MASKED CONTENT */}
         <div
-          className={`relative z-20 ${bloom ? 'pointer-events-auto cursor-pointer' : 'pointer-events-none cursor-default'}`}
+          className={`relative z-20 ${fired ? 'zn-launch-pop ' : ''}${bloom ? 'pointer-events-auto cursor-pointer' : 'pointer-events-none cursor-default'}`}
           style={{
             width: `${actualIconSize}px`,
             height: `${actualIconSize}px`,
@@ -683,7 +794,13 @@ const RadialMenuItem = React.memo(({
 
         {showLabels && (
           <div
-            className="zn-radial-label absolute pointer-events-none z-30"
+            /**
+             * O rótulo da fatia confirmada sai COM o ícone, não antes nem depois: durante o eco ele
+             * é a única coisa que diz por escrito o que foi lançado, e a fatia inteira já não está
+             * a esbater-se (`--zn-op` fica a 1), por isso sem isto ficaria pendurado até a janela
+             * desaparecer.
+             */
+            className={`zn-radial-label absolute pointer-events-none z-30${fired ? ' zn-launch-fade' : ''}`}
             style={{
               left: '50%',
               top: '50%',
@@ -743,7 +860,12 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
   isOpen,
   position,
   viewportSize,
-  onClose,
+  /**
+   * O `onClose` CRU: fecha a roda e executa, sem eco nenhum. Todo o resto do ficheiro chama o
+   * `onClose` embrulhado, definido mais abaixo — é ele que segura o ícone confirmado no ecrã
+   * durante o eco de lançamento antes de deixar o App fechar a janela.
+   */
+  onClose: onCloseNow,
   apps,
   config,
   triggerSource = 'shortcut',
@@ -862,6 +984,95 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
     paintReadyAtRef.current = null;
     quarantineUntilRef.current = 0;
   }, [disarmDwell]);
+
+  /**
+   * Alvo do eco de lançamento: o índice da fatia confirmada, ou `-1` para o hub. `null` enquanto
+   * nada foi confirmado — que é o estado em toda a vida normal da roda.
+   *
+   * O `key` remonta os anéis: uma segunda confirmação sem ele reutilizaria os mesmos elementos e a
+   * animação CSS, já terminada, não voltava a correr.
+   */
+  const [launchEcho, setLaunchEcho] = useState<{ index: number; key: number } | null>(null);
+  const launchEchoTimerRef = useRef<number | null>(null);
+  const launchEchoSeqRef = useRef(0);
+  const launchEchoMs = config.performanceMode ? LAUNCH_ECHO_FAST_MS : LAUNCH_ECHO_MS;
+
+  /**
+   * O `onClose` que o resto do ficheiro usa. Confirmar um alvo executável passa a desenhar o eco e
+   * só depois deixa o App fechar; tudo o resto atravessa sem tocar em nada.
+   *
+   * Cancelar NÃO tem eco, e a distinção não é estética: um cancelamento não executa, portanto não
+   * há nada para confirmar e qualquer atraso aí é só a roda a demorar a sair do caminho. O centro
+   * segue a mesma regra pela sua configuração — o hub configurado como `cancel` é um cancelamento.
+   *
+   * `prefers-reduced-motion` desliga o eco por inteiro em vez de o encurtar: sem a onda e sem a
+   * escala, o que sobrava era um atraso puro antes de a app abrir.
+   */
+  const onClose = useCallback(
+    (selectedId: string | null, selectedApp?: AppItem | null) => {
+      const fireNow = () => onCloseNow(selectedId, selectedApp);
+      if (selectedId === null) return void fireNow();
+      /** Já há um eco a correr: a segunda confirmação seria uma segunda execução. */
+      if (launchEchoTimerRef.current !== null) return;
+      if (typeof window !== 'undefined' &&
+          window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+        return void fireNow();
+      }
+
+      let index: number;
+      if (selectedId === '__CENTER__') {
+        /**
+         * `cancel` e `none` não executam nada — o App devolve sem despachar comando nenhum — e um
+         * eco por cima de um lançamento que não aconteceu seria uma confirmação a mentir.
+         */
+        const centerType = stateRef.current.config.centerButton?.type;
+        if (!centerType || centerType === 'cancel' || centerType === 'none') return void fireNow();
+        index = -1;
+      } else {
+        index = stateRef.current.currentLevelApps.findIndex((item) => item.id === selectedId);
+        /** Sem fatia no ecrã não há nada para ecoar — atalho de teclado sobre um nível já trocado. */
+        if (index === -1) return void fireNow();
+      }
+
+      /**
+       * A roda fica inerte durante o eco. `closingRef` é o mesmo sinal síncrono que os
+       * cancelamentos escrevem, e é o que impede um temporizador de mira sustentada — que
+       * sobrevive à janela inteira do eco — de confirmar um SEGUNDO alvo por cima deste.
+       */
+      closingRef.current = true;
+      gestureConsumedRef.current = true;
+      cancelDwell();
+      launchEchoSeqRef.current += 1;
+      setLaunchEcho({ index, key: launchEchoSeqRef.current });
+      launchEchoTimerRef.current = window.setTimeout(() => {
+        /** Limpo ANTES de despachar: o efeito de `isOpen` que se segue não tem nada para cancelar. */
+        launchEchoTimerRef.current = null;
+        fireNow();
+      }, launchEchoMs);
+    },
+    [onCloseNow, cancelDwell, launchEchoMs],
+  );
+
+  /**
+   * A roda fechou por outra via enquanto o eco corria — Escape, botão direito, o trigger a
+   * alternar. O temporizador ainda pendente é uma execução que já ninguém pediu: um cancelamento a
+   * meio da onda tem de cancelar também a app.
+   */
+  useEffect(() => {
+    if (isOpen) return;
+    if (launchEchoTimerRef.current !== null) {
+      window.clearTimeout(launchEchoTimerRef.current);
+      launchEchoTimerRef.current = null;
+    }
+    setLaunchEcho(null);
+  }, [isOpen]);
+
+  useEffect(
+    () => () => {
+      if (launchEchoTimerRef.current !== null) window.clearTimeout(launchEchoTimerRef.current);
+    },
+    [],
+  );
 
   // Folder Navigation State
   // Seeded with the root level, not the raw app list: in picker mode the two
@@ -1140,6 +1351,8 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
   const handleCenterActivate = useCallback(() => {
     /** Clique reflexo logo a seguir a uma execução por tempo — e o hub já mudou de nível. */
     if (Date.now() < quarantineUntilRef.current) return;
+    /** Eco a correr: o centro deixou de ser um alvo tanto quanto as fatias. */
+    if (launchEchoTimerRef.current !== null) return;
     const { folderStack, currentLevelApps: _ignored, apps, config, onClose } = stateRef.current;
     if (folderStack.length > 0) {
       const newStack = folderStack.slice(0, -1);
@@ -1795,6 +2008,13 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
         return;
       }
 
+      /**
+       * Eco a correr: já há uma app a caminho. O teclado fica surdo a tudo menos ao Escape acima,
+       * que continua a ser a forma de desistir — trocar de workspace ou escrever no filtro durante
+       * a onda mexia num nível que está a desaparecer e cujo alvo já foi decidido.
+       */
+      if (launchEchoTimerRef.current !== null) return;
+
       if (e.key === 'Backspace') {
         if (!typeAheadRef.current) return;
         e.preventDefault();
@@ -2075,6 +2295,8 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
      * seguinte.
      */
     if (Date.now() < quarantineUntilRef.current) return;
+    /** Eco a correr: o alvo já está decidido e a roda a sair — nada por baixo dela abre nada. */
+    if (launchEchoTimerRef.current !== null) return;
     /**
      * Desarmar aqui, e não só na mudança de nível.
      *
@@ -2362,6 +2584,14 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
    */
   const bo = config.backdropOpacity;
 
+  /** Eco em curso, e se o alvo confirmado foi o hub em vez de uma fatia. */
+  const echoActive = launchEcho !== null;
+  const centerFired = launchEcho?.index === -1;
+  /** O escurecimento levanta-se ao longo do eco: a onda acaba já sobre o desktop, sem corte. */
+  const echoStyle = echoActive
+    ? ({ ['--zn-echo-ms' as string]: `${launchEchoMs}ms` } as React.CSSProperties)
+    : null;
+
 
   const backdropRadius = Math.ceil(
     actualMenuRadius + actualIconSize * 0.75 + Math.max(18, minGap),
@@ -2397,18 +2627,20 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
         <>
           {/* Escurecimento único (sem máscara radial — evita halo / “luz” à volta do radial) */}
           <div
-            className="zn-radial-scrim fixed inset-0 z-[2]"
+            className={`zn-radial-scrim fixed inset-0 z-[2]${echoActive ? ' zn-launch-scrim' : ''}`}
             style={{
-              pointerEvents: isOpen ? 'auto' : 'none',
+              pointerEvents: isOpen && !echoActive ? 'auto' : 'none',
               background: overlayDim,
               ['--zn-op' as string]: isOpen && bloom ? 1 : 0,
               ['--zn-dur-op' as string]: isOpen ? '150ms' : '100ms',
               willChange: 'opacity',
+              ...echoStyle,
             }}
           />
 
           <RadialHud
-            isOpen={isOpen && bloom}
+            /** Relógio, bateria e tempo saem com o resto da roda — o eco deixa só o ícone no ecrã. */
+            isOpen={isOpen && bloom && !echoActive}
             config={config}
             batteryLevel={batteryLevel}
             weather={weather}
@@ -2419,7 +2651,7 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
             ring: the ring's radius changes with every keystroke that changes the match count, and
             a readout that moved while being read would be the one thing worse than no readout.
           */}
-          {isOpen && typeAhead && (
+          {isOpen && !echoActive && typeAhead && (
             <div className="zn-radial-filter" role="status" aria-live="polite">
               <span className="zn-radial-filter-query">{typeAhead}</span>
               <span className="zn-radial-filter-count">
@@ -2435,7 +2667,7 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
             the type-ahead readout — the two can never be on screen together, since a filter needs
             something to filter. Only at the root: an empty FOLDER is empty because it is empty.
           */}
-          {isOpen && !typeAhead && discoveryPhase !== 'idle' && rawLevelApps.length === 0 && folderStack.length === 0 && (
+          {isOpen && !echoActive && !typeAhead && discoveryPhase !== 'idle' && rawLevelApps.length === 0 && folderStack.length === 0 && (
             <div className="zn-radial-filter is-notice" role="status" aria-live="polite">
               <span className="zn-radial-filter-count">
                 {discoveryPhase === 'scanning'
@@ -2456,7 +2688,7 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
             anyone who uses this daily. It costs nothing to show again next time, because next time
             is another moment of not having moved yet.
           */}
-          {isOpen && bloom && directionMode && !hasMoved && !typeAhead && rawLevelApps.length > 0 && (
+          {isOpen && !echoActive && bloom && directionMode && !hasMoved && !typeAhead && rawLevelApps.length > 0 && (
             <div className="zn-radial-filter is-hint" role="note">
               <span className="zn-radial-filter-count">
                 Push toward a target to open it — or press <kbd>Esc</kbd> to close the wheel.
@@ -2503,11 +2735,43 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
               />
             )}
 
+            {/*
+              A mesma onda do tile, à volta do hub, quando é o centro que lança. Circular porque o
+              hub é circular — a onda continua a sair da silhueta do que foi confirmado.
+            */}
+            {centerFired && (
+              <>
+                <span
+                  className="zn-launch-wave absolute top-0 left-0 pointer-events-none z-10"
+                  style={{
+                    width: `${hubDiameter + 6}px`,
+                    height: `${hubDiameter + 6}px`,
+                    borderRadius: '50%',
+                    border: `2px solid ${radialHoverColor}`,
+                    ['--zn-echo-ms' as string]: `${launchEchoMs}ms`,
+                  }}
+                  aria-hidden
+                />
+                <span
+                  className="zn-launch-wave zn-launch-wave--late absolute top-0 left-0 pointer-events-none z-10"
+                  style={{
+                    width: `${hubDiameter + 6}px`,
+                    height: `${hubDiameter + 6}px`,
+                    borderRadius: '50%',
+                    border: `2px solid ${radialHoverColor}`,
+                    ['--zn-echo-ms' as string]: `${launchEchoMs}ms`,
+                  }}
+                  aria-hidden
+                />
+              </>
+            )}
+
             {/* Central Hub */}
             <div
               className={`
                 zn-radial-hub absolute top-0 left-0
                 rounded-full flex items-center justify-center z-20
+                ${centerFired ? 'zn-launch-pop-center' : ''}
                 ${isOpen ? 'pointer-events-auto cursor-pointer' : 'pointer-events-none cursor-default'}
                 ${isCenterActive ? '' : 'text-white/70'}
               `}
@@ -2532,8 +2796,16 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
                   ? `0 0 22px ${radialHoverColor}3d, 0 8px 22px rgba(0,0,0,0.55)`
                   : '0 1px 3px rgba(0,0,0,0.55), 0 8px 20px rgba(0,0,0,0.5)',
                 ['--zn-tf' as string]: `translate(-50%, -50%) scale(${bloom ? (isCenterActive ? 1.06 : 1) : 0.82})`,
-                ['--zn-op' as string]: bloom ? 1 : 0,
+                /**
+                 * Uma fatia a lançar apaga o hub, tal como apaga as outras fatias: o eco isola o
+                 * que foi escolhido, e o hub é a parte da roda que mais o disputaria — é o único
+                 * outro objeto grande e opaco no ecrã. Quando é ELE que lança, é a animação de
+                 * `zn-launch-pop-center` que manda, e esta opacidade não chega a ser lida.
+                 */
+                ['--zn-op' as string]: echoActive && !centerFired ? 0 : bloom ? 1 : 0,
                 ['--zn-dur' as string]: '130ms',
+                ...(echoActive && !centerFired ? { ['--zn-dur-op' as string]: '140ms' } : null),
+                ...(centerFired ? { ['--zn-echo-ms' as string]: `${launchEchoMs}ms` } : null),
               }}
               onMouseDown={(e) => e.stopPropagation()}
               onMouseUp={(e) => e.stopPropagation()}
@@ -2642,7 +2914,9 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
                 ['--zn-tf' as string]: `translate(-50%, 0) translate3d(0, ${Math.round(
                   actualMenuRadius + actualIconSize * 0.75 + 34,
                 )}px, 0)`,
-                ['--zn-op' as string]: isOpen && bloom ? 1 : 0,
+                /** Onde se está na roda deixa de ser informação assim que se sai dela. */
+                ['--zn-op' as string]: isOpen && bloom && !echoActive ? 1 : 0,
+                ...(echoActive ? { ['--zn-dur-op' as string]: '130ms' } : null),
               }}
             >
               <div
@@ -2677,7 +2951,13 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
 
             {/* App Icons — a troca entre níveis é o próprio bloom (ver efeito `bloom`). */}
             {currentLevelApps.map((app, index) => {
-                const isActive = index === activeIndex;
+                /**
+                 * Durante o eco o destaque é o ALVO CONFIRMADO, não a mira. Os dois divergem: o
+                 * ponteiro continua a produzir eventos por cima de uma roda que já está a sair, e
+                 * um deles trocava a cor de fundo do tile a meio da onda — o ícone confirmado
+                 * perdia o realce e um vizinho invisível ficava com ele.
+                 */
+                const isActive = launchEcho ? launchEcho.index === index : index === activeIndex;
                 let angularDistance: number | null = null;
                 if (activeIndex !== null) {
                   const raw = Math.abs(index - activeIndex);
@@ -2707,6 +2987,9 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
                     /** `undefined` em todos os outros tiles — o `React.memo` deles não é invalidado. */
                     dwellMs={dwellTick && dwellTick.index === index ? dwellRunMsRef.current : undefined}
                     dwellKey={dwellTick && dwellTick.index === index ? dwellTick.key : undefined}
+                    /** Fora do eco é `undefined` em toda a roda — nenhum tile perde o memo por isto. */
+                    echo={launchEcho ? (launchEcho.index === index ? 'fired' : 'faded') : undefined}
+                    echoMs={launchEcho ? launchEchoMs : undefined}
                     onClick={handleAppClick}
                   />
                 );

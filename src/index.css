@@ -1379,3 +1379,133 @@
   .zn-radial-pill,
   .zn-radial-scrim { transition-duration: .01ms !important; }
 }
+
+/* ══ Eco de lançamento ══════════════════════════════════════════════════════
+   O que acontece entre escolher e a app aparecer. Confirmar era um corte seco:
+   a roda inteira desaparecia no frame do despacho e o desktop nu ficava a
+   responder pelo lançamento — durante um tempo que só a app decide. Não havia
+   como saber qual dos ícones tinha sido apanhado, nem se algum tinha.
+
+   O eco isola o ícone confirmado (tudo o resto sai já), segura-o no sítio onde
+   já estava, dá-lhe um impulso e manda duas ondas para fora dele. Tudo aqui é
+   `transform` + `opacity` — a main thread nesse meio segundo pertence ao
+   processo que está a arrancar, não a nós. `--zn-echo-ms` vem do React e é o
+   MESMO número que o temporizador que despacha o comando: a app parte quando a
+   última onda se apaga, nunca antes nem muito depois.
+   ═══════════════════════════════════════════════════════════════════════════ */
+
+/* O ícone confirmado: impulso curto, assentamento, e só então a saída. A ordem
+   importa — o impulso é a resposta ao clique, e tem de ser vista ANTES de o
+   ícone começar a ir-se embora, senão as duas leem-se como um só desvanecer. */
+@keyframes zn-launch-pop {
+  0%   { transform: scale(1);    opacity: 1; }
+  18%  { transform: scale(1.18); opacity: 1; }
+  42%  { transform: scale(1.02); opacity: 1; }
+  62%  { transform: scale(1.04); opacity: .96; }
+  100% { transform: scale(.82);  opacity: 0; }
+}
+
+/* Igual, mas com o `translate(-50%, -50%)` que o hub precisa: o hub é
+   posicionado pelo centro e uma animação de `transform` substitui o transform
+   todo — sem a translação aqui dentro, lançar pelo centro atirava o hub para
+   fora do sítio no primeiro frame. */
+@keyframes zn-launch-pop-center {
+  0%   { transform: translate(-50%, -50%) scale(1);    opacity: 1; }
+  18%  { transform: translate(-50%, -50%) scale(1.14); opacity: 1; }
+  42%  { transform: translate(-50%, -50%) scale(1);    opacity: 1; }
+  62%  { transform: translate(-50%, -50%) scale(1.02); opacity: .96; }
+  100% { transform: translate(-50%, -50%) scale(.84);  opacity: 0; }
+}
+
+/* A onda. Abre já quase toda no primeiro terço e depois abranda: uma expansão
+   linear lê-se como um anel a ser arrastado, esta lê-se como algo que foi
+   EMPURRADO de dentro e vai perdendo força. */
+@keyframes zn-launch-wave {
+  0%   { transform: translate(-50%, -50%) scale(.92); opacity: 0; }
+  /* Acesa quase de imediato: até à escala 1 o anel corre por trás da placa opaca
+     do tile e não se vê de todo, portanto uma entrada lenta só o faria nascer
+     já longe do ícone — visivelmente descolado daquilo de onde devia sair. */
+  8%   { opacity: .58; }
+  100% { transform: translate(-50%, -50%) scale(2.7); opacity: 0; }
+}
+
+/* As não escolhidas saem antes de a onda arrancar. Deixá-las esbater-se ao
+   ritmo normal punha meia roda ainda visível por baixo do anel a expandir, e o
+   ícone confirmado deixava de ser a única coisa no ecrã — que é tudo o que o
+   eco tem para dizer. */
+.zn-radial-slice--faded {
+  --zn-dur-op: 120ms;
+  --zn-dur: 180ms;
+  --zn-ease: ease-in;
+}
+
+/* A confirmada sobe à presença de fatia apontada e fica lá: quem a anima daí em
+   diante é `zn-launch-pop`, no invólucro do ícone. Este transform continua a
+   transitar de propósito — vindo de um clique num tile que não estava apontado,
+   é ele que faz o pequeno salto de "apanhei este". */
+.zn-radial-slice--fired {
+  --zn-dur: 120ms;
+}
+
+.zn-launch-pop {
+  animation: zn-launch-pop var(--zn-echo-ms, 520ms) cubic-bezier(.2, .7, .3, 1) forwards;
+  will-change: transform, opacity;
+}
+
+.zn-launch-pop-center {
+  animation: zn-launch-pop-center var(--zn-echo-ms, 520ms) cubic-bezier(.2, .7, .3, 1) forwards;
+  will-change: transform, opacity;
+}
+
+.zn-launch-wave {
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(.92);
+  animation: zn-launch-wave calc(var(--zn-echo-ms, 520ms) * .82) cubic-bezier(.12, .74, .3, 1) forwards;
+  will-change: transform, opacity;
+}
+
+/* A segunda onda sai a meio da primeira. Um anel só lê-se como um contorno que
+   cresceu; dois desfasados leem-se como algo que partiu dali. */
+.zn-launch-wave--late {
+  animation-delay: calc(var(--zn-echo-ms, 520ms) * .16);
+  animation-duration: calc(var(--zn-echo-ms, 520ms) * .66);
+}
+
+/* O rótulo do que foi lançado sai com o ícone: fica legível o tempo do impulso
+   e só depois se apaga, para que o nome ainda seja lido em vez de piscar. */
+@keyframes zn-launch-fade {
+  0%   { opacity: 1; }
+  55%  { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+.zn-launch-fade {
+  animation: zn-launch-fade var(--zn-echo-ms, 520ms) ease-out forwards;
+}
+
+/* O escurecimento levanta-se ao longo do eco em vez de desaparecer com a
+   janela: a última onda acaba já sobre o desktop, e o que o utilizador vê é o
+   ícone a entregar-se ao ambiente de trabalho — não um recorte a apagar-se. */
+@keyframes zn-launch-scrim {
+  0%   { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+.zn-launch-scrim {
+  animation: zn-launch-scrim var(--zn-echo-ms, 520ms) ease-in forwards;
+}
+
+/*
+  Sem eco nenhum com movimento reduzido — e isto é só a metade do CSS. A outra
+  metade está no `onClose` embrulhado do `RadialMenu`, que nesse caso despacha
+  o comando IMEDIATAMENTE: sem o impulso e sem as ondas, o que sobrava aqui era
+  meio segundo de atraso puro antes de a app abrir, que é o oposto do pedido.
+*/
+@media (prefers-reduced-motion: reduce) {
+  .zn-launch-pop,
+  .zn-launch-pop-center,
+  .zn-launch-wave,
+  .zn-launch-fade,
+  .zn-launch-scrim { animation: none !important; }
+  .zn-launch-wave { display: none !important; }
+}
