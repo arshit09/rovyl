@@ -3,39 +3,43 @@
 Audit of the current tree (v1.2.5). Grouped by impact. Checked items are done and note what
 changed; the rest is untouched.
 
+Every item carries a stable `§.n` id (`3.4`, `5.1`, …) — section number, then position within
+the section. Refer to items by id. Ids are append-only: a new item takes the next free number in
+its section, and a retired one keeps its number rather than being reused.
+
 ---
 
 ## 1. Product promise vs. actual behaviour
 
-- [ ] **The wheel does not open at the cursor.** `showMenuAtCursor` hardcodes the centre of
+- [ ] **1.1** **The wheel does not open at the cursor.** `showMenuAtCursor` hardcodes the centre of
   `screen.getPrimaryDisplay()` (`backend/electron-main.js:1267`). On multi-monitor setups the wheel
   always lands on monitor 1 regardless of where you are working. Single biggest usability defect.
-- [ ] **`fixedPosition` is unreachable.** Default `true` (`src/defaults.ts:219`), toggle exists only
+- [ ] **1.2** **`fixedPosition` is unreachable.** Default `true` (`src/defaults.ts:219`), toggle exists only
   in dead `SettingsModal.tsx`. Users cannot turn it off. Wire it into `PrecisionSettings` or drop
   the config key.
-- [ ] **README claims cursor-centred opening** ("appears centred on your cursor") — currently false.
+- [ ] **1.3** **README claims cursor-centred opening** ("appears centred on your cursor") — currently false.
   Fix the behaviour or fix the copy.
-- [ ] **README claims "nothing leaves your machine"** — false. Live network calls: license API
+- [ ] **1.4** **README claims "nothing leaves your machine"** — false. Live network calls: license API
   (`rovyl-red.vercel.app`), `unavatar.io` + `google.com/s2/favicons` on every web shortcut
   (`src/siteFavicon.ts`), `wttr.in` weather (`RadialMenu.tsx:1723`), GitHub update checks.
   Restate honestly, or add a strict-offline mode that hard-disables all of them.
-- [ ] **Decide the cursor-follow architecture.** The idle 988×988 always-visible layered window
+- [ ] **1.5** **Decide the cursor-follow architecture.** The idle 988×988 always-visible layered window
   (`electron-main.js:~1598`) exists to avoid DWM flash — that is what forced fixed positioning.
   Right fix: a dedicated lightweight overlay `BrowserWindow` (warm, pre-painted, repositioned per
   display) separate from the settings window.
 
 ## 2. Dead code and orphaned features
 
-- [x] **Delete `src/components/SettingsModal.tsx` (4,961 lines)** — nothing imports it.
-- [ ] **Delete `WelcomeScreen.tsx` (659)**, **`SystemCenter.tsx` (262)**, **`AppSelector.tsx` (461,
+- [x] **2.1** **Delete `src/components/SettingsModal.tsx` (4,961 lines)** — nothing imports it.
+- [ ] **2.2** **Delete `WelcomeScreen.tsx` (659)**, **`SystemCenter.tsx` (262)**, **`AppSelector.tsx` (461,
   only reachable via SettingsModal)**. ~6,300 dead lines ≈ 22% of `src/`.
-- [ ] **Weather/battery HUD is orphaned** — `showWeather`, `showBattery`, `clockPosition` have no UI
+- [ ] **2.3** **Weather/battery HUD is orphaned** — `showWeather`, `showBattery`, `clockPosition` have no UI
   in `PrecisionSettings`. Either expose them or remove `RadialHud`, the `wttr.in` fetch and the keys.
-- [ ] **Licensing/subscription surface is vestigial** — `SubscriptionTier`, `isPremium`, `planTier`,
+- [ ] **2.4** **Licensing/subscription surface is vestigial** — `SubscriptionTier`, `isPremium`, `planTier`,
   `deviceLimit`, `trialEndsAt` in `src/types.ts`; activation/deactivation IPC in main. Decide: keep
   and gate, or strip entirely from this fork.
-- [ ] **`radialInstantActivate: 'swipe'`** reserved in the type, never implemented — build or remove.
-- [ ] Prune deps once the above lands — verify `active-win`, `sql.js`,
+- [ ] **2.5** **`radialInstantActivate: 'swipe'`** reserved in the type, never implemented — build or remove.
+- [ ] **2.6** Prune deps once the above lands — verify `active-win`, `sql.js`,
   `node-global-key-listener` each still earn their install size. Measured while fixing §3's font
   item: `app.asar` is 69.7 MB and 5,385 of its 5,430 entries are `node_modules`, because
   `build.files` never mentions node_modules but electron-builder packs the production dependency
@@ -45,7 +49,7 @@ changed; the rest is untouched.
 
 ## 3. Performance / RAM / CPU
 
-- [x] **The whole lucide icon set is in the critical chunk.** `src/iconMap.ts:1` did
+- [x] **3.1** **The whole lucide icon set is in the critical chunk.** `src/iconMap.ts:1` did
   `import * as icons from "lucide-react"`, and `RadialMenu` imports `getIcon` — so ~1,350 icons
   (4,059 exports, with Lucide's aliases) shipped in the bundle the wheel needs.
   **Done:** 282 curated glyphs stay static, the rest moved to an async chunk fetched by the icon
@@ -53,7 +57,7 @@ changed; the rest is untouched.
   dynamically imported while anything imports it statically (`INEFFECTIVE_DYNAMIC_IMPORT`), so the
   lazy set is a `virtual:lucide-icon-set` module of deep paths. Guarded by
   `scripts/verify-renderer-budget.mjs` (in `npm run build`) and `npm run test:icon-map`.
-- [x] **All three font families load eagerly** (`src/main.tsx:3-5`) including cyrillic, greek,
+- [x] **3.2** **All three font families load eagerly** (`src/main.tsx:3-5`) including cyrillic, greek,
   vietnamese and latin-ext subsets (~280 KB woff2) for an English-only UI. Load only used subsets;
   defer fonts the wheel does not need.
   **Done:** `src/fonts.css` declares latin + latin-ext of Inter and Instrument Sans and nothing
@@ -63,13 +67,13 @@ changed; the rest is untouched.
   woff2 into `app.asar` on top of the six Vite emits — nothing reads them at runtime. Moved to
   `devDependencies`: `app.asar` 72.21 → 69.69 MB. `unicode-range` already made unused subsets lazy
   at runtime, so this is installer weight, not RAM.
-- [x] **`translations.ts` (3,451 lines, 10 languages) ships for ~5 live strings.** See §6.
+- [x] **3.3** **`translations.ts` (3,451 lines, 10 languages) ships for ~5 live strings.** See §6.
   **Done:** it no longer ships. The six keys live code reached moved to `src/strings.ts` (English,
   typed keys), and `RadialMenu` / `IconPicker` call that instead of `getTranslation`. Entry chunk
   315.5 → 148.8 KB; critical JS 548.1 → 385.2 KB. The table itself is still on disk because three
   dead components import it — deleting those, and it, is §2/§6. Guarded: the build fails if any
   locale's text reappears in any emitted chunk.
-- [x] **Base64 icons stored in JSON.** `config-v2.json` is 456 KB here, rewritten (plus a `.bak`) on
+- [x] **3.4** **Base64 icons stored in JSON.** `config-v2.json` is 456 KB here, rewritten (plus a `.bak`) on
   every debounced change and mirrored into three `localStorage` keys on the same tick
   (`src/App.tsx:1378-1380`) — ~1.4 MB serialised per settings tweak, scaling with shortcut count.
   Fix: write icons as PNG files in userData, store paths.
@@ -79,14 +83,14 @@ changed; the rest is untouched.
   912 KB → 25.5 KB and each `localStorage` mirror shrank with it. Twenty-three fields were only
   nine distinct icons — content addressing makes the mirroring free. Conversion happens on the
   read path, so the renderer never holds the base64 at all.
-- [x] **`icon-cache.json` is parsed synchronously at startup** and held as a `Map` of base64 strings
+- [x] **3.5** **`icon-cache.json` is parsed synchronously at startup** and held as a `Map` of base64 strings
   capped at 600 entries (`electron-main.js:6521-6527`) — a permanently resident, potentially
   multi-MB string blob. Same fix: files on disk, let Chromium cache and decode lazily.
   **Done** with the same store: the map keeps its job of remembering which icon belongs to which
   target (its keys are AUMIDs, which no filename encodes) but its values are references.
   `icon-cache.json` 144,360 → 664 B. Migration of existing entries is deferred 3 s so it cannot
   delay the first window.
-- [x] **No `localStorage` quota handling.** At ~5 MB writes start throwing; the only guard is a
+- [x] **3.6** **No `localStorage` quota handling.** At ~5 MB writes start throwing; the only guard is a
   `console.warn`.
   **Done:** `src/persistenceMirror.ts`. Two failures were worse than the item said. The debounced
   save wrote the three keys *unguarded* and only then called `saveFullConfig`, so a quota throw on
@@ -96,13 +100,13 @@ changed; the rest is untouched.
   (which is also what frees the room a retry needs) and reported once through `savePersistenceLog`.
   Nine assertions in `npm run test:persistence-mirror`. The §3 icon work also took each key from
   ~456 KB to ~12.5 KB, so reaching the quota at all is now unlikely.
-- [x] **`dist/folder.svg` is 596 KB** for a folder glyph. Replace.
+- [x] **3.7** **`dist/folder.svg` is 596 KB** for a folder glyph. Replace.
   **Done:** 596,000 → 11,154 B. 98.3% of it was a 500×500 PNG of random noise, inlined as base64 and
   tiled at 10–12% opacity as a grain overlay — noise being precisely what a compressor cannot
   shrink, so only noticing it could. `feTurbulence` generates the same grain procedurally. Rendered
   both revisions in Chromium and compared: 1 pixel in 262,144 differs by more than 8/255, mean
   difference 0.23. A 120 KB per-asset ceiling in `verify-renderer-budget` keeps the next one out.
-- [x] **8 ms cursor poll during hold** (`MMB_CURSOR_POLL_MS`, `electron-main.js:4539`) sends IPC at
+- [x] **3.8** **8 ms cursor poll during hold** (`MMB_CURSOR_POLL_MS`, `electron-main.js:4539`) sends IPC at
   125 Hz. Coalesce to rAF cadence, or skip sends when the resolved slice has not changed.
   **Measured, and deliberately left alone.** The rAF coalescing this asks for is already there:
   `RadialMenu`'s `handleMouseMove` records `lastPointerRef` synchronously and defers the highlight
@@ -116,7 +120,7 @@ changed; the rest is untouched.
   feed `lastPointerRef`, which is what the release reads to decide the slice, so an 8 ms staler
   point is ~16 px of travel on a fast flick — enough to cross a boundary. On the 239 Hz display
   this fork was debugged against, 125 Hz is already slower than the frame rate.
-- [x] **Only settings is code-split.** Split out the icon picker, installed-app scanner and
+- [x] **3.9** **Only settings is code-split.** Split out the icon picker, installed-app scanner and
   workspace editor so they are not in first paint.
   **Done — though not where the item pointed.** Those three were already off first paint: all live
   inside the lazy `PrecisionSettings` chunk, and the icon picker's real weight (the full Lucide set)
@@ -127,7 +131,7 @@ changed; the rest is untouched.
   that forced framer-motion into one chunk was **removed**: grouping by name overrode rolldown's
   reachability analysis, so a single binding reachable from the entry made all 111 KB a static
   dependency of it. Critical JS **393 → 281.5 KB**; across §3 as a whole, **806 → 281.5 KB**.
-- [x] **`App.tsx`: 33 `useState` + 32 `useEffect` in one 2,838-line component.** Every wheel open
+- [x] **3.10** **`App.tsx`: 33 `useState` + 32 `useEffect` in one 2,838-line component.** Every wheel open
   re-runs the whole orchestration tree. Extract persistence, discovery, IPC wiring and window mode
   into hooks/reducers.
   **Started, and the premise corrected.** "Every wheel open re-runs the whole orchestration tree" is
@@ -143,7 +147,7 @@ changed; the rest is untouched.
   What remains — Start Menu discovery, IPC wiring, window mode — is entangled with the window
   lifecycle that `verify-radial-windowing` exists to protect, and is worth doing against a way to
   see the wheel.
-- [x] Record idle RAM/CPU with the always-visible 988×988 layered window before/after the
+- [x] **3.11** Record idle RAM/CPU with the always-visible 988×988 layered window before/after the
   overlay-window split, so §1 has a number attached.
   **Before, measured.** Packaged build (`--dir`), app idle, nothing on screen, sampled over 60 s
   after a 30 s settle:
@@ -166,61 +170,61 @@ changed; the rest is untouched.
 
 ## 4. UX and intuitiveness
 
-- [ ] **Launch failures are silent.** `execute-command` is `ipcMain.on`, not `handle`
+- [ ] **4.1** **Launch failures are silent.** `execute-command` is `ipcMain.on`, not `handle`
   (`electron-main.js:5069`) — the renderer never learns a target is missing. Return a result; toast
   with a "fix this shortcut" action.
-- [ ] **No live preview in settings.** Changing orbital radius, icon size, spacing, opacity or
+- [ ] **4.2** **No live preview in settings.** Changing orbital radius, icon size, spacing, opacity or
   backdrop means closing settings and triggering the wheel to see the effect. Add an inline preview.
-- [ ] **`window.confirm` for workspace deletion** (`PrecisionSettings.tsx:332`) — a native blocking
+- [ ] **4.3** **`window.confirm` for workspace deletion** (`PrecisionSettings.tsx:332`) — a native blocking
   dialog inside a frameless transparent window, and untranslated. Replace with in-app confirm, or
   better: delete + undo toast.
-- [ ] **No undo anywhere.** Deleting a shortcut or workspace, or "Restore defaults", is permanent.
-- [ ] **No shortcut-conflict detection while recording.** Conflict surfaces later as a toast; warn
+- [ ] **4.4** **No undo anywhere.** Deleting a shortcut or workspace, or "Restore defaults", is permanent.
+- [ ] **4.5** **No shortcut-conflict detection while recording.** Conflict surfaces later as a toast; warn
   during the key capture instead.
-- [ ] **No per-setting "reset to default".**
-- [ ] **Tray menu is two items** (Open Settings / Quit). Add: open wheel, pause trigger for N
+- [ ] **4.6** **No per-setting "reset to default".**
+- [ ] **4.7** **Tray menu is two items** (Open Settings / Quit). Add: open wheel, pause trigger for N
   minutes, switch workspace, check for updates, version.
-- [ ] **No keyboard entry to settings search** — bind Ctrl+K / Ctrl+F to `#zs-search-input`.
-- [ ] **No wheel type-ahead.** Past ~12 shortcuts the slices get thin; "start typing to filter"
+- [ ] **4.8** **No keyboard entry to settings search** — bind Ctrl+K / Ctrl+F to `#zs-search-input`.
+- [ ] **4.9** **No wheel type-ahead.** Past ~12 shortcuts the slices get thin; "start typing to filter"
   scales the wheel beyond what aiming alone supports.
-- [ ] **No item-count guidance.** `360 / totalApps` with no cap — 20 items gives 18° slices, close to
+- [ ] **4.10** **No item-count guidance.** `360 / totalApps` with no cap — 20 items gives 18° slices, close to
   unaimable in `angle` mode. Warn in the editor, or auto-page.
-- [ ] **First-run onboarding is gone** (WelcomeScreen is dead) — new users get a wheel and no
+- [ ] **4.11** **First-run onboarding is gone** (WelcomeScreen is dead) — new users get a wheel and no
   explanation of the trigger, workspaces, or aiming modes.
-- [ ] **Start Menu discovery has no progress UI** — 20 s deferral at login leaves an empty wheel with
+- [ ] **4.12** **Start Menu discovery has no progress UI** — 20 s deferral at login leaves an empty wheel with
   nothing on screen explaining it (`App.tsx:47`).
-- [ ] **Dwell mode has no in-app cancel explanation** — the arc is the only signal.
-- [ ] Settings sections are discoverable only by clicking each; consider group counts and a
+- [ ] **4.13** **Dwell mode has no in-app cancel explanation** — the arc is the only signal.
+- [ ] **4.14** Settings sections are discoverable only by clicking each; consider group counts and a
   recently-changed marker.
 
 ## 5. Accessibility
 
-- [ ] **The wheel is mouse-only.** `Escape` is the only key handled (`RadialMenu.tsx:1503`). Add
+- [ ] **5.1** **The wheel is mouse-only.** `Escape` is the only key handled (`RadialMenu.tsx:1503`). Add
   arrow-key / number-key navigation plus Enter to confirm, so the launcher works without a pointer.
-- [ ] **The wheel has no accessible semantics** — no `role="menu"`/`menuitem`, no per-slice
+- [ ] **5.2** **The wheel has no accessible semantics** — no `role="menu"`/`menuitem`, no per-slice
   `aria-label`, no live region announcing the aimed target. A screen reader user gets nothing.
-- [ ] **`--zn-text-3: rgba(255,255,255,.34)` on `#151515` is ≈3.1:1** (`src/index.css:46`) — below
+- [ ] **5.3** **`--zn-text-3: rgba(255,255,255,.34)` on `#151515` is ≈3.1:1** (`src/index.css:46`) — below
   WCAG AA 4.5:1, and used at 9–11 px. Raise to ≈.45, or restrict to non-essential text.
-- [ ] **Text runs very small**: 8 declarations at 9.5 px, 13 at 11.5 px, plus 9/10/10.5 px. Add a UI
+- [ ] **5.4** **Text runs very small**: 8 declarations at 9.5 px, 13 at 11.5 px, plus 9/10/10.5 px. Add a UI
   scale setting, or lift the base to 12–13 px.
-- [ ] **No `forced-colors` / `prefers-contrast` support** — invisible in Windows High Contrast mode.
-- [ ] **`AppSelector`, `IconPicker`, `SmartIcon`, `Toast`, `Tooltip`, `SystemCenter` have zero ARIA
+- [ ] **5.5** **No `forced-colors` / `prefers-contrast` support** — invisible in Windows High Contrast mode.
+- [ ] **5.6** **`AppSelector`, `IconPicker`, `SmartIcon`, `Toast`, `Tooltip`, `SystemCenter` have zero ARIA
   attributes.** IconPicker (a ~1,500-cell grid) needs `role="grid"` and a roving tabindex.
-- [ ] **Focus is not trapped in settings modals**, and several controls set `outline: none` without a
+- [ ] **5.7** **Focus is not trapped in settings modals**, and several controls set `outline: none` without a
   `:focus-visible` replacement (pattern leaked from `SettingsModal` into `AppSelector`/`IconPicker`).
-- [ ] `prefers-reduced-motion` is handled well (`index.css:857`, `:950`) — keep that discipline for
+- [ ] **5.8** `prefers-reduced-motion` is handled well (`index.css:857`, `:950`) — keep that discipline for
   any new animation.
 
 ## 6. Internationalisation
 
-- [ ] **i18n is effectively dead.** `PrecisionSettings` — the live settings panel — is hardcoded
+- [ ] **6.1** **i18n is effectively dead.** `PrecisionSettings` — the live settings panel — is hardcoded
   English and never imports `getTranslation`. Only `RadialMenu` (4 strings) and `IconPicker` still
   translate.
-- [ ] **No language selector in the live UI** — `LANGUAGES` is referenced only by dead
+- [ ] **6.2** **No language selector in the live UI** — `LANGUAGES` is referenced only by dead
   `SettingsModal`.
-- [ ] **Key parity is broken**: pt/en 429 keys, es 281, fr/de/it/ja/zh/ko/ru 257–258. The surplus
+- [ ] **6.3** **Key parity is broken**: pt/en 429 keys, es 281, fr/de/it/ja/zh/ko/ru 257–258. The surplus
   pt/en keys belong to the dead modal.
-- [x] Decide: (a) delete `translations.ts`, ship English-only, drop 3,451 lines from the bundle, or
+- [x] **6.4** Decide: (a) delete `translations.ts`, ship English-only, drop 3,451 lines from the bundle, or
   (b) re-adopt properly — a real `t()` in `PrecisionSettings`, lazy per-language chunks, parity check
   in CI. **(a) is the honest default.**
   **Decided (a)**, and the bundle half is done — see §3. `src/strings.ts` holds the six live strings
@@ -230,30 +234,32 @@ changed; the rest is untouched.
 
 ## 7. Engineering hygiene
 
-- [ ] **`tsconfig.json` has no `strict`** — no `strictNullChecks`, `noImplicitAny`, `noUnusedLocals`.
+- [ ] **7.1** **`tsconfig.json` has no `strict`** — no `strictNullChecks`, `noImplicitAny`, `noUnusedLocals`.
   34 `any` / `as any` in `src/`.
-- [ ] **No linter, no formatter, no CI.** Add ESLint + Prettier and a GitHub Actions run of
+- [ ] **7.2** **No linter, no formatter, no CI.** Add ESLint + Prettier and a GitHub Actions run of
   `npm run build` plus the existing tests.
-- [ ] **Two unit test files for 28,000 lines** (`win32-launch`, `game-detection`). Highest-value
+- [ ] **7.3** **Two unit test files for 28,000 lines** (`win32-launch`, `game-detection`). Highest-value
   additions: `resolveAimAtPoint` trigonometry, persistence normalise round-trip, dwell arming rules.
-- [ ] **`backend/electron-main.js` is 7,081 lines / 270 KB in one file.** Split by concern: window
+- [ ] **7.4** **`backend/electron-main.js` is 7,081 lines / 270 KB in one file.** Split by concern: window
   lifecycle, IPC, persistence, icons, updates, licensing, launch.
-- [ ] **167 `catch (e) {}` blocks in main**, many silent. Route through `diagLog` at minimum so field
+- [ ] **7.5** **167 `catch (e) {}` blocks in main**, many silent. Route through `diagLog` at minimum so field
   diagnosis is possible.
-- [ ] **Comments are Portuguese, code and UI are English.** For a fork with an English-speaking
+- [ ] **7.6** **Comments are Portuguese, code and UI are English.** For a fork with an English-speaking
   maintainer that is a real onboarding tax on the densest reasoning in the codebase
   (`RadialMenu.tsx`, `electron-main.js`). Translate incrementally as files are touched.
-- [ ] **`docs/ARCHITECTURE.md` is stale** — references `LicenseGate.tsx` (does not exist) and lists
+- [ ] **7.7** **`docs/ARCHITECTURE.md` is stale** — references `LicenseGate.tsx` (does not exist) and lists
   the dead `SettingsModal` alongside `PrecisionSettings`.
-- [ ] Dev scratch scripts shipped in `backend/` (`reproduce_icon_issue.ps1`, `find_lnks.ps1`,
+- [ ] **7.8** Dev scratch scripts shipped in `backend/` (`reproduce_icon_issue.ps1`, `find_lnks.ps1`,
   `simulate-keys.ps1`) — move to `scripts/dev/` or delete.
 
 ## 8. Quick wins (do these first)
 
-1. Delete the four dead components (§2) — 6,300 lines, zero risk.
-2. Fix `src/iconMap.ts`'s barrel import (§3) — largest bundle win for one file.
-3. Trim font subsets in `src/main.tsx` (§3).
-4. Replace `dist/folder.svg` (§3).
-5. Raise `--zn-text-3` contrast (§5).
-6. Make `execute-command` return a result and toast on failure (§4).
-7. Correct the two false claims in `README.md` (§1).
+Pointers into the sections above, not items in their own right — each line names the id to work on.
+
+- [ ] **8.1** Delete the four dead components — 6,300 lines, zero risk. → **2.1** (done), **2.2**.
+- [x] **8.2** Fix `src/iconMap.ts`'s barrel import — largest bundle win for one file. → **3.1**.
+- [x] **8.3** Trim font subsets in `src/main.tsx`. → **3.2**.
+- [x] **8.4** Replace `dist/folder.svg`. → **3.7**.
+- [ ] **8.5** Raise `--zn-text-3` contrast. → **5.3**.
+- [ ] **8.6** Make `execute-command` return a result and toast on failure. → **4.1**.
+- [ ] **8.7** Correct the two false claims in `README.md`. → **1.3**, **1.4**.
