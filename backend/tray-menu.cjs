@@ -53,8 +53,12 @@ function buildTrayMenuTemplate({
   const minutesLeft = paused ? Math.max(1, Math.ceil((pausedUntil - now) / 60000)) : 0;
 
   const items = [
-    /** Not a control: the one thing a bug report always needs and nobody can find. */
-    { label: `Rovyl ${version}`, enabled: false },
+    /**
+     * Not a control: the one thing a bug report always needs and nobody can find. The mark rides
+     * beside it for the same reason the settings foot carries one — at the head of the menu the
+     * row has to say whose menu this is before it says which build.
+     */
+    { label: `Rovyl ${version}`, ...withIcon(icons.brand), enabled: false },
     { type: "separator" },
     {
       label: "Open wheel",

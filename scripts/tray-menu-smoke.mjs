@@ -164,6 +164,13 @@ check("a missing glyph omits the key rather than passing null", () => {
   assert.deepEqual(find(menu, "Open Settings").icon, { fake: true });
 });
 
+check("the version row carries the mark, disabled though it is", () => {
+  const menu = buildTrayMenuTemplate({ ...BASE, icons: { brand: { fake: "mark" } } });
+  const row = find(menu, "Rovyl 1.4.0");
+  assert.deepEqual(row.icon, { fake: "mark" }, "the head of the menu shows whose menu it is");
+  assert.equal(row.enabled, false, "an icon does not make it a button");
+});
+
 // ── Shape ─────────────────────────────────────────────────────────────────────
 check("no separator opens, closes, or doubles up", () => {
   for (const menu of [full, buildTrayMenuTemplate({ ...BASE, workspaces: [{ name: "Main" }], canCheckUpdates: false })]) {

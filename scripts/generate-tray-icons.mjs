@@ -28,6 +28,28 @@ import { fileURLToPath } from "node:url";
 
 const outDir = join(dirname(fileURLToPath(import.meta.url)), "..", "public");
 
+/**
+ * The Rovyl mark, as markup rather than a lucide component — it is the one glyph here that is the
+ * product's own, kept in step with `src/components/RovylLogo.tsx` by hand. Tinted like every other
+ * row rather than drawn as the app icon proper: the icon's ground is #171717, which on a dark menu
+ * would be a slightly darker square and nothing more, and beside six monochrome glyphs a colour
+ * tile reads as a foreign object. The settings foot signs the version line the same way.
+ *
+ * Its 416/512 box matches lucide's own content-to-viewBox ratio closely enough that no rescaling
+ * is needed for it to sit at the same optical size as its neighbours.
+ */
+const rovylMark = (color) => `<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 512 512" fill="none">
+  <mask id="m" maskUnits="userSpaceOnUse" x="48" y="48" width="416" height="416">
+    <rect x="48" y="48" width="416" height="416" fill="black"/>
+    <rect x="112" y="104" width="320" height="112" rx="50" transform="rotate(30 272 160)" fill="white"/>
+    <rect x="70" y="286" width="202" height="112" rx="48" transform="rotate(-30 171 342)" fill="white"/>
+    <rect x="267" y="286" width="202" height="112" rx="48" transform="rotate(58 368 342)" fill="white"/>
+    <circle cx="256" cy="256" r="54" fill="black"/>
+  </mask>
+  <rect x="48" y="48" width="416" height="416" fill="${color}" mask="url(#m)"/>
+</svg>`;
+
+/** Either a lucide component or `svg(tint)` returning markup; nothing else differs between them. */
 const ICONS = [
   { name: "tray-settings", Icon: Settings },
   { name: "tray-power", Icon: Power },
@@ -36,6 +58,7 @@ const ICONS = [
   { name: "tray-pause", Icon: PauseCircle },
   { name: "tray-spaces", Icon: Layers },
   { name: "tray-update", Icon: RefreshCw },
+  { name: "tray-brand", svg: rovylMark },
 ];
 
 /**
@@ -59,11 +82,11 @@ const SCALES = [
   { suffix: "@3x", px: 48 },
 ];
 
-for (const { name, Icon } of ICONS) {
+for (const { name, Icon, svg: markup } of ICONS) {
   for (const theme of THEMES) {
-    const svg = renderToStaticMarkup(
-      createElement(Icon, { size: 24, strokeWidth: 2, color: theme.tint }),
-    );
+    const svg = markup
+      ? markup(theme.tint)
+      : renderToStaticMarkup(createElement(Icon, { size: 24, strokeWidth: 2, color: theme.tint }));
     for (const scale of SCALES) {
       /** Rasterize at 4x and downsample — a 1.3 px stroke needs the supersampling to survive 16 px. */
       const png = await sharp(Buffer.from(svg), { density: scale.px * 12 })

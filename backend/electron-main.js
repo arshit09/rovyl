@@ -4192,6 +4192,7 @@ app.whenReady().then(async () => {
         updateState: lastKnownUpdate.state,
         updateVersion: lastKnownUpdate.version,
         icons: {
+          brand: menuIcon("tray-brand"),
           wheel: menuIcon("tray-wheel"),
           spaces: menuIcon("tray-spaces"),
           pause: menuIcon("tray-pause"),
