@@ -119,6 +119,86 @@ function canonicalizeWin32LaunchCommand(cmd) {
   return out || t;
 }
 
+/**
+ * `shell:AppsFolder\<AppID>` — the Start menu's own launch route.
+ *
+ * It is the only one that covers every shape `Get-StartApps` reports. Measured on a live host:
+ *
+ *   Microsoft.WindowsCalculator_8wekyb3d8bbwe!App                    MSIX AUMID
+ *   com.squirrel.Figma.Figma                                         Squirrel/Electron installer id
+ *   c:.users.<me>.appdata.local.capcut.apps.9.5.0.4045.capcut.exe    a path the shell flattened
+ *   zoom.us.Zoom Video Meetings                                      an id with SPACES in it
+ *   {6D809377-6AF0-444B-8957-A3773F02200E}\Notepad++\notepad++.exe   known-folder relative
+ *   C:\Games\Subnautica\Subnautica.exe                               a real path
+ *   Chrome                                                           bare alias
+ *
+ * Of those, only the last two survive being handed to `start`/`spawn` as a command line. The rest
+ * are identifiers, and passing them to the shell as if they were files is what put "Windows cannot
+ * find…" in front of everyone who added Figma or CapCut from the picker.
+ */
+const APPS_FOLDER_PREFIX = "shell:AppsFolder\\";
+
+/** True for a launch line already written as an AppsFolder moniker. */
+function isAppsFolderCommand(cmd) {
+  return /^shell:appsfolder[\\/]/i.test(String(cmd || "").trim());
+}
+
+/**
+ * The AppID inside a moniker, or `null` for anything else.
+ *
+ * Everything after the prefix is the id — it is NEVER split on whitespace. `zoom.us.Zoom Video
+ * Meetings` is one identifier, and treating its tail as argv is what made Zoom fail too.
+ */
+function appsFolderAppId(cmd) {
+  const t = String(cmd || "").trim().replace(/^"([\s\S]*)"$/, "$1");
+  if (!isAppsFolderCommand(t)) return null;
+  return t.replace(/^shell:appsfolder[\\/]/i, "").trim() || null;
+}
+
+/** Wrap a `Get-StartApps` AppID as a launch line. Idempotent. */
+function toAppsFolderCommand(appId) {
+  const id = String(appId || "").trim().replace(/^"([\s\S]*)"$/, "$1");
+  if (!id) return "";
+  return `${APPS_FOLDER_PREFIX}${isAppsFolderCommand(id) ? appsFolderAppId(id) : id}`;
+}
+
+/** An absolute Windows path — a `Get-StartApps` AppID is often just one, and then it needs no moniker. */
+function isAbsoluteWindowsTarget(cmd) {
+  const t = String(cmd || "").trim().replace(/^"([\s\S]*)"$/, "$1");
+  return /^[a-zA-Z]:[\\/]/.test(t) || t.startsWith("\\\\");
+}
+
+/**
+ * Does this line look like a bare `Get-StartApps` AppID rather than something the shell can run?
+ *
+ * Shortcuts added before the picker started writing monikers still hold the bare id, so the call
+ * has to be made from the string alone — and it is what repairs those without a migration.
+ *
+ * A real target always announces itself: a drive path, a UNC path, or a quoted first token. An
+ * AppID never does — not even CapCut's, which opens `c:.` (drive letter, colon, DOT) precisely
+ * because the shell flattened a path into an identifier.
+ *
+ * Bare single words (`notepad`, `Chrome`) are deliberately NOT claimed. They already launch through
+ * `start`, and most are not AppsFolder entries at all — `notepad.exe` is not one on a live host.
+ */
+function looksLikeBareStartAppId(cmd) {
+  const t = String(cmd || "").trim();
+  if (!t || t.startsWith('"')) return false;
+  if (isAppsFolderCommand(t) || isAbsoluteWindowsTarget(t)) return false;
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(t)) return false;
+  if (/^(internal|shortcut|shell|mailto|steam|discord|spotify):/i.test(t)) return false;
+  if (t.includes("/")) return false;
+
+  /** A known-folder GUID or an MSIX AUMID is an AppID by construction. */
+  if (t.startsWith("{") || t.includes("!")) return true;
+
+  const head = t.split(" ")[0];
+  /** `c:.users.….capcut.exe` — a flattened path keeps its extension, so test the shape, not the tail. */
+  if (/^[a-zA-Z]:\./.test(head)) return true;
+  /** Dots as id separators, not as a file extension: `com.squirrel.Figma.Figma`, `zoom.us.Zoom`. */
+  return head.includes(".") && !/\.(exe|lnk|bat|cmd|com|vbs|ps1|msi)$/i.test(head);
+}
+
 function walkAppTree(apps, visitor) {
   if (!Array.isArray(apps)) return;
   for (const app of apps) {
@@ -161,4 +241,10 @@ module.exports = {
   splitWin32SpawnExeAndArgs,
   canonicalizeWin32LaunchCommand,
   normalizePersistedPayloadWin32,
+  APPS_FOLDER_PREFIX,
+  isAppsFolderCommand,
+  appsFolderAppId,
+  toAppsFolderCommand,
+  isAbsoluteWindowsTarget,
+  looksLikeBareStartAppId,
 };

@@ -39,6 +39,12 @@ try {
   const actual = collect();
 
   const expected = {
+    // A Start menu entry that is gone. `shell:AppsFolder\…` reads as a URL scheme, so without the
+    // method taking precedence an uninstalled app was reported as a dead link.
+    startMenuEntryGoneCode: "start-app-gone",
+    startMenuEntryGoneNamesTheApp: true,
+    startMenuEntryGoneSaysNothingAboutLinks: true,
+
     // The screenshot: an AppUserModelID stored as a launch command.
     telegramCode: "unlaunchable-app-id",
     telegramTitle: "Could not open Telegram",

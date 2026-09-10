@@ -48,6 +48,7 @@ import { RovylLogo } from './RovylLogo';
 import '../fonts-display.css';
 import { NativeAppIcon, useInstalledApps, type InstalledApp } from './installedApps';
 import { radialCrowding } from '../utils/workspaceRadial';
+import { startMenuAppIdToLaunchCommand } from '../utils/windowsLaunchCommand';
 import { WheelPreview } from './WheelPreview';
 
 interface PrecisionSettingsProps {
@@ -2646,7 +2647,15 @@ function WorkspaceManager({
                       <div className="zs-manager-empty"><Loader2 className="zs-spin" size={18} /> Loading applications…</div>
                     ) : visibleApps.length ? (
                       visibleApps.map((item, index) => (
-                        <button type="button" key={`${item.Path}-${index}`} onClick={() => addAppPath(item.Path!, item.DisplayName || item.Name)}>
+                        <button
+                          type="button"
+                          key={`${item.Path}-${index}`}
+                          /**
+                           * The listed `Path` is an AppID, so it is wrapped as a launch line rather
+                           * than stored as one — see `startMenuAppIdToLaunchCommand`.
+                           */
+                          onClick={() => addAppPath(startMenuAppIdToLaunchCommand(item.Path!), item.DisplayName || item.Name)}
+                        >
                           <NativeAppIcon path={item.Path} size={28} className="zs-installed-app-icon" fallback={<Monitor size={15} />} />
                           <div><b>{item.DisplayName || item.Name}</b><small>{item.Path}</small></div>
                           <Plus size={14} />

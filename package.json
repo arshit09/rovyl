@@ -21,6 +21,7 @@
     "test:icon-map": "node scripts/icon-map-smoke.mjs",
     "test:launch-failure": "node scripts/launch-failure-smoke.mjs",
     "test:launch-result": "node scripts/launch-result-smoke.mjs",
+    "test:start-app-launch": "node scripts/start-app-launch-smoke.mjs",
     "test:tray-menu": "node scripts/tray-menu-smoke.mjs",
     "test:radial-filter": "node scripts/radial-filter-smoke.mjs",
     "test:backdrop-dim": "node scripts/backdrop-dim-smoke.mjs",

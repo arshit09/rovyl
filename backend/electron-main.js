@@ -5619,6 +5619,15 @@ ipcMain.on("set-game-mode", (_event, gm) => {
 const resolveShellPath = (cmd) => {
   if (!cmd || typeof cmd !== "string") return cmd;
 
+  /**
+   * An AppsFolder id is an identifier, not a path, even when it is spelled like one.
+   *
+   * `Get-StartApps` reports VLC as `{7C5A40EF-…}\VideoLAN\VLC\vlc.exe`, and expanding that GUID to
+   * `C:\Program Files (x86)` inside the moniker produces an id the shell has never heard of. The
+   * substitution below is right for a launch line and wrong for an id, so ids skip it.
+   */
+  if (win32Launch.isAppsFolderCommand(cmd)) return cmd;
+
   // Common Windows Known Folder GUIDs
   const guidMap = {
     "{7C5A40EF-A0FB-4BFC-874A-C0F2E0B9FA8E}":
@@ -6023,6 +6032,53 @@ ${target}`,
   });
 };
 
+let installedAppsCache = null;
+/**
+ * Lowercased AppIDs from the last scan, so a launch can ask "is this still a Start menu entry?"
+ * without paying for PowerShell on the hot path.
+ *
+ * It exists because `explorer.exe shell:AppsFolder\<id>` cannot report failure: handed an id that
+ * no longer resolves it opens a stray Explorer window and exits 0. CapCut's id pins a version
+ * (`…apps.9.5.0.4045.capcut.exe`), so an app update alone is enough to strand a shortcut — and
+ * "nothing happened" is not an answer. When this set is warm, a dead entry gets a real error card
+ * instead; when it is cold the launch still goes ahead, because a cold cache is not evidence.
+ */
+let installedAppIds = null;
+
+const rememberInstalledApps = (list) => {
+  installedAppsCache = list;
+  installedAppIds = new Set(
+    list
+      .map((a) => String(a?.Path || "").trim().toLowerCase())
+      .filter(Boolean),
+  );
+  return list;
+};
+
+/** `null` — no opinion (never scanned). `true`/`false` — the last scan did/did not see this id. */
+const startAppIdIsKnown = (appId) => {
+  if (!installedAppIds) return null;
+  const id = String(appId || "").trim().toLowerCase();
+  return id ? installedAppIds.has(id) : null;
+};
+
+let installedAppsWarming = null;
+/**
+ * Fills the AppID set in the background after the first AppsFolder launch of a session.
+ *
+ * Deliberately not awaited by anything: the point of the launcher is that it opens now, and a
+ * Start menu sweep costs seconds. The launch that triggers this one runs unverified; every one
+ * after it is checked.
+ */
+const warmInstalledAppsCache = () => {
+  if (installedAppIds || installedAppsWarming) return installedAppsWarming;
+  installedAppsWarming = scanInstalledApps()
+    .then(rememberInstalledApps)
+    .catch(() => null)
+    .finally(() => { installedAppsWarming = null; });
+  return installedAppsWarming;
+};
+
 // IPC: receives a command from React to run an app
 const runExecuteCommand = async (command, commandType, options = {}) => {
   if (!command || typeof command !== "string" || command.trim() === "") {
@@ -6201,10 +6257,16 @@ const runExecuteCommand = async (command, commandType, options = {}) => {
     return (
       lower.startsWith("shell:") ||
       lower.includes("!") || // Standard AUMID indicator (e.g. App!ID)
-      lower.includes("google.antigravity") ||
-      lower.includes("microsoft.") ||
-      lower.includes("discord") ||
-      base.startsWith("{") || // GUID
+      /**
+       * Any bare `Get-StartApps` AppID, by its shape rather than by name.
+       *
+       * This used to be a list — `google.antigravity`, `microsoft.`, `discord` — and the list is
+       * why Discord launched while Figma did not: both register the same kind of id
+       * (`com.squirrel.Discord.Discord`, `com.squirrel.Figma.Figma`) and only one of them was
+       * spelled out here. On a live host 151 of the installed entries have this shape, so the list
+       * was never going to reach the end of it. See `looksLikeBareStartAppId`.
+       */
+      win32Launch.looksLikeBareStartAppId(cleanCmd) ||
       /^[A-F0-9]{8,64}$/i.test(base) || // Hex identifier
       // If it looks like a simple name without extension/path, treat as potential AUMID
       (base.length > 2 && !base.match(/\.(exe|lnk|bat|cmd|com|vbs|ps1|txt|pdf|png|jpg|mp3|mp4)$/i) && !base.includes("\\") && !base.includes("/") && !base.includes("."))
@@ -6252,39 +6314,40 @@ const runExecuteCommand = async (command, commandType, options = {}) => {
             }
           });
           break;
-        case "exec_explorer_shell":
-          // Special handling for AUMIDs with arguments
-          let aumid = cmd;
-          let args = "";
-
-          // If the command already starts with shell:AppsFolder\, strip it to avoid double prefixing
-          if (aumid.toLowerCase().startsWith("shell:appsfolder\\")) {
-            aumid = aumid.substring("shell:appsfolder\\".length);
-          } else if (aumid.toLowerCase().startsWith("shell:appsfolder/")) {
-            aumid = aumid.substring("shell:appsfolder/".length);
-          }
-
-          if (aumid.includes(" ")) {
-            const firstSpace = aumid.indexOf(" ");
-            args = aumid.substring(firstSpace + 1);
-            aumid = aumid.substring(0, firstSpace);
-          }
-
-          // Basic AUMID launch - args support depends on Windows version and app
-          const shellPath = `shell:AppsFolder\\${aumid}`;
-          execCmd = args ? `start "" "${shellPath}" ${args}` : `start "" "${shellPath}"`;
-          diagLog(`  → [${method}] Running: ${execCmd}`);
-          exec(execCmd, (err, stdout, stderr) => {
-            if (err) {
-              console.log(`  ✗ [${method}] Failed: ${err.message}`);
-              if (stderr) console.log(`  stderr: ${stderr}`);
-              reject(err);
-            } else {
-              diagLog(`  ✓ [${method}] Success!`);
-              resolve(true);
-            }
+        /**
+         * The Start menu's route, through `explorer.exe` and argv — not `cmd /c start`.
+         *
+         * `start "" "shell:AppsFolder\<id>"` handed an id the shell cannot resolve does not fail:
+         * it raises a MODAL "Windows cannot find…" dialog owned by our window, `exec` never calls
+         * back, and the ladder hangs behind it until someone presses OK. Reproduced on a live host
+         * with `com.squirrel.Figma.Figma` — that hang, not a missing feature, is what the error
+         * card was reporting for every app added from the picker. `explorer.exe` returns at once.
+         *
+         * argv, so nothing has to survive `cmd` quoting. And the id is taken WHOLE: ids contain
+         * spaces (`zoom.us.Zoom Video Meetings`), so the old split-at-first-space turned one
+         * identifier into an id plus two bogus arguments. AppsFolder activation passes no arguments
+         * anyway, which is why there is nothing to split off.
+         */
+        case "exec_explorer_shell": {
+          const appId = win32Launch.appsFolderAppId(cmd) || String(cmd || "").trim();
+          const moniker = `${win32Launch.APPS_FOLDER_PREFIX}${appId}`;
+          diagLog(`  → [${method}] explorer.exe ${moniker}`);
+          const child = spawn("explorer.exe", [moniker], {
+            detached: true,
+            stdio: "ignore",
+            windowsHide: true,
+          });
+          child.on("error", (err) => {
+            diagLog(`  ✗ [${method}] Failed: ${err.message}`);
+            reject(err);
+          });
+          child.on("spawn", () => {
+            child.unref();
+            diagLog(`  ✓ [${method}] Success!`);
+            resolve(true);
           });
           break;
+        }
 
         case "exec_direct": {
           const terminal = getPreferredTerminal();
@@ -6523,7 +6586,52 @@ const runExecuteCommand = async (command, commandType, options = {}) => {
       // Update resolved command for execution methods
       resolvedCommand = finalCommand;
 
-      if (isIDE && finalCommand.includes(" ")) {
+      /**
+       * A Start menu entry, launched the way the Start menu launches it.
+       *
+       * `explicitMoniker` is provenance: the picker wrote it, so there is nothing to infer. A bare
+       * id is the same entry stored before the picker started writing monikers, recognised by shape
+       * — that is what makes shortcuts already sitting in a workspace start working, with no
+       * migration and no rewrite of anyone's config.
+       *
+       * IDEs are left to the branch below when the id is bare, because opening a recent project
+       * needs a real executable and an argument, and `normalizeAumidIdeCommands` has already
+       * rewritten the ones we know. An id carrying a drive path is such a line, so it is not
+       * claimed here either: AppsFolder activation has nowhere to put an argument.
+       */
+      const explicitMoniker = win32Launch.appsFolderAppId(finalCommand);
+      const bareStartAppId = win32Launch.looksLikeBareStartAppId(finalCommand) ? finalCommand : null;
+      const startAppId = explicitMoniker || bareStartAppId;
+      const startAppCarriesPathArg = !!startAppId && /[a-zA-Z]:[\\/]/.test(startAppId);
+
+      if (startAppId && !startAppCarriesPathArg && (explicitMoniker || !isIDE)) {
+        const known = startAppIdIsKnown(startAppId);
+        if (known === false) {
+          diagLog(`[Exec] Not a Start menu entry any more, not handing it to the shell: ${startAppId}`);
+          return launchFailed(
+            `Failed to run "${startAppId}". Error: Windows no longer lists this app in the Start menu.`,
+            {
+              command: trimmedCommand,
+              resolvedCommand: finalCommand,
+              commandType,
+              method: "start-apps-probe",
+              errorCode: "ENOENT",
+              exeExists: false,
+              raw: `Rovyl checked the Start menu before launching and no installed app has this id:
+${startAppId}
+
+Apps that pin a version into their id (CapCut is one) get a new id when they update. Remove this
+shortcut and add the app again to pick up the current one.`,
+            },
+          );
+        }
+        /** Nothing has scanned yet: launch on the shape and fill the set in for the next one. */
+        if (known === null) warmInstalledAppsCache();
+
+        resolvedCommand = `${win32Launch.APPS_FOLDER_PREFIX}${startAppId}`;
+        methodsToTry = ["exec_explorer_shell", "exec_start", "exec_direct"];
+        diagLog(`[Exec] Start menu entry (${known ? "verified" : "unverified"}): ${resolvedCommand}`);
+      } else if (isIDE && finalCommand.includes(" ")) {
         diagLog(`[Exec] IDE with args detected: prioritizing silent spawn for no flashes.`);
         
         if (wasMapped) {
@@ -8289,7 +8397,13 @@ async function extractIconUncached(filePath) {
     diagLog(`[IconRequest] Fetching icon for: ${filePath}`);
 
     // 1. Resolve shell paths
-    let resolvedPath = resolveShellPath(filePath);
+    /**
+     * The moniker is stripped back to the bare AppID first: `extract-icon.ps1` looks a target up by
+     * exact equality against `Get-StartApps`, and `shell:AppsFolder\…` matches no AppID, no name and
+     * no file — so a monikered shortcut would come back with no icon at all. The script builds the
+     * moniker itself when it needs one.
+     */
+    let resolvedPath = win32Launch.appsFolderAppId(filePath) || resolveShellPath(filePath);
     resolvedPath = resolvedPath.replace(/['\"]/g, "");
     if (resolvedPath !== filePath) {
       diagLog(`[IconRequest] Resolved path: ${resolvedPath}`);
@@ -8418,13 +8532,7 @@ function getPowerShellExePath() {
   );
 }
 
-let installedAppsCache = null;
-
-ipcMain.handle("get-installed-apps", async (event, forceRefresh = false) => {
-  if (installedAppsCache && !forceRefresh) {
-    return installedAppsCache;
-  }
-
+function scanInstalledApps() {
   return new Promise((resolve) => {
     const { exec } = require("child_process");
 
@@ -8470,7 +8578,6 @@ ipcMain.handle("get-installed-apps", async (event, forceRefresh = false) => {
           (a) => a && a.Path && a.Name,
         );
         // Scanner found ${appList.length} valid apps
-        installedAppsCache = appList; // Cache the result
         resolve(appList);
       } catch (e) {
         console.error("Parse error:", e);
@@ -8479,6 +8586,15 @@ ipcMain.handle("get-installed-apps", async (event, forceRefresh = false) => {
       }
     });
   });
+}
+
+ipcMain.handle("get-installed-apps", async (event, forceRefresh = false) => {
+  if (installedAppsCache && !forceRefresh) {
+    return installedAppsCache;
+  }
+  /** An empty scan is not worth remembering as the answer — leave the cache cold so the next ask retries. */
+  const list = await scanInstalledApps();
+  return list.length ? rememberInstalledApps(list) : list;
 });
 
 app.on("window-all-closed", (e) => {

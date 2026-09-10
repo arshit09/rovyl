@@ -14,6 +14,7 @@ import { preloadIconsByName } from './iconMap';
 import { isRemoteIconUrl, isStoredIconRef, isWebShortcutItem } from './iconRef';
 import { useIconHealing } from './hooks/useIconHealing';
 import { mirrorPersistenceToLocalStorage } from './persistenceMirror';
+import { startMenuAppIdToLaunchCommand } from './utils/windowsLaunchCommand';
 import {
   BACKDROP_DIM_SCALE,
   legacyBackdropOpacityToDim,
@@ -114,7 +115,13 @@ async function buildMainAppsFromStartMenuDiscovery(
     const chunkBuilt = await Promise.all(
       chunk.map(async (app, chunkIndex) => {
         const idx = offset + chunkIndex;
-        const cmd = String(app.Command || app.Path || '').trim();
+        /**
+         * Discovery reports Start menu AppIDs, same as the picker, so it stores launch lines the
+         * same way — otherwise the apps offered on first run are exactly the ones that cannot be
+         * launched. A row that already carries a real path (the `.lnk` sweep) stays a path.
+         */
+        const appId = String(app.Command || app.Path || '').trim();
+        const cmd = startMenuAppIdToLaunchCommand(appId);
         let iconUrl = '';
         try {
           if (window.electron?.getFileIcon && cmd) {
@@ -132,7 +139,8 @@ async function buildMainAppsFromStartMenuDiscovery(
           customIconUrl: iconUrl,
           command: cmd,
           commandType: 'app' as const,
-          description: cmd ? `Start Menu: ${cmd}` : '',
+          /** The id, not the moniker: the prefix is plumbing and says nothing to whoever reads this. */
+          description: appId ? `Start Menu: ${appId}` : '',
           direction: directions[idx % 8],
         };
       }),

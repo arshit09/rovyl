@@ -45,6 +45,7 @@ export type LaunchFailureCode =
   | 'no-handler'
   | 'folder-missing'
   | 'missing-file'
+  | 'start-app-gone'
   | 'unlaunchable-app-id'
   | 'not-found'
   | 'unexpected'
@@ -270,6 +271,23 @@ export function humanizeExecutionError(
       'Windows blocked this launch',
       `Windows would not let Rovyl start ${subject} — it usually needs administrator rights, or a policy is blocking it.`,
       'Open it once from the Start menu to see what it asks for.',
+      raw,
+      details,
+    );
+  }
+
+  /**
+   * Main looked the app up in the Start menu and it is not there. That verdict is exact, so it is
+   * read before any of the text signals below — and it has to be, because a Start menu shortcut is
+   * stored as `shell:AppsFolder\<AppID>` and `URL_SCHEME` reads that `shell:` as a link scheme:
+   * left to fall through, an uninstalled app was announced as "No app handles this link".
+   */
+  if (details?.method === 'start-apps-probe') {
+    return build(
+      'start-app-gone',
+      `Windows no longer lists ${subject}`,
+      'This shortcut points at a Start menu entry that has gone — the app was uninstalled, or it changed its id when it updated.',
+      'Remove the shortcut in Settings and add the app again from the list.',
       raw,
       details,
     );

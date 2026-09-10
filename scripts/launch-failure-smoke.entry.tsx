@@ -241,7 +241,31 @@ export function collect() {
     },
   );
 
+  /**
+   * A Start menu entry that is no longer registered — CapCut pins its version into its own AppID
+   * (`…apps.9.5.0.4045.capcut.exe`), so updating the app is enough to strand the shortcut.
+   *
+   * The command is stored as `shell:AppsFolder\<AppID>`, and `shell:` is a URL scheme as far as the
+   * scheme test is concerned: left to fall through, an uninstalled app was announced as "No app
+   * handles this link", pointing at a link that does not exist. The `start-apps-probe` method has to
+   * outrank the scheme.
+   */
+  const startMenuEntryGone = humanizeExecutionError(
+    'Failed to run "c:.users.me.appdata.local.capcut.apps.9.5.0.4045.capcut.exe". Error: Windows no longer lists this app in the Start menu.',
+    {
+      command: "shell:AppsFolder\\c:.users.me.appdata.local.capcut.apps.9.5.0.4045.capcut.exe",
+      resolvedCommand: "shell:AppsFolder\\c:.users.me.appdata.local.capcut.apps.9.5.0.4045.capcut.exe",
+      commandType: "app",
+      method: "start-apps-probe",
+      errorCode: "ENOENT",
+      exeExists: false,
+      raw: "Rovyl checked the Start menu before launching and no installed app has this id.",
+    },
+    "CapCut",
+  );
+
   const everyCase = [
+    startMenuEntryGone,
     telegram,
     telegramLegacy,
     uninstalled,
@@ -264,6 +288,13 @@ export function collect() {
   ];
 
   return {
+    /** Not a link failure, and it must name the app rather than a scheme. */
+    startMenuEntryGoneCode: startMenuEntryGone.code,
+    startMenuEntryGoneNamesTheApp: startMenuEntryGone.title.includes("CapCut"),
+    startMenuEntryGoneSaysNothingAboutLinks: !`${startMenuEntryGone.message} ${startMenuEntryGone.hint ?? ""}`
+      .toLowerCase()
+      .includes("link"),
+
     /** The probe must reach the same words as the launch that failed the long way round. */
     preflightMissingAppCode: preflightMissingApp.code,
     preflightMissingAppTitle: preflightMissingApp.title,
