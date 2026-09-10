@@ -8,7 +8,8 @@
 
 A radial launcher for Windows. Hold the middle mouse button anywhere, aim, release.
 
-[![Microsoft Store](https://img.shields.io/badge/Microsoft%20Store-Get%20it-0067b8?style=flat-square&logo=microsoft)](https://apps.microsoft.com/detail/9N03SVPMXSV1)
+[![Download Rovyl for Windows](https://img.shields.io/badge/Download%20for%20Windows-2ea44f?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/arshit09/rovyl/releases/latest)
+
 ![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078d4?style=flat-square)
 ![Electron](https://img.shields.io/badge/Electron-28-47848f?style=flat-square&logo=electron&logoColor=white)
 ![React](https://img.shields.io/badge/React-19-149eca?style=flat-square&logo=react&logoColor=white)
@@ -46,14 +47,24 @@ puts a window between you and your work.
 
 ## Install
 
-**Direct download** — [latest release](https://github.com/arshit09/rovyl/releases/latest).
-This is the build to install from this fork: it carries fixes that have not reached the
-Store package. Windows will warn about an unsigned installer; the app updates itself from
-this repository afterwards.
+<div align="center">
 
-**From the Microsoft Store** — [apps.microsoft.com](https://apps.microsoft.com/detail/9N03SVPMXSV1).
-Installs and updates automatically with no security warnings, but it is upstream's build,
-so it does not include the fixes made here.
+[![Download Rovyl for Windows](https://img.shields.io/badge/Download%20for%20Windows-2ea44f?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/arshit09/rovyl/releases/latest)
+
+**Windows 10 and 11 — free, no account, nothing to sign up for.**
+
+</div>
+
+The button opens the latest release on GitHub. Never downloaded from there? It is four
+steps:
+
+1. Under **Assets**, click the file ending in **`.exe`**. It saves to your `Downloads`
+   folder like any other file.
+2. Open it — from your browser's download bar, or by double-clicking it in `Downloads`.
+3. Windows shows a blue **"Windows protected your PC"** screen, because this installer is
+   not signed. Click **More info**, then **Run anyway**.
+4. Follow the installer. Rovyl then lives in your system tray and updates itself from this
+   repository, so this is the only manual download you need.
 
 **From source** — see [Building](#building) below.
 
@@ -156,9 +167,9 @@ window-handshake invariants. If it fails, the handshake was broken, not the test
 
 ## Links
 
-- **Microsoft Store** — [Rovyl](https://apps.microsoft.com/detail/9N03SVPMXSV1)
+- **Download** — [latest release](https://github.com/arshit09/rovyl/releases/latest)
 - **Website and docs** — [rovyl-red.vercel.app](https://rovyl-red.vercel.app)
-- **Releases** — [github.com/arshit09/rovyl/releases](https://github.com/arshit09/rovyl/releases)
+- **All releases** — [github.com/arshit09/rovyl/releases](https://github.com/arshit09/rovyl/releases)
 - **Upstream** — [HenryCauan/rovyl](https://github.com/HenryCauan/rovyl)
 - **Privacy policy** — [rovyl-red.vercel.app/privacy](https://rovyl-red.vercel.app/privacy)
 
