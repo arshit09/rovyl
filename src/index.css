@@ -622,6 +622,23 @@
 .zs-shortcut-keys { min-height: 64px; display: flex; align-items: center; justify-content: center; gap: var(--zn-2); border: 1px solid var(--zn-line); border-radius: var(--zn-r-control); background: var(--zn-sunken); }
 .zs-shortcut kbd { min-width: 34px; padding: 7px 9px; color: var(--zn-text); border: 1px solid var(--zn-line-strong); border-radius: var(--zn-r-chip); background: var(--zn-raised); font: 500 12px/1 var(--font-display); text-align: center; }
 .zs-shortcut > button { justify-content: center; }
+/* Verdict on the combination just pressed. Amber, not red: nothing failed — the key belongs to
+   something else, and the row is still showing whatever was there before. */
+.zs-shortcut-note {
+  display: grid; grid-template-columns: 13px minmax(0, 1fr); align-items: start; gap: var(--zn-2);
+  margin: 0; color: var(--zn-text-2); font-size: 10.5px; line-height: 1.5;
+}
+.zs-shortcut-note:not(.is-warn) { grid-template-columns: minmax(0, 1fr); }
+.zs-shortcut-note.is-warn {
+  padding: var(--zn-2) var(--zn-3);
+  border: 1px solid rgba(224, 160, 60, .28); border-radius: var(--zn-r-chip);
+  background: rgba(224, 160, 60, .07); color: rgba(233, 189, 120, .92);
+}
+.zs-shortcut-note.is-warn svg { margin-top: 1px; color: rgba(233, 189, 120, .9); }
+[data-zn-theme="white"] .zs-shortcut-note.is-warn {
+  border-color: rgba(146, 92, 6, .3); background: rgba(180, 120, 20, .09); color: rgba(122, 76, 4, .95);
+}
+[data-zn-theme="white"] .zs-shortcut-note.is-warn svg { color: rgba(146, 92, 6, .9); }
 
 .zs-workspace { display: flex; flex-direction: column; gap: var(--zn-3); }
 .zs-app-list { max-height: 168px; overflow-y: auto; border: 1px solid var(--zn-line); border-radius: var(--zn-r-control); background: var(--zn-sunken); }

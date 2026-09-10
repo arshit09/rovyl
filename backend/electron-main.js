@@ -4092,7 +4092,6 @@ app.whenReady().then(async () => {
    * Evita toast a cada save/reopen do radial quando o atalho está ocupado (ex.: Alt+Z da NVIDIA).
    * Volta a notificar se o utilizador mudar o atalho e o novo também falhar.
    */
-  let mainShortcutConflictNotify = { failedKey: null, notifiedForKey: null };
 
   const shortcutCompactKey = (s) =>
     String(s || "")
@@ -4101,13 +4100,20 @@ app.whenReady().then(async () => {
       .toLowerCase();
 
   /** Alt+Z é comum na sobreposição GeForce / outros — mensagem mais útil que genérico "OS". */
-  const altZOverlayHint = (shortcutStr) => {
+  /**
+   * The one combination whose owner we can usually name. Two phrasings of one fact: the log has to
+   * say where to go, the card is already there.
+   */
+  const isAltZ = (shortcutStr) => {
     const k = shortcutCompactKey(shortcutStr);
-    if (k === "alt+z" || k === "option+z") {
-      return " Alt+Z is commonly reserved by the NVIDIA GeForce Experience overlay or another app. Disable it there or choose a different shortcut in Rovyl Settings.";
-    }
-    return "";
+    return k === "alt+z" || k === "option+z";
   };
+  const ALT_Z_CULPRIT =
+    "It is usually the NVIDIA GeForce Experience overlay — turn that off, or pick another combination.";
+  const altZOverlayHint = (shortcutStr) =>
+    isAltZ(shortcutStr)
+      ? " Alt+Z is commonly reserved by the NVIDIA GeForce Experience overlay or another app. Disable it there or choose a different shortcut in Rovyl Settings."
+      : "";
 
   let lastShortcutRegistrationSignature = null;
   const shortcutRegistrationSignature = () => {
@@ -4165,12 +4171,8 @@ app.whenReady().then(async () => {
       );
 
       if (registered) {
-        mainShortcutConflictNotify = { failedKey: null, notifiedForKey: null };
         diagLog(`Global shortcut '${shortcut}' registered successfully.`);
       } else {
-        const failKey = shortcutCompactKey(shortcut);
-        mainShortcutConflictNotify.failedKey = failKey;
-        mainShortcutConflictNotify.notifiedForKey = failKey;
         diagLog(
           `[Shortcut] Global shortcut '${shortcut}' not registered; it is likely already in use.${altZOverlayHint(shortcut)}`,
         );
@@ -4188,9 +4190,6 @@ app.whenReady().then(async () => {
         }
       }
     } catch (e) {
-      const failKey = shortcutCompactKey(shortcut);
-      mainShortcutConflictNotify.failedKey = failKey;
-      mainShortcutConflictNotify.notifiedForKey = failKey;
       diagLog(
         `[Shortcut] Global shortcut '${shortcut}' registration failed: ${e.message}${altZOverlayHint(shortcut)}`,
       );
@@ -4445,6 +4444,65 @@ app.whenReady().then(async () => {
     console.log("[Shortcuts] Resuming global shortcuts...");
     registerGlobalShortcut();
     // (though recording is usually done in settings where menu is not 'open-radial' but 'open-settings')
+  });
+
+  /**
+   * Can Windows actually give us this combination?
+   *
+   * The only honest answer comes from asking Windows, and the only way to ask is to try:
+   * `RegisterHotKey` fails when another process already holds the combination, and nothing else
+   * — no list, no API — will tell you who has what. So this registers it, learns the answer, and
+   * gives it straight back.
+   *
+   * Until now nobody asked at any point. A combination another app owned was accepted by the
+   * settings panel, failed to register on the next `registerGlobalShortcut`, and left the user
+   * with a shortcut that did nothing and a row that said it should. Main did notice: it recorded
+   * the failure in a variable that no code has ever read, deleted with this change.
+   *
+   * Recording unregisters everything of ours first (`pause-global-shortcut`), so during a capture
+   * this measures other applications and nothing else. The `isRegistered` guard is for every other
+   * caller: registering over one of our own live shortcuts and then unregistering it would take
+   * the real one away.
+   */
+  ipcMain.handle("probe-shortcut", (_event, accelerator) => {
+    const accel = String(accelerator || "").trim();
+    if (!accel) return { available: false, reason: "invalid" };
+    const normalized = accel.includes("Win") ? accel.replace(/Win/g, "Super") : accel;
+
+    try {
+      if (globalShortcut.isRegistered(normalized)) {
+        return { available: false, reason: "rovyl" };
+      }
+    } catch (e) {
+      /** `isRegistered` throws on an accelerator Electron cannot parse — that is its own answer. */
+      return { available: false, reason: "invalid" };
+    }
+
+    let claimed = false;
+    try {
+      claimed = globalShortcut.register(normalized, () => {});
+    } catch (e) {
+      diagLog(`[Shortcuts] Probe of '${normalized}' threw: ${e.message}`);
+      return { available: false, reason: "invalid" };
+    } finally {
+      /** Never keep it. A probe that holds the key would make the next probe answer "taken". */
+      if (claimed) {
+        try { globalShortcut.unregister(normalized); } catch (e) { /* nothing left to undo */ }
+      }
+    }
+
+    diagLog(`[Shortcuts] Probe '${normalized}' -> ${claimed ? "free" : "taken"}`);
+    if (claimed) return { available: true };
+    /**
+     * `altZOverlayHint` has known since before this change who takes Alt+Z, and has only ever said
+     * so to the diagnostic log — which is to say, to nobody. It is the one case where we can name
+     * the other application, and naming it is the difference between "pick another" and a fix.
+     */
+    return {
+      available: false,
+      reason: "taken",
+      ...(isAltZ(normalized) ? { hint: ALT_Z_CULPRIT } : {}),
+    };
   });
 
   ipcMain.on("start-shortcut-recording", () => {

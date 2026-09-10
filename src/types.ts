@@ -347,6 +347,18 @@ export interface ElectronAPI {
   ) => void;
   pauseGlobalShortcut: () => void;
   resumeGlobalShortcut: () => void;
+  /**
+   * Whether Windows would give Rovyl this combination.
+   * `rovyl` means Rovyl already holds it — which, for the shortcut in use, is what healthy is.
+   */
+  probeShortcut?: (
+    accelerator: string,
+  ) => Promise<{
+    available: boolean;
+    reason?: 'taken' | 'invalid' | 'rovyl';
+    /** Present when main can name who took it — today only the Alt+Z overlay. */
+    hint?: string;
+  }>;
   startShortcutRecording: () => void;
   stopShortcutRecording: () => void;
   onShortcutRecorded: (callback: (shortcut: string) => void) => () => void;

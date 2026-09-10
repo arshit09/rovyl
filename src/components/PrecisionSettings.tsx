@@ -1447,7 +1447,13 @@ function SettingsEditor({
   if (editor.kind === 'shortcut') {
     title = 'Global shortcut';
     description = 'Record a combination that does not conflict with your applications.';
-    content = <ShortcutRecorder value={config.globalShortcut} onChange={(value) => update('globalShortcut', value)} />;
+    content = (
+      <ShortcutRecorder
+        value={config.globalShortcut}
+        onChange={(next) => update('globalShortcut', next)}
+        config={config}
+      />
+    );
   }
 
   if (editor.kind === 'blocked') {
@@ -2542,26 +2548,139 @@ function WorkspaceManager({
   );
 }
 
-function ShortcutRecorder({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+/** Every combination Rovyl itself already answers to, so a clash with one is named, not probed. */
+function ownShortcutOwners(config: UIConfig): Map<string, string> {
+  const owners = new Map<string, string>();
+  const key = (accelerator: string) =>
+    accelerator.replace(/Win/g, 'Super').split('+').map((part) => part.trim().toLowerCase()).sort().join('+');
+  const walk = (items: AppItem[], workspaceName: string) => {
+    for (const item of items) {
+      if (item.shortcut) owners.set(key(item.shortcut), `${item.label} in ${workspaceName}`);
+      if (item.children?.length) walk(item.children, workspaceName);
+    }
+  };
+  for (const workspace of config.workspaces) walk(workspace.apps || [], workspace.name);
+  return owners;
+}
+
+type ShortcutStatus =
+  | { kind: 'idle' }
+  | { kind: 'checking'; accelerator: string }
+  | { kind: 'taken'; accelerator: string; by?: string; hint?: string }
+  | { kind: 'invalid'; accelerator: string }
+  | { kind: 'ok'; accelerator: string };
+
+/**
+ * Record a shortcut, and find out at the moment of pressing it whether Windows will give it up.
+ *
+ * Nothing checked before. A combination another application already owned was written into the
+ * config, failed to register on the next pass, and left a settings row naming a shortcut that did
+ * nothing — with Rovyl quietly falling back to Alt+Shift+F9 without saying so. The answer only
+ * exists by asking the OS (see `probe-shortcut`), so it is asked here, before the value is kept.
+ *
+ * Rovyl's own bindings are matched first and by name, because "already used by Cursor in Main" is
+ * something the user can act on and "taken" is not.
+ */
+function ShortcutRecorder({
+  value,
+  onChange,
+  config,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  config: UIConfig;
+}) {
   const [recording, setRecording] = useState(false);
+  const [status, setStatus] = useState<ShortcutStatus>({ kind: 'idle' });
+
+  const owners = useMemo(() => ownShortcutOwners(config), [config]);
+  const ownersRef = useRef(owners);
+  ownersRef.current = owners;
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
+
+  const check = useCallback(async (accelerator: string): Promise<ShortcutStatus> => {
+    const key = accelerator
+      .replace(/Win/g, 'Super')
+      .split('+')
+      .map((part) => part.trim().toLowerCase())
+      .sort()
+      .join('+');
+    const owner = ownersRef.current.get(key);
+    if (owner) return { kind: 'taken', accelerator, by: owner };
+
+    const probe = window.electron?.probeShortcut;
+    /** Outside Electron there is nothing to ask; accepting is better than refusing on no evidence. */
+    if (!probe) return { kind: 'ok', accelerator };
+    try {
+      const result = await probe(accelerator);
+      if (result?.available || result?.reason === 'rovyl') return { kind: 'ok', accelerator };
+      return result?.reason === 'invalid'
+        ? { kind: 'invalid', accelerator }
+        : { kind: 'taken', accelerator, hint: result?.hint };
+    } catch (e) {
+      return { kind: 'ok', accelerator };
+    }
+  }, []);
 
   useEffect(() => {
     if (!recording) return;
     const cleanup = window.electron?.onShortcutRecorded?.((shortcut) => {
-      if (shortcut) onChange(shortcut);
+      if (!shortcut) return;
+      /**
+       * Recording stops either way — holding the keyboard hostage while the probe runs would make
+       * the next keypress a second capture — but the value is only kept if the answer is yes.
+       */
       window.electron?.stopShortcutRecording?.();
-      window.electron?.resumeGlobalShortcut?.();
       setRecording(false);
+      setStatus({ kind: 'checking', accelerator: shortcut });
+      void check(shortcut).then((next) => {
+        setStatus(next);
+        if (next.kind === 'ok') onChangeRef.current(shortcut);
+        /** Resume last: re-registering before the probe would make Rovyl the app holding the key. */
+        window.electron?.resumeGlobalShortcut?.();
+      });
     });
-    return () => cleanup?.();
-  }, [recording, onChange]);
+    return cleanup;
+  }, [recording, check]);
 
   useEffect(() => () => {
     window.electron?.stopShortcutRecording?.();
     window.electron?.resumeGlobalShortcut?.();
   }, []);
 
+  /** The saved one, checked when the card opens: a combination can be lost long after it was set. */
+  useEffect(() => {
+    if (!value) return;
+    let cancelled = false;
+    void check(value).then((next) => {
+      if (!cancelled && next.kind !== 'ok') setStatus(next);
+    });
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const keys = value.split('+').filter(Boolean);
+
+  const note = (() => {
+    if (status.kind === 'checking') return { tone: 'muted', text: `Checking ${status.accelerator}…` };
+    if (status.kind === 'invalid') {
+      return { tone: 'warn', text: `${status.accelerator} is not a combination Windows can reserve. Include Ctrl, Alt or Shift.` };
+    }
+    if (status.kind === 'taken') {
+      if (status.by) {
+        return { tone: 'warn', text: `${status.accelerator} is already used by ${status.by}. The shortcut was not changed.` };
+      }
+      /** With a hint we can name the culprit, so the generic sentence about Windows only gets in the way. */
+      return {
+        tone: 'warn',
+        text: status.hint
+          ? `${status.accelerator} is already taken. ${status.hint}`
+          : `${status.accelerator} is already taken by another application, so Windows will not give it to Rovyl. The shortcut was not changed.`,
+      };
+    }
+    return null;
+  })();
 
   return (
     <div className="zs-shortcut">
@@ -2577,6 +2696,7 @@ function ShortcutRecorder({ value, onChange }: { value: string; onChange: (value
             window.electron?.resumeGlobalShortcut?.();
             setRecording(false);
           } else {
+            setStatus({ kind: 'idle' });
             window.electron?.pauseGlobalShortcut?.();
             window.electron?.startShortcutRecording?.();
             setRecording(true);
@@ -2585,6 +2705,12 @@ function ShortcutRecorder({ value, onChange }: { value: string; onChange: (value
       >
         {recording ? 'Press the key combination…' : 'Record new shortcut'}
       </button>
+      {note && (
+        <p className={`zs-shortcut-note${note.tone === 'warn' ? ' is-warn' : ''}`} role="status">
+          {note.tone === 'warn' && <AlertTriangle size={13} strokeWidth={1.9} aria-hidden />}
+          <span>{note.text}</span>
+        </p>
+      )}
     </div>
   );
 }

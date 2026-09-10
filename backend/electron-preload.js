@@ -165,6 +165,8 @@ contextBridge.exposeInMainWorld("electron", {
     ipcRenderer.send("set-background-material", material),
   pauseGlobalShortcut: () => ipcRenderer.send("pause-global-shortcut"),
   resumeGlobalShortcut: () => ipcRenderer.send("resume-global-shortcut"),
+  /** Asks Windows whether a combination is free, by trying to take it and giving it straight back. */
+  probeShortcut: (accelerator) => ipcRenderer.invoke("probe-shortcut", accelerator),
   startShortcutRecording: () => ipcRenderer.send("start-shortcut-recording"),
   stopShortcutRecording: () => ipcRenderer.send("stop-shortcut-recording"),
   onShortcutRecorded: (callback) => {

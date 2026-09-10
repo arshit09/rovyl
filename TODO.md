@@ -170,8 +170,6 @@ its section, and a retired one keeps its number rather than being reused.
 
 ## 4. UX and intuitiveness
 
-- [ ] **4.5** **No shortcut-conflict detection while recording.** Conflict surfaces later as a toast; warn
-  during the key capture instead.
 - [ ] **4.6** **No per-setting "reset to default".**
 - [ ] **4.7** **Tray menu is two items** (Open Settings / Quit). Add: open wheel, pause trigger for N
   minutes, switch workspace, check for updates, version.
