@@ -857,6 +857,30 @@
 .zs-field-row { display: flex; align-items: center; gap: var(--zn-2); }
 .zs-field-row input { min-width: 0; flex: 1; }
 .zs-field-row .zs-btn { flex: none; }
+/* Crowding note, above the shortcut list. Amber at caution, red past the point where aiming is a
+   guess — the same two-step the launch-mode note uses, so the panel has one vocabulary for
+   "consider this" and "this will not work well". */
+.zs-crowding {
+  display: grid; grid-template-columns: 13px minmax(0, 1fr); align-items: start; gap: var(--zn-2);
+  margin: var(--zn-3) 0 0; padding: var(--zn-2) var(--zn-3);
+  border: 1px solid rgba(224, 160, 60, .28); border-radius: var(--zn-r-chip);
+  background: rgba(224, 160, 60, .07); color: rgba(233, 189, 120, .92);
+  font-size: 10.5px; line-height: 1.5;
+}
+.zs-crowding svg { margin-top: 1px; color: rgba(233, 189, 120, .9); }
+.zs-crowding.is-warning {
+  border-color: rgba(239, 124, 124, .3); background: rgba(239, 124, 124, .08); color: rgba(244, 168, 168, .95);
+}
+.zs-crowding.is-warning svg { color: rgba(244, 168, 168, .9); }
+[data-zn-theme="white"] .zs-crowding {
+  border-color: rgba(146, 92, 6, .3); background: rgba(180, 120, 20, .09); color: rgba(122, 76, 4, .95);
+}
+[data-zn-theme="white"] .zs-crowding svg { color: rgba(146, 92, 6, .9); }
+[data-zn-theme="white"] .zs-crowding.is-warning {
+  border-color: rgba(165, 32, 32, .3); background: rgba(165, 32, 32, .07); color: rgba(124, 24, 24, .95);
+}
+[data-zn-theme="white"] .zs-crowding.is-warning svg { color: rgba(165, 32, 32, .9); }
+
 .zs-launch-options { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--zn-3); padding: var(--zn-3); border: 1px solid var(--zn-line); border-radius: var(--zn-r-control); background: var(--zn-sunken); }
 .zs-launch-options b { display: block; color: var(--zn-text); font-size: 11.5px; font-weight: 550; }
 .zs-launch-options small { display: block; max-width: 520px; margin-top: 2px; color: var(--zn-text-3); font-size: 9.5px; line-height: 1.4; }

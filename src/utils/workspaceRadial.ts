@@ -81,3 +81,39 @@ export function filterRadialApps(apps: AppItem[], query: string): AppItem[] {
   }
   return prefix.concat(contains);
 }
+
+/**
+ * Whether a workspace has more shortcuts than the wheel can be aimed at, and what that costs.
+ *
+ * The ring divides 360° by the item count and nothing caps it, so the geometry degrades quietly:
+ * eight shortcuts are 45° each and effortless, twenty are 18° and a coin toss. Nowhere in the app
+ * said so — the editor let you add the twenty-first exactly as easily as the second.
+ *
+ * The thresholds come from the slice, not from taste. A flick of the wrist lands within roughly
+ * ±15° of where it was aimed, so a 30° slice — twelve items — is the last one whose whole width is
+ * inside that error. Past that, aiming starts costing attention; at 18° and below it is a guess.
+ *
+ * Pointer mode is a different failure and gets different words. There the target is the icon, not
+ * the sector, and `computeRadialLayout` answers a crowded ring by shrinking the icons rather than
+ * by narrowing anything — so what runs out is not angle but the icon itself.
+ */
+export function radialCrowding(
+  itemCount: number,
+  selectionMode: UIConfig['radialSelectionMode'],
+): { severity: 'caution' | 'warning'; message: string } | null {
+  if (itemCount <= 12) return null;
+  const byDirection = selectionMode !== 'cursor';
+  const degrees = Math.round(360 / itemCount);
+  const severity = itemCount > 18 ? 'warning' : 'caution';
+
+  /** "is ${n}° wide" and not "is a ${n}° slice": 8, 11 and 18 are all reachable, and all take "an". */
+  const cost = byDirection
+    ? `each target is only ${degrees}° wide`
+    : 'each icon has to shrink to keep the ring on screen';
+  const advice =
+    severity === 'warning'
+      ? 'Group related shortcuts into a folder — a group is one slice, and opens a ring of its own.'
+      : 'Adding many more will make them hard to hit; a folder keeps several behind one slice.';
+
+  return { severity, message: `${itemCount} shortcuts on the wheel, so ${cost}. ${advice}` };
+}

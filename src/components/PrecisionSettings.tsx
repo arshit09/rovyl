@@ -45,6 +45,7 @@ import { SmartIcon } from './SmartIcon';
 import { IconPicker } from './IconPicker';
 import '../fonts-display.css';
 import { NativeAppIcon, useInstalledApps, type InstalledApp } from './installedApps';
+import { radialCrowding } from '../utils/workspaceRadial';
 import { WheelPreview } from './WheelPreview';
 
 interface PrecisionSettingsProps {
@@ -1627,6 +1628,7 @@ function SettingsEditor({
         focusAppId={focusAppId}
         onFocusApplied={onFocusApplied}
         showToast={showToast}
+        selectionMode={config.radialSelectionMode}
         updateWorkspace={updateWorkspace}
         makeActive={() => update('activeWorkspaceIndex', index)}
         /**
@@ -2002,6 +2004,7 @@ function WorkspaceManager({
   focusAppId,
   onFocusApplied,
   showToast,
+  selectionMode,
 }: {
   workspace: Workspace;
   workspaceIndex: number;
@@ -2014,6 +2017,8 @@ function WorkspaceManager({
   focusAppId?: string | null;
   onFocusApplied?: () => void;
   showToast: (message: string, undo?: () => void) => void;
+  /** Direction vs pointer changes what a crowded wheel actually costs, so the warning needs it. */
+  selectionMode: UIConfig['radialSelectionMode'];
 }) {
   const [addMode, setAddMode] = useState<WorkspaceAddMode>(null);
   const { apps: installedApps, loading: loadingApps, error: appsError, reload: loadInstalledApps } =
@@ -2175,6 +2180,12 @@ function WorkspaceManager({
 
   /** Confirmação vinda do main: só um perfil real de IDE habilita a secção de recentes. */
   const ideSupport = useIdeRecentsSupport(workspace.apps);
+
+  /** The wheel divides 360° by this list; past a point that is a geometry problem, not a taste one. */
+  const crowding = useMemo(
+    () => radialCrowding(workspace.apps.length, selectionMode),
+    [workspace.apps.length, selectionMode],
+  );
 
   /**
    * Remove a shortcut, and keep it for as long as the toast lives.
@@ -2412,6 +2423,17 @@ function WorkspaceManager({
             <button type="button" className={addMode === 'folder' ? 'is-active' : ''} onClick={() => setAddMode(addMode === 'folder' ? null : 'folder')}><FolderOpen size={14} /> Folder</button>
           </div>
         </div>
+
+        {/*
+          Said where the twenty-first shortcut is added, and only once there are enough for it to
+          be true. A note on every workspace is not a warning, it is furniture.
+        */}
+        {crowding && (
+          <p className={`zs-crowding${crowding.severity === 'warning' ? ' is-warning' : ''}`} role="note">
+            <AlertTriangle size={13} strokeWidth={1.9} aria-hidden />
+            <span>{crowding.message}</span>
+          </p>
+        )}
 
         <div className={`zs-workspace-workbench${addMode ? ' is-split' : ''}`}>
         <AnimatePresence mode="wait">

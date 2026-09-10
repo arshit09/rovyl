@@ -35,7 +35,7 @@ try {
     ssr: { noExternal: true },
   });
 
-  const { filterRadialApps } = await import(pathToFileURL(join(outDir, "entry.mjs")).href);
+  const { filterRadialApps, radialCrowding } = await import(pathToFileURL(join(outDir, "entry.mjs")).href);
 
   const app = (label) => ({ id: label, type: "app", label, command: "", iconName: "" });
   const RING = [
@@ -100,6 +100,45 @@ try {
   });
 
   check(() => assert.deepEqual(labels(filterRadialApps([], "x")), [], "an empty level filters to an empty level"));
+
+  // ── Crowding guidance ─────────────────────────────────────────────────────
+  check(() => {
+    /** Silence up to the last count whose whole slice fits inside a wrist flick's ~15 degrees. */
+    for (const count of [0, 1, 8, 12]) {
+      assert.equal(radialCrowding(count, "angle"), null, `${count} items should say nothing`);
+    }
+  });
+  check(() => assert.equal(radialCrowding(13, "angle").severity, "caution", "just over is a caution"));
+  check(() => assert.equal(radialCrowding(18, "angle").severity, "caution"));
+  check(() => assert.equal(radialCrowding(19, "angle").severity, "warning", "past 18 it is a guess"));
+
+  check(() => {
+    /** The number in the sentence must be the real slice, or the warning is worse than none. */
+    const m = radialCrowding(20, "angle").message;
+    assert.ok(m.includes("18°"), m);
+    /** No article before the number: 8, 11 and 18 are all reachable and all take "an". */
+    assert.ok(!/\ba \d+°/.test(m), `article before a degree count: ${m}`);
+    assert.ok(m.includes("20 shortcuts"), m);
+  });
+
+  check(() => {
+    /** Pointer mode narrows nothing — it shrinks the icons — so it must not talk about slices. */
+    const m = radialCrowding(20, "cursor").message;
+    assert.ok(!m.includes("°"), `pointer mode should not cite an angle: ${m}`);
+    assert.ok(m.includes("icon"), m);
+  });
+
+  check(() => {
+    /** An unset mode is direction mode, which is what the wheel actually does by default. */
+    assert.equal(radialCrowding(20, undefined).message, radialCrowding(20, "angle").message);
+  });
+
+  check(() => {
+    /** Both severities have to name the way out, or the note is only bad news. */
+    for (const count of [13, 25]) {
+      assert.match(radialCrowding(count, "angle").message, /folder/i);
+    }
+  });
 
   console.log(`radial-filter-smoke: OK (${n} assertions)`);
 } finally {

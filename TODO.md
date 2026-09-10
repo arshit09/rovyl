@@ -170,8 +170,6 @@ its section, and a retired one keeps its number rather than being reused.
 
 ## 4. UX and intuitiveness
 
-- [ ] **4.10** **No item-count guidance.** `360 / totalApps` with no cap — 20 items gives 18° slices, close to
-  unaimable in `angle` mode. Warn in the editor, or auto-page.
 - [ ] **4.11** **First-run onboarding is gone** (WelcomeScreen is dead) — new users get a wheel and no
   explanation of the trigger, workspaces, or aiming modes.
 - [ ] **4.12** **Start Menu discovery has no progress UI** — 20 s deferral at login leaves an empty wheel with
