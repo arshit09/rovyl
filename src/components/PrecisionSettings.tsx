@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion, useReducedMotion } from 'framer-motion';
 import {
   DWELL_MS_MAX,
@@ -339,6 +339,51 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
     return () => { cancelled = true; };
   }, []);
 
+  /**
+   * Ctrl+K / Ctrl+F, when the box it is aiming at may not be on screen.
+   *
+   * The sidebar hides the search input twice over — once when the user collapses it, and again
+   * under 760px, which Windows reaches at 150% scaling on an ordinary laptop. `focus()` on a
+   * `display: none` element does nothing at all, so the shortcut was silent in exactly the states
+   * where a keyboard route matters most. The rail gives way while the shortcut is asking for it,
+   * and takes itself back when the search is left empty.
+   */
+  const [searchForced, setSearchForced] = useState(false);
+  /** Bumped by every request; the layout effect below reads it and nothing else. */
+  const [searchFocusSeq, setSearchFocusSeq] = useState(0);
+
+  const focusSearch = useCallback(() => {
+    setIsSidebarCollapsed(false);
+    const input = document.getElementById('zs-search-input') as HTMLInputElement | null;
+    /** `offsetParent` is null for a `display: none` element, which is exactly what to test for. */
+    if (!input || input.offsetParent === null) setSearchForced(true);
+    setSearchFocusSeq((seq) => seq + 1);
+  }, [setIsSidebarCollapsed]);
+
+  /**
+   * Focus after the rail has actually widened, and not a frame later.
+   *
+   * `useLayoutEffect` runs once React has written the DOM and the browser has laid it out, so the
+   * input is focusable by the time this reads it. The first attempt used two nested
+   * `requestAnimationFrame`s, and rAF is throttled in a window that does not have focus — which is
+   * every window the moment before someone alt-tabs to it.
+   */
+  useLayoutEffect(() => {
+    if (!searchFocusSeq) return;
+    const input = document.getElementById('zs-search-input') as HTMLInputElement | null;
+    if (!input || input.offsetParent === null) return;
+    input.focus();
+    input.select();
+    /**
+     * Keyed on the request alone. Listing `searchForced` here too meant that RELEASING it — which
+     * is what leaving an empty search box does — re-ran this and took the focus straight back, so
+     * the box could not be left at all.
+     *
+     * One dep is enough because `focusSearch` sets all three pieces of state in one batch: React
+     * commits them together, and a layout effect runs after that commit with the rail already wide.
+     */
+  }, [searchFocusSeq]);
+
   const theme = config.appearanceTheme === 'white' ? 'white' : 'black';
 
   const update = useCallback(
@@ -412,9 +457,14 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
         else onClose();
         return;
       }
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'f') {
+      /**
+       * Ctrl+K and Ctrl+F. Ctrl+F because it is what a settings page is, and Ctrl+K because it is
+       * what everything else with a search box has taught people to press.
+       */
+      const key = event.key.toLowerCase();
+      if ((event.ctrlKey || event.metaKey) && (key === 'f' || key === 'k')) {
         event.preventDefault();
-        document.getElementById('zs-search-input')?.focus();
+        focusSearch();
       }
     };
     window.addEventListener('keydown', onKey);
@@ -923,7 +973,7 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
       data-zn-theme={theme}
     >
       <motion.section
-        className={`zs-window${isSidebarCollapsed ? ' is-sidebar-collapsed' : ''}`}
+        className={`zs-window${isSidebarCollapsed ? ' is-sidebar-collapsed' : ''}${searchForced ? ' is-search-forced' : ''}`}
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ duration: reduceMotion ? 0 : 0.22, ease: [0.22, 1, 0.36, 1] }}
@@ -940,6 +990,8 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
               id="zs-search-input"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
+              /** The rail comes back only if nothing was searched for; a query keeps its own box. */
+              onBlur={() => { if (!query.trim()) setSearchForced(false); }}
               placeholder="Search"
               aria-label="Search settings"
             />

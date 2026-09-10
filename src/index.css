@@ -932,6 +932,17 @@
 .zs-toast-action:hover { background: color-mix(in srgb, currentColor 14%, transparent); }
 .zs-toast-action:active { background: color-mix(in srgb, currentColor 24%, transparent); }
 
+/* Ctrl+K / Ctrl+F has to land somewhere. The rail hides the search box twice over — once when the
+   user collapses it, again under 760px — and `focus()` on a hidden element does nothing at all.
+   While the shortcut is asking for the box, the rail gives way. Declared after both of those rules
+   on purpose: same specificity, later wins. */
+.zs-window.is-search-forced { grid-template-columns: 240px minmax(0, 1fr); }
+.zs-window.is-search-forced .zs-sidebar { padding-inline: var(--zn-4); }
+.zs-window.is-search-forced .zs-search { justify-content: flex-start; padding-inline: var(--zn-3); gap: var(--zn-2); }
+.zs-window.is-search-forced .zs-search input { display: block; }
+.zs-window.is-search-forced .zs-nav button { justify-content: flex-start; padding-inline: var(--zn-3); }
+.zs-window.is-search-forced .zs-nav button span { display: block; }
+
 /* ══ Falha de arranque ═════════════════════════════════════════════════════
    O cartão vive FORA de `.zs-shell` — é irmão do painel, não filho — por isso
    nada aqui pode depender de um seletor `.zs-shell …`: nem o anel de foco nem
