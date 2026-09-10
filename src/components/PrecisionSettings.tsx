@@ -41,6 +41,7 @@ import type { AppItem, UIConfig, UpdateChannel, UpdateState, Workspace } from '.
 import { DEFAULT_UI_CONFIG } from '../defaults';
 import { getIcon } from '../iconMap';
 import { resolveWebsiteIconFields } from '../siteFavicon';
+import { hostLabelFromUrl, looksFetchable, normalizeSiteUrl, resolveWebsiteTitle } from '../siteTitle';
 import { SmartIcon } from './SmartIcon';
 import { IconPicker } from './IconPicker';
 import { RovylLogo } from './RovylLogo';
@@ -2182,6 +2183,9 @@ function WorkspaceManager({
   const [appSearch, setAppSearch] = useState('');
   const [url, setUrl] = useState('');
   const [urlLabel, setUrlLabel] = useState('');
+  /** Once a name has been typed, the page's own title stops overwriting it. */
+  const [urlLabelTyped, setUrlLabelTyped] = useState(false);
+  const [urlTitleLoading, setUrlTitleLoading] = useState(false);
   const [folderPath, setFolderPath] = useState('');
   const [folderLabel, setFolderLabel] = useState('');
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
@@ -2229,6 +2233,8 @@ function WorkspaceManager({
     setAppSearch('');
     setUrl('');
     setUrlLabel('');
+    setUrlLabelTyped(false);
+    setUrlTitleLoading(false);
     setFolderPath('');
     setFolderLabel('');
     setEditingIndex(openEditor ? newIndex : null);
@@ -2262,15 +2268,48 @@ function WorkspaceManager({
     if (path) await addAppPath(path);
   };
 
+  /**
+   * The Name field promises to fill itself in, so it does it here rather than at the moment of
+   * adding: the page's own <title> lands in the field a beat after the address stops changing,
+   * where it can still be read and edited before the shortcut exists.
+   */
+  useEffect(() => {
+    if (addMode !== 'url' || urlLabelTyped) return;
+    const address = url.trim();
+    /** A changed address invalidates the name it produced, so the old title does not linger. */
+    setUrlLabel('');
+    if (!looksFetchable(address)) {
+      setUrlTitleLoading(false);
+      return;
+    }
+    let cancelled = false;
+    setUrlTitleLoading(true);
+    const timer = window.setTimeout(() => {
+      void resolveWebsiteTitle(address).then((title) => {
+        if (cancelled) return;
+        setUrlTitleLoading(false);
+        /** No title is not a name: the field stays empty and `addUrl` falls back to the host. */
+        if (title) setUrlLabel(title);
+      });
+    }, 600);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [addMode, url, urlLabelTyped]);
+
   const addUrl = async () => {
-    let normalized = url.trim();
+    const normalized = normalizeSiteUrl(url);
     if (!normalized) return;
-    if (!/^https?:\/\//i.test(normalized)) normalized = `https://${normalized}`;
-    let fallbackLabel = normalized;
-    try { fallbackLabel = new URL(normalized).hostname.replace(/^www\./, ''); } catch { /* keep URL */ }
-    const icon = await resolveWebsiteIconFields(normalized);
+    const typedLabel = urlLabel.trim();
+    /** The icon and the name are two independent fetches; neither should wait on the other. */
+    const [icon, title] = await Promise.all([
+      resolveWebsiteIconFields(normalized),
+      typedLabel ? Promise.resolve(null) : resolveWebsiteTitle(normalized),
+    ]);
     addItem({
-      id: crypto.randomUUID(), type: 'app', label: urlLabel.trim() || fallbackLabel,
+      id: crypto.randomUUID(), type: 'app',
+      label: typedLabel || title || hostLabelFromUrl(normalized),
       iconName: 'Globe', iconSource: icon?.iconSource || 'lucide', customIconUrl: icon?.customIconUrl,
       command: normalized, commandType: 'url', description: 'Web link',
     });
@@ -2631,7 +2670,7 @@ function WorkspaceManager({
               {addMode === 'url' && (
                 <div className="zs-add-form">
                   <label className="zs-field"><span>Address</span><input autoFocus value={url} onChange={(event) => setUrl(event.target.value)} placeholder="https://example.com" onKeyDown={(event) => { if (event.key === 'Enter') void addUrl(); }} /></label>
-                  <label className="zs-field"><span>Name</span><input value={urlLabel} onChange={(event) => setUrlLabel(event.target.value)} placeholder="Filled automatically" onKeyDown={(event) => { if (event.key === 'Enter') void addUrl(); }} /></label>
+                  <label className="zs-field"><span>Name</span><input value={urlLabel} onChange={(event) => { setUrlLabel(event.target.value); setUrlLabelTyped(true); }} placeholder={urlTitleLoading ? 'Reading the page title…' : 'Filled automatically'} onKeyDown={(event) => { if (event.key === 'Enter') void addUrl(); }} /></label>
                   <button type="button" className="zs-btn is-primary" disabled={!url.trim()} onClick={() => void addUrl()}><Plus size={14} /> Add URL</button>
                 </div>
               )}

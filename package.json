@@ -27,6 +27,7 @@
     "test:persistence-mirror": "node scripts/persistence-mirror-smoke.mjs",
     "test:foreground-snapshot": "node scripts/foreground-snapshot-smoke.mjs",
     "test:fullscreen-bounds": "node scripts/fullscreen-bounds-smoke.mjs",
+    "test:page-title": "node scripts/page-title-smoke.mjs",
     "test:trigger-gesture": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/trigger-gesture-smoke.ps1",
     "icons:tray": "node scripts/generate-tray-icons.mjs",
     "verify:radial-windowing": "node scripts/verify-radial-windowing.mjs",

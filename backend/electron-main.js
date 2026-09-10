@@ -48,6 +48,7 @@ const { normalizeFullPersistenceBlob } = require("./persistence-normalize.cjs");
 const { detectGameExecutable } = require("./game-detection.cjs");
 const { parseForegroundSnapshot, createLineSplitter } = require("./foreground-snapshot.cjs");
 const { isPhysicalRectFullscreen } = require("./fullscreen-bounds.cjs");
+const { titleFromHtmlBuffer } = require("./page-title.cjs");
 const crypto = require("crypto");
 const { GlobalKeyboardListener } = require("node-global-key-listener");
 const http = require("http");
@@ -8020,6 +8021,153 @@ ipcMain.handle("get-website-favicon-data-url", async (_event, pageUrl) => {
     return null;
   } catch (e) {
     diagLog(`[Favicon] error: ${e.message}`);
+    return null;
+  }
+});
+
+/**
+ * The name a web shortcut is born with.
+ *
+ * A URL used to be labelled with its hostname, so "GitHub" arrived on the wheel as `github.com`.
+ * The page already publishes the name its own tab shows, so it is fetched here: only the head is
+ * needed, so the read stops the moment `</title>` goes past and the socket is dropped.
+ */
+const pageTitleCache = new Map();
+const PAGE_TITLE_CACHE_MAX_ENTRIES = 128;
+/** Enough for the head of a very padded page; the read usually ends long before this. */
+const PAGE_TITLE_MAX_BYTES = 512 * 1024;
+
+const rememberPageTitle = (key, title) => {
+  pageTitleCache.delete(key);
+  pageTitleCache.set(key, title);
+  while (pageTitleCache.size > PAGE_TITLE_CACHE_MAX_ENTRIES) {
+    const oldest = pageTitleCache.keys().next().value;
+    if (oldest === undefined) break;
+    pageTitleCache.delete(oldest);
+  }
+};
+
+/** Servers hand a bot a different page than a browser; asking as a browser gets the real title. */
+const PAGE_TITLE_USER_AGENT =
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
+
+function fetchHtmlHead(targetUrl, redirectDepth = 0) {
+  return new Promise((resolve) => {
+    if (redirectDepth > 8) return resolve(null);
+    let lib;
+    try {
+      const u = new URL(targetUrl);
+      if (u.protocol !== "http:" && u.protocol !== "https:") return resolve(null);
+      lib = u.protocol === "http:" ? http : https;
+    } catch {
+      return resolve(null);
+    }
+
+    let settled = false;
+    const finish = (value) => {
+      if (settled) return;
+      settled = true;
+      resolve(value);
+    };
+
+    const req = lib.get(
+      targetUrl,
+      {
+        headers: {
+          "User-Agent": PAGE_TITLE_USER_AGENT,
+          Accept: "text/html,application/xhtml+xml;q=0.9,*/*;q=0.8",
+          "Accept-Language": "en;q=0.9,*;q=0.5",
+          /** Identity only: a compressed head would have to be buffered whole before it parses. */
+          "Accept-Encoding": "identity",
+        },
+        timeout: 10000,
+      },
+      (res) => {
+        if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+          let next;
+          try {
+            next = new URL(res.headers.location, targetUrl).href;
+          } catch {
+            res.resume();
+            return finish(null);
+          }
+          res.resume();
+          fetchHtmlHead(next, redirectDepth + 1).then(finish);
+          return;
+        }
+        const contentType = String(res.headers["content-type"] || "");
+        /** A PDF or an image has no title to read, and its bytes are not worth pulling down. */
+        if (contentType && !/^\s*(text\/html|application\/xhtml)/i.test(contentType)) {
+          res.destroy();
+          return finish(null);
+        }
+        /** 4xx/5xx pages still carry a <title>, but it names the error, not the site. */
+        if (res.statusCode !== 200) {
+          res.destroy();
+          return finish(null);
+        }
+
+        const chunks = [];
+        let length = 0;
+        res.on("data", (chunk) => {
+          chunks.push(chunk);
+          length += chunk.length;
+          const enough =
+            length >= PAGE_TITLE_MAX_BYTES ||
+            /<\/title\s*>|<\/head\s*>/i.test(
+              Buffer.concat(chunks.slice(-2)).toString("latin1"),
+            );
+          if (!enough) return;
+          res.destroy();
+          finish({ buffer: Buffer.concat(chunks), contentType });
+        });
+        res.on("end", () =>
+          finish(chunks.length ? { buffer: Buffer.concat(chunks), contentType } : null),
+        );
+        res.on("error", () => finish(chunks.length ? { buffer: Buffer.concat(chunks), contentType } : null));
+      },
+    );
+    req.on("error", () => finish(null));
+    req.on("timeout", () => {
+      req.destroy();
+      finish(null);
+    });
+  });
+}
+
+/** Returns the page's own name, or null — the renderer falls back to the host on null. */
+ipcMain.handle("get-website-page-title", async (_event, pageUrl) => {
+  let normalized;
+  try {
+    let s = String(pageUrl || "").trim();
+    if (!s) return null;
+    if (!/^https?:\/\//i.test(s)) s = `https://${s}`;
+    const parsed = new URL(s);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
+    if (!parsed.hostname) return null;
+    normalized = parsed.href;
+  } catch {
+    return null;
+  }
+
+  if (pageTitleCache.has(normalized)) return pageTitleCache.get(normalized);
+
+  try {
+    const response = await fetchHtmlHead(normalized);
+    if (!response) {
+      diagLog(`[PageTitle] no document for ${normalized}`);
+      return null;
+    }
+    const title = titleFromHtmlBuffer(response.buffer, response.contentType);
+    if (!title) {
+      diagLog(`[PageTitle] no title in ${normalized}`);
+      return null;
+    }
+    rememberPageTitle(normalized, title);
+    diagLog(`[PageTitle] ${normalized} -> ${title}`);
+    return title;
+  } catch (e) {
+    diagLog(`[PageTitle] error: ${e.message}`);
     return null;
   }
 });

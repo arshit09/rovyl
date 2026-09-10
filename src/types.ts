@@ -360,6 +360,8 @@ export interface ElectronAPI {
   getFileIcon: (path: string) => Promise<string | null>;
   /** Favicon fetched in the main (data URL) — the renderer usually fails with <img https://…>. */
   getWebsiteFaviconDataUrl?: (pageUrl: string) => Promise<string | null>;
+  /** The page's own <title>, so a web shortcut is named the way its browser tab is. */
+  getWebsitePageTitle?: (pageUrl: string) => Promise<string | null>;
   minimizeWindow: () => void;
   toggleMaximize: () => void;
   quitApp: () => void;
