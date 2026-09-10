@@ -170,7 +170,6 @@ its section, and a retired one keeps its number rather than being reused.
 
 ## 4. UX and intuitiveness
 
-- [ ] **4.6** **No per-setting "reset to default".**
 - [ ] **4.7** **Tray menu is two items** (Open Settings / Quit). Add: open wheel, pause trigger for N
   minutes, switch workspace, check for updates, version.
 - [ ] **4.8** **No keyboard entry to settings search** — bind Ctrl+K / Ctrl+F to `#zs-search-input`.

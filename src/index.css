@@ -336,6 +336,16 @@
 .zs-row-copy b { display: block; color: var(--zn-text); font-size: 13px; font-weight: 500; line-height: 1.35; letter-spacing: -.008em; }
 .zs-row-copy small { display: block; margin-top: 3px; color: var(--zn-text-2); font-size: 11.5px; line-height: 1.45; }
 .zs-row-control { display: flex; align-items: center; justify-content: flex-end; gap: var(--zn-2); }
+/* Revert-to-default. Dim until the row is hovered or it has focus: it marks a row that has been
+   changed, and a bright icon beside every changed setting reads as a warning about the change. */
+.zs-row-revert {
+  width: var(--zn-ctl-sm); height: var(--zn-ctl-sm); display: grid; place-items: center; padding: 0;
+  color: var(--zn-text-3); border: 0; border-radius: var(--zn-r-chip); background: transparent;
+  cursor: pointer; opacity: .45;
+  transition: opacity .15s var(--zn-ease), color .15s var(--zn-ease), background .15s var(--zn-ease);
+}
+.zs-row:hover .zs-row-revert, .zs-row-revert:focus-visible { opacity: 1; }
+.zs-row-revert:hover { color: var(--zn-text); background: var(--zn-raised); }
 .zs-btn.is-delete-icon { width: 32px; padding-inline: 0; justify-content: center; color: #ef7c7c; }
 /* Second press on an action nothing can undo. Red only on the button that does it — a red row
    would read as an error, and nothing has gone wrong yet. */

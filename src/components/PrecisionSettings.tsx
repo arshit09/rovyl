@@ -26,6 +26,7 @@ import {
   Mouse,
   Pencil,
   Plus,
+  RotateCcw,
   Search,
   Palette,
   Settings,
@@ -37,6 +38,7 @@ import {
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { AppItem, UIConfig, Workspace } from '../types';
+import { DEFAULT_UI_CONFIG } from '../defaults';
 import { getIcon } from '../iconMap';
 import { resolveWebsiteIconFields } from '../siteFavicon';
 import { SmartIcon } from './SmartIcon';
@@ -140,6 +142,18 @@ interface SettingItem {
   /** Optional destructive shortcut shown beside the regular row control. */
   onDelete?: () => void;
   deleteLabel?: string;
+  /**
+   * The `UIConfig` key this row edits, when it edits exactly one.
+   *
+   * That is all a row has to declare: whether it is at its default and how to put it back are
+   * both derivable from the key, and deriving them is the point — a per-row "revert" written by
+   * hand seventeen times is seventeen chances to name the wrong default, and no chance at all of
+   * noticing when one of them drifts from `DEFAULT_UI_CONFIG`.
+   *
+   * Rows without one are rows with nothing to revert TO: a workspace, an export, the shortcut
+   * recorder's own card.
+   */
+  configKey?: keyof UIConfig;
   /** Posicao na lista reordenavel. So as linhas que a definem aceitam arrasto. */
   reorderIndex?: number;
   /** `insertBefore` e o indice na lista ORIGINAL antes do qual o item deve ficar. */
@@ -201,6 +215,29 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
    * What the preview draws — the same rule `App` uses to decide what the wheel draws, and it has
    * to stay the same rule: a preview of a different list is worse than no preview.
    */
+  /**
+   * Same value as the shipped default? Compared through JSON so an object-valued key is judged by
+   * its contents; every scalar in `UIConfig` gets the same answer either way.
+   *
+   * Component scope, not inside the items memo: the rows declare which key they edit, and the
+   * revert is attached where they are rendered.
+   */
+  const isAtDefault = useCallback(
+    (key: keyof UIConfig) => {
+      const current = config[key];
+      const fallback = DEFAULT_UI_CONFIG[key];
+      if (Object.is(current, fallback)) return true;
+      /** An unset key IS the default: the value the app runs on comes from the same constant. */
+      if (current === undefined) return true;
+      try {
+        return JSON.stringify(current) === JSON.stringify(fallback);
+      } catch (e) {
+        return false;
+      }
+    },
+    [config],
+  );
+
   const previewApps = useMemo(() => {
     const workspace = config.workspaces[config.activeWorkspaceIndex];
     return workspace?.apps?.length ? workspace.apps : apps;
@@ -571,12 +608,16 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
       onChange: (value: number) => void,
       format: (value: number) => string,
       step = 1,
-    ): SettingItem => ({ key, group, title, description, kind: 'range', raw, min, max, step, onChange, format, value: format(raw) });
+      configKey?: keyof UIConfig,
+    ): SettingItem => ({
+      key, group, title, description, kind: 'range', raw, min, max, step, onChange, format,
+      value: format(raw), configKey,
+    });
 
     return {
       general: [
         {
-          key: 'openAtLogin', group: 'Startup', title: 'Start with Windows',
+          key: 'openAtLogin', configKey: 'openAtLogin', group: 'Startup', title: 'Start with Windows',
           description: 'Rovyl is ready as soon as you sign in to Windows.',
           kind: 'bool', enabled: Boolean(config.openAtLogin),
           onToggle: () => {
@@ -586,7 +627,7 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
           },
         },
         {
-          key: 'workspaceSwitchMode', group: 'Workspaces', title: 'Workspace switching',
+          key: 'workspaceSwitchMode', configKey: 'workspaceSwitchMode', group: 'Workspaces', title: 'Workspace switching',
           description: 'Use the visual wheel picker or number keys.',
           kind: 'segmented', current: config.workspaceSwitchMode ?? 'picker',
           choices: [{ value: 'picker', label: 'Picker' }, { value: 'hotkeys', label: 'Keys' }],
@@ -600,13 +641,13 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
           kind: 'open', value: config.globalShortcut, onOpen: () => setEditor({ kind: 'shortcut' }),
         },
         {
-          key: 'mouse', group: 'Mouse', title: 'Mouse trigger',
+          key: 'mouse', configKey: 'enableMouseTrigger', group: 'Mouse', title: 'Mouse trigger',
           description: 'Open Rovyl with a mouse button instead of the keyboard.',
           kind: 'bool', enabled: config.enableMouseTrigger,
           onToggle: () => update('enableMouseTrigger', !config.enableMouseTrigger),
         },
         {
-          key: 'mouseButton', group: 'Mouse', title: 'Trigger button',
+          key: 'mouseButton', configKey: 'mouseTriggerButton', group: 'Mouse', title: 'Trigger button',
           description: 'Side buttons are usually free; left and right stay with Windows.',
           kind: 'segmented', current: config.mouseTriggerButton ?? 'middle',
           choices: [
@@ -617,16 +658,17 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
           onChange: (value) => update('mouseTriggerButton', value as UIConfig['mouseTriggerButton']),
         },
         {
-          key: 'mouseMode', group: 'Mouse', title: 'Gesture behavior',
+          key: 'mouseMode', configKey: 'mouseTriggerMode', group: 'Mouse', title: 'Gesture behavior',
           description: 'Click keeps the wheel open; hold runs the selection on release.',
           kind: 'segmented', current: config.mouseTriggerMode ?? 'click',
           choices: [{ value: 'click', label: 'Click' }, { value: 'hold', label: 'Hold' }],
           onChange: (value) => update('mouseTriggerMode', value as UIConfig['mouseTriggerMode']),
         },
         range('threshold', 'Position', 'Activation zone', 'Cursor distance required to confirm a target.',
-          config.activationThreshold, 20, 120, (value) => update('activationThreshold', value), (value) => `${Math.round(value)} px`),
+          config.activationThreshold, 20, 120, (value) => update('activationThreshold', value), (value) => `${Math.round(value)} px`,
+          1, 'activationThreshold'),
         {
-          key: 'instant', group: 'Hands-free', title: 'Launch without clicking',
+          key: 'instant', configKey: 'radialInstantActivate', group: 'Hands-free', title: 'Launch without clicking',
           description:
             'Hides the pointer and picks by direction — move toward a target and it opens by itself.',
           /**
@@ -659,6 +701,7 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
           ? [
               {
                 key: 'instantSensitivity',
+                configKey: 'radialInstantSensitivity' as const,
                 group: 'Hands-free',
                 title: 'Direction sensitivity',
                 description:
@@ -683,32 +726,35 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
                  * escala continua a dizer o tempo.
                  */
                 (value) => (Math.round(value) === 0 ? 'Instant' : `${Math.round(value)} ms`),
-                DWELL_MS_STEP),
+                DWELL_MS_STEP, 'radialInstantDwellMs'),
             ]
           : []),
       ],
       appearance: [
         {
-          key: 'theme', group: 'Theme', title: 'Rovyl surfaces',
+          key: 'theme', configKey: 'appearanceTheme', group: 'Theme', title: 'Rovyl surfaces',
           description: 'Applies to the window and title bar. The wheel remains dark.',
           kind: 'segmented', current: theme,
           choices: [{ value: 'black', label: 'Black' }, { value: 'white', label: 'White' }],
           onChange: (value) => update('appearanceTheme', value as UIConfig['appearanceTheme']),
         },
         range('radius', 'Wheel', 'Orbital radius', 'Perceived wheel diameter.',
-          config.menuRadius, 90, 220, (value) => update('menuRadius', value), (value) => `${Math.round(value)} px`),
+          config.menuRadius, 90, 220, (value) => update('menuRadius', value), (value) => `${Math.round(value)} px`,
+          1, 'menuRadius'),
         range('iconSize', 'Wheel', 'Icon size', 'Visual weight of each target.',
-          config.iconSize, 36, 92, (value) => update('iconSize', value), (value) => `${Math.round(value)} px`),
+          config.iconSize, 36, 92, (value) => update('iconSize', value), (value) => `${Math.round(value)} px`,
+          1, 'iconSize'),
         range('spacing', 'Wheel', 'Target spacing', 'Free space between items.',
-          config.appSpacing ?? 10, 0, 40, (value) => update('appSpacing', value), (value) => `${Math.round(value)} px`),
+          config.appSpacing ?? 10, 0, 40, (value) => update('appSpacing', value), (value) => `${Math.round(value)} px`,
+          1, 'appSpacing'),
         {
-          key: 'radialHoverColor', group: 'Wheel', title: 'Hover color',
+          key: 'radialHoverColor', configKey: 'radialHoverColor', group: 'Wheel', title: 'Hover color',
           description: 'Color used by the target under the pointer.',
           kind: 'color', value: config.radialHoverColor ?? '#FFFFFF',
           onChange: (value) => update('radialHoverColor', String(value)),
         },
         {
-          key: 'aim', group: 'Wheel', title: 'Targeting',
+          key: 'aim', configKey: 'radialSelectionMode', group: 'Wheel', title: 'Targeting',
           /**
            * Com a execução sem clique ligada não há ponteiro no ecrã, portanto "mirar com o
            * ponteiro" não é uma opção que possa existir — a roda passa sempre a setores por
@@ -730,13 +776,14 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
           onChange: (value) => update('radialSelectionMode', value as UIConfig['radialSelectionMode']),
         },
         {
-          key: 'labels', group: 'Wheel', title: 'Persistent labels',
+          key: 'labels', configKey: 'alwaysShowAppLabels', group: 'Wheel', title: 'Persistent labels',
           description: 'Keep every target name visible.',
           kind: 'bool', enabled: config.alwaysShowAppLabels,
           onToggle: () => update('alwaysShowAppLabels', !config.alwaysShowAppLabels),
         },
         range('backdrop', 'Presence', 'Background dimming', 'How much the rest of the screen recedes.',
-          config.backdropOpacity ?? 1, 0, 1, (value) => update('backdropOpacity', value), (value) => `${Math.round(value * 100)}%`, 0.01),
+          config.backdropOpacity ?? 1, 0, 1, (value) => update('backdropOpacity', value), (value) => `${Math.round(value * 100)}%`,
+          0.01, 'backdropOpacity'),
       ],
       spaces: [
         ...config.workspaces.map((workspace, index) => ({
@@ -974,7 +1021,28 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
                       ) : (
                         <div className="zs-rows">
                           {group.items.map((item) => (
-                            <SettingRow key={item.key} item={item} />
+                            <SettingRow
+                              key={item.key}
+                              item={item}
+                              /**
+                               * Derived here rather than in each row's definition: one rule for
+                               * seventeen rows, and a row that stops matching `DEFAULT_UI_CONFIG`
+                               * cannot go on claiming it is at its default.
+                               */
+                              onResetToDefault={
+                                item.configKey && !isAtDefault(item.configKey)
+                                  ? () => {
+                                      const key = item.configKey as keyof UIConfig;
+                                      update(key, DEFAULT_UI_CONFIG[key]);
+                                      if (key === 'openAtLogin') {
+                                        window.electron?.setLoginItemSettings?.({
+                                          openAtLogin: Boolean(DEFAULT_UI_CONFIG.openAtLogin),
+                                        });
+                                      }
+                                    }
+                                  : undefined
+                              }
+                            />
                           ))}
                         </div>
                       )}
@@ -1046,7 +1114,14 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
 };
 
 /** Uma linha, uma estrutura: cópia à esquerda, controlo alinhado à direita. */
-function SettingRow({ item }: { item: SettingItem }) {
+function SettingRow({
+  item,
+  onResetToDefault,
+}: {
+  item: SettingItem;
+  /** Present only while the row differs from `DEFAULT_UI_CONFIG`; absent is "nothing to revert". */
+  onResetToDefault?: () => void;
+}) {
   const ActionIcon = item.actionIcon;
   const describedBy = item.description ? `${item.key}-desc` : undefined;
   const reorderable = typeof item.reorderIndex === 'number' && Boolean(item.onReorder);
@@ -1202,6 +1277,23 @@ function SettingRow({ item }: { item: SettingItem }) {
             <button type="button" className="zs-btn" onClick={() => setConfirming(false)}>Cancel</button>
             <button type="button" className="zs-btn is-danger" onClick={item.onRun}>{item.confirm.cta}</button>
           </div>
+        )}
+
+        {/*
+          Only on a row that has been changed, so the column stays empty on a settings page nobody
+          has touched — the button is the answer to "what did I do here", and a row of them next to
+          untouched values would be the question instead.
+        */}
+        {onResetToDefault && (
+          <button
+            type="button"
+            className="zs-row-revert"
+            onClick={onResetToDefault}
+            aria-label={`Reset ${item.title} to default`}
+            title="Reset to default"
+          >
+            <RotateCcw size={13} strokeWidth={1.9} />
+          </button>
         )}
       </div>
 
