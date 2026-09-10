@@ -170,9 +170,6 @@ its section, and a retired one keeps its number rather than being reused.
 
 ## 4. UX and intuitiveness
 
-- [ ] **4.4** **No undo anywhere.** Deleting a shortcut, or "Restore defaults", is permanent. Workspace
-  deletion got an undo toast with **4.3**; the toast itself (`showToast(message, undo?)`, held while
-  hovered) is the mechanism to reuse for the rest.
 - [ ] **4.5** **No shortcut-conflict detection while recording.** Conflict surfaces later as a toast; warn
   during the key capture instead.
 - [ ] **4.6** **No per-setting "reset to default".**

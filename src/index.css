@@ -337,6 +337,26 @@
 .zs-row-copy small { display: block; margin-top: 3px; color: var(--zn-text-2); font-size: 11.5px; line-height: 1.45; }
 .zs-row-control { display: flex; align-items: center; justify-content: flex-end; gap: var(--zn-2); }
 .zs-btn.is-delete-icon { width: 32px; padding-inline: 0; justify-content: center; color: #ef7c7c; }
+/* Second press on an action nothing can undo. Red only on the button that does it — a red row
+   would read as an error, and nothing has gone wrong yet. */
+.zs-confirm-actions { display: flex; align-items: center; gap: var(--zn-2); }
+.zs-btn.is-danger { color: #ef7c7c; border-color: rgba(239, 124, 124, .45); background: rgba(239, 124, 124, .09); }
+.zs-btn.is-danger:hover { color: #ff9090; border-color: rgba(239, 124, 124, .7); background: rgba(239, 124, 124, .16); }
+[data-zn-theme="white"] .zs-btn.is-danger { color: #a52020; border-color: rgba(165, 32, 32, .4); background: rgba(165, 32, 32, .07); }
+[data-zn-theme="white"] .zs-btn.is-danger:hover { color: #8c1a1a; border-color: rgba(165, 32, 32, .6); background: rgba(165, 32, 32, .13); }
+.zs-confirm-body {
+  grid-column: 1 / -1;
+  display: grid; grid-template-columns: 13px minmax(0, 1fr); align-items: start; gap: var(--zn-2);
+  margin: var(--zn-3) 0 0; padding: var(--zn-2) var(--zn-3);
+  border: 1px solid rgba(239, 124, 124, .28); border-radius: var(--zn-r-chip);
+  background: rgba(239, 124, 124, .07); color: rgba(244, 168, 168, .95);
+  font-size: 10.5px; line-height: 1.5;
+}
+.zs-confirm-body svg { margin-top: 1px; color: rgba(244, 168, 168, .9); }
+[data-zn-theme="white"] .zs-confirm-body {
+  border-color: rgba(165, 32, 32, .3); background: rgba(165, 32, 32, .07); color: rgba(124, 24, 24, .95);
+}
+[data-zn-theme="white"] .zs-confirm-body svg { color: rgba(165, 32, 32, .9); }
 .zs-btn.is-delete-icon:hover { border-color: rgba(239, 68, 68, .34); background: rgba(239, 68, 68, .09); color: #ff9b9b; }
 /* Reordenar por arrasto — mesmo vocabulario da lista de atalhos de um workspace:
    coluna reservada, manipulo sem tinta ate ao hover, marca de insercao recuada. */

@@ -92,6 +92,12 @@ export interface SettingsNav {
   focusShortcut?: { workspaceIndex: number; appId: string } | null;
 }
 
+/** Patch a workspace directly, or from what it is at the moment the update runs. See `updateWorkspace`. */
+export type WorkspaceUpdater = (
+  index: number,
+  patch: Partial<Workspace> | ((workspace: Workspace) => Partial<Workspace>),
+) => void;
+
 /** O modal fica reservado ao que não cabe numa linha: listas longas, gravação e edição. */
 type Editor =
   | { kind: 'shortcut' }
@@ -121,6 +127,16 @@ interface SettingItem {
   onRun?: () => void;
   actionLabel?: string;
   actionIcon?: LucideIcon;
+  /**
+   * A second press, in the row, for an action nothing can take back.
+   *
+   * Everything else destructive in this panel deletes immediately and offers Undo, which is the
+   * better trade because it costs nothing to the people who meant it. That trade needs the action
+   * to be reversible, and "Restore defaults" is not: main deletes the config files and the icon
+   * store, clears session storage, and relaunches — there is no session left for a toast to live
+   * in, let alone anything to put back.
+   */
+  confirm?: { body: string; cta: string };
   /** Optional destructive shortcut shown beside the regular row control. */
   onDelete?: () => void;
   deleteLabel?: string;
@@ -307,10 +323,21 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
     window.electron?.setGameMode?.(next);
   };
 
-  const updateWorkspace = (index: number, patch: Partial<Workspace>) => {
+  /**
+   * A patch, or a function of the workspace as it is when the update actually runs.
+   *
+   * Undo needs the second form. A patch is built at the moment it is described, and an undo is
+   * described up to seven seconds before anyone presses it — restoring `{ apps: <the old array> }`
+   * would also silently revert whatever else was edited in that window.
+   */
+  const updateWorkspace: WorkspaceUpdater = (index, patch) => {
     setConfig((current) => ({
       ...current,
-      workspaces: current.workspaces.map((workspace, i) => (i === index ? { ...workspace, ...patch } : workspace)),
+      workspaces: current.workspaces.map((workspace, i) =>
+        i === index
+          ? { ...workspace, ...(typeof patch === 'function' ? patch(workspace) : patch) }
+          : workspace,
+      ),
     }));
   };
 
@@ -486,7 +513,6 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
             activeWorkspaceIndex: Math.min(previousActiveIndex, workspaces.length - 1),
           };
         });
-        setToast(null);
       },
     );
   }, [config.workspaces, config.activeWorkspaceIndex, setConfig]);
@@ -808,6 +834,10 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
           key: 'reset', group: 'Data', title: 'Restore defaults',
           description: 'Erase local settings and start over.',
           kind: 'action', actionLabel: 'Restore', onRun: onReset,
+          confirm: {
+            body: 'Every workspace, shortcut, icon and preference on this PC is deleted and Rovyl restarts. This cannot be undone — use Export settings first if you want a copy.',
+            cta: 'Erase everything',
+          },
         },
       ],
     };
@@ -965,6 +995,7 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
               update={update}
               updateWorkspace={updateWorkspace}
               deleteWorkspace={deleteWorkspace}
+              showToast={showToast}
               setConfig={setConfig}
               apps={apps}
               gameMode={gameMode}
@@ -998,7 +1029,13 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
               {toast.undo ? <Undo2 size={13} strokeWidth={2.2} /> : <Check size={13} strokeWidth={2.2} />}
               <span className="zs-toast-text">{toast.message}</span>
               {toast.undo && (
-                <button type="button" className="zs-toast-action" onClick={toast.undo}>Undo</button>
+                <button
+                  type="button"
+                  className="zs-toast-action"
+                  /** Closing here and not in each undo: a toast still offering what it just did is
+                      an invitation to press it twice, and every undo would have to remember. */
+                  onClick={() => { toast.undo?.(); setToast(null); setToastHeld(false); }}
+                >Undo</button>
               )}
             </motion.div>
           )}
@@ -1018,6 +1055,16 @@ function SettingRow({ item }: { item: SettingItem }) {
   const [isDragging, setIsDragging] = useState(false);
   /** So arrasta quem pega no manipulo: a linha inteira arrastavel roubava o clique de abrir. */
   const [armed, setArmed] = useState(false);
+  /**
+   * Armed only while the user is looking at it. A row left holding "Erase everything" is a mine
+   * for whoever scrolls past it later, so the question withdraws itself after ten seconds.
+   */
+  const [confirming, setConfirming] = useState(false);
+  useEffect(() => {
+    if (!confirming) return;
+    const timer = window.setTimeout(() => setConfirming(false), 10000);
+    return () => window.clearTimeout(timer);
+  }, [confirming]);
 
   const dragProps = reorderable
     ? {
@@ -1131,13 +1178,40 @@ function SettingRow({ item }: { item: SettingItem }) {
           </>
         )}
 
-        {item.kind === 'action' && (
+        {item.kind === 'action' && !item.confirm && (
           <button type="button" className="zs-btn" onClick={item.onRun} aria-labelledby={`${item.key}-label`}>
             {ActionIcon && <ActionIcon size={14} strokeWidth={1.9} />}
             {item.actionLabel}
           </button>
         )}
+
+        {item.kind === 'action' && item.confirm && !confirming && (
+          <button
+            type="button"
+            className="zs-btn"
+            onClick={() => setConfirming(true)}
+            aria-labelledby={`${item.key}-label`}
+          >
+            {ActionIcon && <ActionIcon size={14} strokeWidth={1.9} />}
+            {item.actionLabel}
+          </button>
+        )}
+
+        {item.kind === 'action' && item.confirm && confirming && (
+          <div className="zs-confirm-actions">
+            <button type="button" className="zs-btn" onClick={() => setConfirming(false)}>Cancel</button>
+            <button type="button" className="zs-btn is-danger" onClick={item.onRun}>{item.confirm.cta}</button>
+          </div>
+        )}
       </div>
+
+      {/* Under the row, not over it: what it says is the reason the second press exists. */}
+      {item.kind === 'action' && item.confirm && confirming && (
+        <p className="zs-confirm-body" role="alert">
+          <AlertTriangle size={13} strokeWidth={1.9} aria-hidden />
+          <span>{item.confirm.body}</span>
+        </p>
+      )}
 
       {item.kind === 'range' && (
         <div className="zs-slider">
@@ -1337,6 +1411,7 @@ function SettingsEditor({
   update,
   updateWorkspace,
   deleteWorkspace,
+  showToast,
   setConfig,
   apps,
   gameMode,
@@ -1350,9 +1425,10 @@ function SettingsEditor({
   close: () => void;
   config: UIConfig;
   update: <K extends keyof UIConfig>(key: K, value: UIConfig[K]) => void;
-  updateWorkspace: (index: number, patch: Partial<Workspace>) => void;
+  updateWorkspace: WorkspaceUpdater;
   /** The one delete: it renumbers the positional hotkeys and offers the workspace back. */
   deleteWorkspace: (index: number) => void;
+  showToast: (message: string, undo?: () => void) => void;
   setConfig: PrecisionSettingsProps['setConfig'];
   apps: AppItem[];
   gameMode: UIConfig['gameMode'];
@@ -1400,6 +1476,7 @@ function SettingsEditor({
         canDelete={config.workspaces.length > 1}
         focusAppId={focusAppId}
         onFocusApplied={onFocusApplied}
+        showToast={showToast}
         updateWorkspace={updateWorkspace}
         makeActive={() => update('activeWorkspaceIndex', index)}
         /**
@@ -1774,17 +1851,19 @@ function WorkspaceManager({
   deleteWorkspace,
   focusAppId,
   onFocusApplied,
+  showToast,
 }: {
   workspace: Workspace;
   workspaceIndex: number;
   isActive: boolean;
   canDelete: boolean;
-  updateWorkspace: (index: number, patch: Partial<Workspace>) => void;
+  updateWorkspace: WorkspaceUpdater;
   makeActive: () => void;
   deleteWorkspace: () => void;
   /** Set when the user clicked "Fix shortcut" on a failed launch: expand that row and show it. */
   focusAppId?: string | null;
   onFocusApplied?: () => void;
+  showToast: (message: string, undo?: () => void) => void;
 }) {
   const [addMode, setAddMode] = useState<WorkspaceAddMode>(null);
   const { apps: installedApps, loading: loadingApps, error: appsError, reload: loadInstalledApps } =
@@ -1946,6 +2025,38 @@ function WorkspaceManager({
 
   /** Confirmação vinda do main: só um perfil real de IDE habilita a secção de recentes. */
   const ideSupport = useIdeRecentsSupport(workspace.apps);
+
+  /**
+   * Remove a shortcut, and keep it for as long as the toast lives.
+   *
+   * The button did `apps.filter(...)` inline, which lost two things. The item, obviously — a
+   * shortcut with a hand-picked icon and a set of automated commands, gone to a click on a 13px
+   * target between "move down" and "edit". And the expanded editor's place: `editingIndex` is a
+   * position, so deleting a row ABOVE an open one left the editor showing its neighbour, with the
+   * name field already focused on the wrong shortcut. Reorder had always adjusted for that; delete
+   * never did.
+   */
+  const removeItem = (index: number) => {
+    const item = workspace.apps[index];
+    if (!item) return;
+    updateWorkspace(workspaceIndex, {
+      apps: workspace.apps.filter((_, itemIndex) => itemIndex !== index),
+    });
+    setEditingIndex((current) => {
+      if (current === null) return current;
+      if (current === index) return null;
+      return current > index ? current - 1 : current;
+    });
+    showToast(`Removed “${item.label}”`, () => {
+      updateWorkspace(workspaceIndex, (current) => {
+        /** Already back — undone twice, or re-added by hand. Adding it again would duplicate it. */
+        if (current.apps.some((existing) => existing.id === item.id)) return {};
+        const apps = [...current.apps];
+        apps.splice(Math.min(index, apps.length), 0, item);
+        return { apps };
+      });
+    });
+  };
 
   const updateItem = (index: number, patch: Partial<AppItem>) => {
     updateWorkspace(workspaceIndex, {
@@ -2282,7 +2393,7 @@ function WorkspaceManager({
                   <button type="button" disabled={index === 0} onClick={() => moveItem(index, -1)} aria-label={`Move ${item.label} up`}><ChevronUp size={14} /></button>
                   <button type="button" disabled={index === workspace.apps.length - 1} onClick={() => moveItem(index, 1)} aria-label={`Move ${item.label} down`}><ChevronDown size={14} /></button>
                   <button type="button" className={editingIndex === index ? 'is-active' : ''} onClick={() => setEditingIndex(editingIndex === index ? null : index)} aria-label={`Edit ${item.label}`}><Pencil size={13} /></button>
-                  <button type="button" onClick={() => updateWorkspace(workspaceIndex, { apps: workspace.apps.filter((_, itemIndex) => itemIndex !== index) })} aria-label={`Remove ${item.label}`}><Trash2 size={13} /></button>
+                  <button type="button" onClick={() => removeItem(index)} aria-label={`Remove ${item.label}`}><Trash2 size={13} /></button>
                 </div>
               </div>
               {editingIndex === index && (
