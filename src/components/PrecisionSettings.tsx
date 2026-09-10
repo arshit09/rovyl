@@ -850,7 +850,7 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
           key: workspace.id,
           group: 'Your workspaces',
           title: workspace.name,
-          description: `${workspace.apps.length} ${workspace.apps.length === 1 ? 'shortcut' : 'shortcuts'} · ${workspace.hotkey ? `key ${workspace.hotkey}` : 'picker / mouse wheel'}`,
+          description: workspace.hotkey ? `Key ${workspace.hotkey}` : 'Picker / mouse wheel',
           kind: 'open' as const,
           /** Mesmo vocabulário do editor: atual / disponível / pausado. */
           value: config.activeWorkspaceIndex === index ? 'Current' : workspace.enabled ? 'Available' : 'Paused',
@@ -975,27 +975,28 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
   const isEmpty = results.length === 0;
 
   /**
-   * What each section holds, so the sidebar stops being five words with nothing behind them.
+   * Which sections hold something the user has changed, so the sidebar stops being five words with
+   * nothing behind them.
    *
-   * Two facts, both free. The count answers "is there anything in there" without a click. The dot
-   * marks a section holding something that no longer matches `DEFAULT_UI_CONFIG` — which is a
-   * better answer to "what have I changed here" than a recency stamp would be: it needs no clock,
+   * The dot marks a section holding something that no longer matches `DEFAULT_UI_CONFIG` — which is
+   * a better answer to "what have I changed here" than a recency stamp would be: it needs no clock,
    * no per-setting timestamp in the config, and it stays true a month later, when "recently" has
    * stopped meaning anything.
+   *
+   * A row count sat beside it once and was dropped: how many settings a section has is decided by
+   * this file, not by the user, so the number read the same on every visit and answered nothing.
    *
    * It reuses exactly what the per-row revert reuses, so a row and its section can never disagree
    * about whether it has been touched.
    */
-  const sectionMeta = useMemo(() => {
-    const meta = {} as Record<SectionId, { count: number; changed: boolean }>;
+  const sectionChanged = useMemo(() => {
+    const changed = {} as Record<SectionId, boolean>;
     for (const section of SECTIONS) {
-      const rows = sections[section.id] ?? [];
-      meta[section.id] = {
-        count: rows.length,
-        changed: rows.some((row) => row.configKey && !isAtDefault(row.configKey)),
-      };
+      changed[section.id] = (sections[section.id] ?? []).some(
+        (row) => row.configKey && !isAtDefault(row.configKey),
+      );
     }
-    return meta;
+    return changed;
   }, [sections, isAtDefault]);
 
   if (!isOpen) return null;
@@ -1050,13 +1051,10 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
                   <Icon size={15} strokeWidth={1.8} />
                   <span className="zs-nav-label">{section.label}</span>
                   {/*
-                    The count is a `span` so the existing collapse rule takes it away with the label
-                    — a bare number beside an icon says nothing. The dot is deliberately NOT one: it
-                    is the half that still reads at 60px, and it is what makes a collapsed rail
-                    worth looking at.
+                    The dot is deliberately not a `span`: the collapse rule above takes those away
+                    with the label, and this is the half that still reads on a 60px rail.
                   */}
-                  <span className="zs-nav-count">{sectionMeta[section.id].count}</span>
-                  {sectionMeta[section.id].changed && (
+                  {sectionChanged[section.id] && (
                     <i className="zs-nav-dot" role="img" aria-label="Changed from default" title="Changed from default" />
                   )}
                 </button>
@@ -1539,7 +1537,7 @@ function ProtectedAppsManager({ value, onChange }: { value: string; onChange: (v
     <div className="zs-workspace-manager">
       <section className="zs-workspace-shortcuts">
         <div className="zs-workspace-section-head">
-          <div><h3>Selected applications</h3><p>{rows.length} {rows.length === 1 ? 'application' : 'applications'}</p></div>
+          <div><h3>Selected applications</h3></div>
         </div>
         <div className="zs-workspace-items">
           {rows.map((row) => (
@@ -1966,7 +1964,6 @@ function WorkspaceCards({
       {workspaces.map((workspace, index) => {
         const accent = workspace.color || 'currentColor';
         const isCurrent = index === activeIndex;
-        const count = workspace.apps.length;
         return (
           <div
             key={workspace.id}
@@ -2014,10 +2011,12 @@ function WorkspaceCards({
               <b>{workspace.name}</b>
               {workspace.hotkey ? <em>{workspace.hotkey}</em> : null}
             </span>
-            <small>
-              {isCurrent ? 'Current · ' : workspace.enabled ? '' : 'Paused · '}
-              {count} {count === 1 ? 'shortcut' : 'shortcuts'}
-            </small>
+            {/*
+              Only the states worth saying. A tally of shortcuts sat here, read off a thumbnail
+              that already draws every one of them — so the line is now empty, and gone, on a
+              workspace that is simply available.
+            */}
+            {(isCurrent || !workspace.enabled) && <small>{isCurrent ? 'Current' : 'Paused'}</small>}
             {workspaces.length > 1 && (
               <button
                 type="button"
@@ -2394,11 +2393,10 @@ function WorkspaceManager({
               <Check size={15} strokeWidth={2.2} />
             </button>
           </div>
-          <p className="zs-workspace-meta">
-            <span>Key {workspace.hotkey}</span>
-            <i aria-hidden>·</i>
-            <span>{workspace.apps.length} {workspace.apps.length === 1 ? 'shortcut' : 'shortcuts'}</span>
-          </p>
+          {/* Past the ninth workspace `withPositionalHotkeys` assigns 0, which is not a key. */}
+          {workspace.hotkey ? (
+            <p className="zs-workspace-meta"><span>Key {workspace.hotkey}</span></p>
+          ) : null}
         </div>
 {/**
          * Dois estados, dois icones, dois tooltips.
@@ -2466,10 +2464,7 @@ function WorkspaceManager({
 
       <section className="zs-workspace-shortcuts">
         <div className="zs-workspace-section-head">
-          <div>
-            <h3>Shortcuts</h3>
-            <p>{workspace.apps.length} {workspace.apps.length === 1 ? 'configured item' : 'configured items'}</p>
-          </div>
+          <div><h3>Shortcuts</h3></div>
           <div className="zs-add-actions" aria-label="Add shortcut">
             <button type="button" className={addMode === 'app' ? 'is-active' : ''} onClick={() => setAddMode(addMode === 'app' ? null : 'app')}><Monitor size={14} /> Application</button>
             <button type="button" className={addMode === 'url' ? 'is-active' : ''} onClick={() => setAddMode(addMode === 'url' ? null : 'url')}><Globe2 size={14} /> URL</button>
@@ -2612,7 +2607,7 @@ function WorkspaceManager({
                 <WorkspaceItemIcon item={item} />
                 <div className="zs-workspace-item-copy">
                   <b>{item.label}</b>
-                  <small><em>{itemTypeLabel(item)}</em>{item.children ? ` · ${item.children.length} items` : ''}</small>
+                  <small><em>{itemTypeLabel(item)}</em></small>
                 </div>
                 <div className="zs-item-actions">
                   <button type="button" disabled={index === 0} onClick={() => moveItem(index, -1)} aria-label={`Move ${item.label} up`}><ChevronUp size={14} /></button>

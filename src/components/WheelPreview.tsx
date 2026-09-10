@@ -212,7 +212,7 @@ export const WheelPreview: React.FC<{ config: UIConfig; apps: AppItem[] }> = ({ 
       <p className="zs-wheel-caption">
         {isPlaceholder
           ? 'Example shortcuts — this workspace is empty.'
-          : `Your ${items.length === 1 ? 'shortcut' : `${items.length} shortcuts`}, at ${Math.round(scale * 100)}% of actual size.`}
+          : 'Your own shortcuts, shown smaller than they open.'}
       </p>
     </div>
   );

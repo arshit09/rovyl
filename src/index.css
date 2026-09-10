@@ -253,12 +253,6 @@
 }
 .zs-nav button span { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .zs-nav-label { flex: 1; }
-/* How many settings are in there, answered without a click. Tabular figures so the column does not
-   jitter between a 2 and a 12 as the workspace list grows. */
-.zs-nav-count {
-  flex: none; color: var(--zn-text-3); font-size: 11px; font-variant-numeric: tabular-nums;
-}
-.zs-nav button.is-active .zs-nav-count { color: var(--zn-text-2); }
 /* Something in this section no longer matches the shipped default. Not a `span`: the collapse rule
    above hides those, and this is the half worth keeping on a 60px rail. */
 .zs-nav-dot {
@@ -412,7 +406,9 @@
    largura disponivel em vez de fixar colunas, para o painel poder encolher. */
 .zs-ws-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(148px, 1fr)); gap: var(--zn-2); padding-block: var(--zn-2); }
 .zs-ws-card {
-  display: grid; justify-items: center; gap: 2px;
+  /* `align-content` matters: a card with no state line has one row fewer than its neighbours, and
+     stretching would drop its name below theirs. */
+  display: grid; justify-items: center; align-content: start; gap: 2px;
   padding: var(--zn-3) var(--zn-2) var(--zn-2);
   border: 1px solid var(--zn-line); border-radius: var(--zn-r-control);
   background: var(--zn-sunken); color: var(--zn-text); cursor: pointer; text-align: center;
@@ -701,7 +697,6 @@
   display: flex; align-items: center; gap: var(--zn-2);
   color: var(--zn-text-3); font-size: 10.5px;
 }
-.zs-workspace-meta i { font-style: normal; opacity: .6; }
 .zs-workspace-name-field { min-width: 0; display: flex; flex-direction: column; gap: var(--zn-2); }
 .zs-workspace-name-field > span { color: var(--zn-text-2); font-size: 11.5px; font-weight: 500; }
 .zs-workspace-name-field > input {
@@ -749,7 +744,6 @@
 .zs-workspace-shortcuts { min-width: 0; }
 .zs-workspace-section-head { display: flex; align-items: flex-end; justify-content: space-between; gap: var(--zn-4); margin-bottom: var(--zn-3); }
 .zs-workspace-section-head h3 { margin: 0; color: var(--zn-text); font-size: 13px; font-weight: 600; }
-.zs-workspace-section-head p { margin: 3px 0 0; color: var(--zn-text-3); font-size: 10.5px; }
 .zs-add-actions { display: flex; gap: var(--zn-1); }
 .zs-add-actions button {
   height: 28px; display: inline-flex; align-items: center; gap: 6px; padding-inline: 9px;
