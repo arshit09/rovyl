@@ -991,6 +991,42 @@
 }
 .zn-radial-filter-count { color: rgba(255, 255, 255, .5); font: 450 11px/1 var(--font-ui); }
 
+/* ── First run ──────────────────────────────────────────────────────────────
+   Above the settings surface and below the fault card: an error still has to be readable, even on
+   the first launch that produced it. */
+.zs-firstrun-layer {
+  position: absolute; inset: var(--zenith-title-bar-h) 0 0; z-index: 60;
+  display: grid; place-items: center; padding: var(--zn-6);
+  background: rgba(6, 7, 9, .72);
+}
+[data-zn-theme="white"] .zs-firstrun-layer { background: rgba(232, 232, 234, .78); }
+.zs-firstrun {
+  width: min(460px, 100%); max-height: 100%; overflow-y: auto;
+  padding: var(--zn-7) var(--zn-7) var(--zn-6);
+  border: 1px solid var(--zn-line); border-radius: var(--zn-r-panel, 14px);
+  background: var(--zn-surface); box-shadow: var(--zn-elev);
+}
+.zs-firstrun header { margin-bottom: var(--zn-6); }
+.zs-firstrun h1 { margin: 0 0 var(--zn-1); color: var(--zn-text); font-size: 19px; font-weight: 600; letter-spacing: -.02em; }
+.zs-firstrun header p { margin: 0; color: var(--zn-text-2); font-size: 12px; line-height: 1.5; }
+.zs-firstrun-points { display: grid; gap: var(--zn-5); margin: 0 0 var(--zn-6); padding: 0; list-style: none; }
+.zs-firstrun-points li { display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: var(--zn-3); align-items: start; }
+.zs-firstrun-mark {
+  width: 26px; height: 26px; display: grid; place-items: center;
+  color: var(--zn-text-2); border: 1px solid var(--zn-line); border-radius: 50%; background: var(--zn-raised);
+}
+.zs-firstrun-points b { display: block; margin-bottom: 3px; color: var(--zn-text); font-size: 12.5px; font-weight: 550; }
+.zs-firstrun-points p { margin: 0; color: var(--zn-text-2); font-size: 11.5px; line-height: 1.55; }
+.zs-firstrun kbd {
+  display: inline-block; min-width: 22px; padding: 3px 6px; margin: 0 1px;
+  color: var(--zn-text); border: 1px solid var(--zn-line-strong); border-radius: var(--zn-r-chip);
+  background: var(--zn-raised); font: 500 11px/1 var(--font-ui); text-align: center; vertical-align: baseline;
+}
+.zs-firstrun-plus { margin: 0 2px; color: var(--zn-text-3); }
+.zs-firstrun footer { display: flex; align-items: center; gap: var(--zn-3); flex-wrap: wrap; }
+.zs-firstrun footer .zs-btn { flex: none; }
+.zs-firstrun footer small { color: var(--zn-text-3); font-size: 10.5px; line-height: 1.4; }
+
 /* ══ Falha de arranque ═════════════════════════════════════════════════════
    O cartão vive FORA de `.zs-shell` — é irmão do painel, não filho — por isso
    nada aqui pode depender de um seletor `.zs-shell …`: nem o anel de foco nem

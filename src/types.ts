@@ -115,6 +115,11 @@ export interface UIConfig {
   clockPosition: ClockHudPosition;
   gameMode: GameModeConfig;
   globalShortcut: string; // New: Global keyboard shortcut (e.g. 'Alt+Space')
+  /**
+   * Whether the first-run card has been dismissed. Absent means "not yet" — and any config that
+   * came off disk is marked true on load, so it can only ever be false on a genuinely new profile.
+   */
+  hasSeenOnboarding?: boolean;
   workspaces: Workspace[]; // New: Workspace configurations
   activeWorkspaceIndex: number; // New: Currently active workspace (0-indexed)
   /**

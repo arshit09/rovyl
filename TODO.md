@@ -170,8 +170,6 @@ its section, and a retired one keeps its number rather than being reused.
 
 ## 4. UX and intuitiveness
 
-- [ ] **4.11** **First-run onboarding is gone** (WelcomeScreen is dead) — new users get a wheel and no
-  explanation of the trigger, workspaces, or aiming modes.
 - [ ] **4.12** **Start Menu discovery has no progress UI** — 20 s deferral at login leaves an empty wheel with
   nothing on screen explaining it (`App.tsx:47`).
 - [ ] **4.13** **Dwell mode has no in-app cancel explanation** — the arc is the only signal.

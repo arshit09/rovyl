@@ -40,6 +40,10 @@ const PanelTransition = React.lazy(() =>
 const ErrorOverlays = React.lazy(() =>
   import('./components/ErrorOverlays').then((module) => ({ default: module.ErrorOverlays })),
 );
+/** Shown once, on a profile that has never run before, and after that never fetched again. */
+const FirstRun = React.lazy(() =>
+  import('./components/FirstRun').then((module) => ({ default: module.FirstRun })),
+);
 
 const LS_MAIN_DISCOVERY_DONE = 'zenith_main_discovery_done';
 
@@ -879,6 +883,22 @@ export default function App() {
 
       /** Perfil do disco / migração LS — não forçar `mainStartMenuDiscoveryDone=true` só por haver blob (quebrava scan do Menu Iniciar e misturava LS obsoleto com o disco). */
       const loadedPersistedBlob = !!(finalData || loadedFromLocalStorageMigration);
+
+      /**
+       * A config written before this flag existed belongs to someone already using Rovyl, and the
+       * welcome card is for people who are not. `...DEFAULT_UI_CONFIG` above fills the missing key
+       * with `false`, so without this every existing user would be welcomed to an app they have had
+       * for months.
+       *
+       * The test is that the key is ABSENT, not that a config exists at all. A first run saves one
+       * within seconds — before anybody has read the card, let alone dismissed it — and treating
+       * that as "already onboarded" meant closing the window once was enough to never be told what
+       * the trigger key is.
+       */
+      const loadedConfig = finalData?.config;
+      if (loadedConfig && !('hasSeenOnboarding' in loadedConfig)) {
+        nextConfig = { ...nextConfig, hasSeenOnboarding: true };
+      }
 
       window.electron?.savePersistenceLog?.(
         `load | source=${finalData ? 'disk' : loadedFromLocalStorageMigration ? 'localStorage' : 'none'} ws=${nextConfig.workspaces?.length ?? 0} discoveryDone=${nextConfig.mainStartMenuDiscoveryDone}`,
@@ -2677,6 +2697,20 @@ export default function App() {
               radialNativeRevealToken === radialPendingPaintToken
             }
           />
+        )}
+
+        {/*
+          The welcome card, over whatever the panel is showing. Gated on the panel being on screen
+          because in island mode the HWND ignores the mouse — a dialog drawn there could never be
+          dismissed, and it is the one thing on screen that must be.
+        */}
+        {isLoaded && config.hasSeenOnboarding !== true && panelSurfaceOpen && (
+          <React.Suspense fallback={null}>
+            <FirstRun
+              config={config}
+              onDismiss={() => setConfig((current) => ({ ...current, hasSeenOnboarding: true }))}
+            />
+          </React.Suspense>
         )}
 
         {/**

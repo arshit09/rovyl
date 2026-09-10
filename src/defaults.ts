@@ -239,6 +239,7 @@ export const DEFAULT_UI_CONFIG: UIConfig = {
     autoDetectGames: false,
   },
   globalShortcut: "Alt+Z",
+  hasSeenOnboarding: false,
   workspaces: DEFAULT_WORKSPACES,
   activeWorkspaceIndex: 0,
   workspaceSwitchMode: 'picker',
