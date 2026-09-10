@@ -43,6 +43,7 @@ import { getIcon } from '../iconMap';
 import { resolveWebsiteIconFields } from '../siteFavicon';
 import { SmartIcon } from './SmartIcon';
 import { IconPicker } from './IconPicker';
+import { RovylLogo } from './RovylLogo';
 import '../fonts-display.css';
 import { NativeAppIcon, useInstalledApps, type InstalledApp } from './installedApps';
 import { radialCrowding } from '../utils/workspaceRadial';
@@ -1064,7 +1065,11 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
           </nav>
 
           <div className="zs-sidebar-foot">
-            <b>Rovyl</b>
+            {/* The mark rides with the name so the foot reads as the app signing itself, not as a stray label. */}
+            <span className="zs-sidebar-brand">
+              <RovylLogo size={13} color="currentColor" />
+              <b>Rovyl</b>
+            </span>
             {appVersion && <span>{appVersion}</span>}
           </div>
         </aside>

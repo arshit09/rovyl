@@ -273,8 +273,10 @@
 .zs-nav button.is-active { color: var(--zn-text); background: var(--zn-raised); box-shadow: inset 0 0 0 1px var(--zn-line); }
 .zs-nav button.is-active svg { color: var(--zn-text); }
 
-.zs-sidebar-foot { margin-top: auto; display: flex; align-items: baseline; justify-content: space-between; gap: var(--zn-2); padding: var(--zn-3) var(--zn-2) var(--zn-1); border-top: 1px solid var(--zn-line); color: var(--zn-text-3); font-size: 11px; }
+.zs-sidebar-foot { margin-top: auto; display: flex; align-items: center; justify-content: space-between; gap: var(--zn-2); padding: var(--zn-3) var(--zn-2) var(--zn-1); border-top: 1px solid var(--zn-line); color: var(--zn-text-3); font-size: 11px; }
 .zs-sidebar-foot b { color: var(--zn-text-2); font-weight: 500; }
+.zs-sidebar-foot .zs-sidebar-brand { display: inline-flex; align-items: center; gap: 6px; min-width: 0; color: var(--zn-text-2); }
+.zs-sidebar-brand svg { flex: none; opacity: 0.85; }
 .zs-sidebar-foot span { color: var(--zn-text-3); font-variant-numeric: tabular-nums; }
 
 /* ── Content ────────────────────────────────────────────────────────────── */
