@@ -345,6 +345,10 @@
 .zs-row-copy b { display: block; color: var(--zn-text); font-size: 13px; font-weight: 500; line-height: 1.35; letter-spacing: -.008em; }
 .zs-row-copy small { display: block; margin-top: 3px; color: var(--zn-text-2); font-size: 11.5px; line-height: 1.45; }
 .zs-row-control { display: flex; align-items: center; justify-content: flex-end; gap: var(--zn-2); }
+/* A coluna do revert vem antes do controlo e existe SEMPRE, mesmo vazia: e ela que garante que o
+   interruptor esta no mesmo sitio antes e depois do primeiro clique. Reservada em todas as linhas,
+   porque uma linha que so a reserva quando muda volta a empurrar o controlo. */
+.zs-row-revert-slot { flex: none; display: grid; place-items: center; width: var(--zn-ctl-sm); height: var(--zn-ctl-sm); }
 /* Revert-to-default. Dim until the row is hovered or it has focus: it marks a row that has been
    changed, and a bright icon beside every changed setting reads as a warning about the change. */
 .zs-row-revert {
@@ -474,13 +478,25 @@
   background: transparent; color: var(--zn-text-2); cursor: pointer;
   transition: color .15s var(--zn-ease), border-color .15s var(--zn-ease), background .15s var(--zn-ease);
 }
-.zs-flag-btn:hover:not(:disabled) { color: var(--zn-text); border-color: var(--zn-line-strong); background: var(--zn-raised); }
+/* Mesmo cuidado do interruptor: o rato so pinta o estado a que pertence. A
+   regra unica de `:hover` apagava o botao ligado — devolvia-lhe o fundo de
+   estado e o icone claro, sobre o solido igualmente claro. */
+.zs-flag-btn:not(.is-on):hover:not(:disabled):not(.is-inert) { color: var(--zn-text); border-color: var(--zn-line-strong); background: var(--zn-raised); }
+.zs-flag-btn:not(.is-on):active:not(:disabled):not(.is-inert) { background: var(--zn-pressed); }
 .zs-flag-btn.is-on { color: var(--zn-on-solid); border-color: var(--zn-solid); background: var(--zn-solid); }
-/* Inerte, nao desativado: continua a receber o rato para poder explicar-se. */
+.zs-flag-btn.is-on:hover:not(:disabled):not(.is-inert) {
+  color: var(--zn-on-solid);
+  border-color: color-mix(in srgb, var(--zn-solid) 86%, var(--zn-surface));
+  background: color-mix(in srgb, var(--zn-solid) 86%, var(--zn-surface));
+}
+.zs-flag-btn.is-on:active:not(:disabled):not(.is-inert) {
+  border-color: color-mix(in srgb, var(--zn-solid) 74%, var(--zn-surface));
+  background: color-mix(in srgb, var(--zn-solid) 74%, var(--zn-surface));
+}
+/* Inerte, nao desativado: continua a receber o rato para poder explicar-se —
+   e por isso fica de fora das regras de rato acima, sem cor a mudar. */
 .zs-flag-btn.is-inert { cursor: default; }
-.zs-flag-btn.is-inert:hover { border-color: var(--zn-line); background: transparent; }
 .zs-flag-btn.is-on.is-inert { opacity: .8; }
-.zs-flag-btn.is-on.is-inert:hover { border-color: var(--zn-solid); background: var(--zn-solid); }
 .zs-ws-card.is-new:hover { color: var(--zn-text); }
 
 /* A miniatura e um quadrado com tudo posicionado a partir do centro. */
@@ -533,17 +549,56 @@
 .zs-color-prefix { color: var(--zn-text-3); font: 500 11px/1 var(--font-ui); }
 .zs-shell .zs-color-hex { width: 56px; padding: 0; color: var(--zn-text); border: 0; outline: 0; background: transparent; font: 500 11px/1 var(--font-ui); letter-spacing: .025em; text-transform: uppercase; }
 
+/* Interruptor.
+ *
+ * O estado vive em tres variaveis — trilho, borda e ponto — e cada estado
+ * reescreve-as por inteiro. E o que impede o rato de herdar meia combinacao:
+ * `:hover i` pesava mais do que `[aria-checked="true"] i`, portanto passar
+ * sobre um interruptor ligado repintava o ponto de claro por cima do trilho
+ * ja claro e o ponto desaparecia. Ligado e desligado tem agora regras de rato
+ * proprias, e o ponto e sempre o oposto do trilho que o carrega. */
 .zs-switch {
+  --zs-switch-track: var(--zn-raised);
+  --zs-switch-edge: var(--zn-line-strong);
+  --zs-switch-knob: var(--zn-text-3);
   position: relative; width: 36px; height: 20px; flex: none; padding: 0;
-  border: 1px solid var(--zn-line-strong); border-radius: 999px; background: var(--zn-raised); cursor: pointer;
+  border: 1px solid var(--zs-switch-edge); border-radius: 999px; background: var(--zs-switch-track); cursor: pointer;
   transition: background .18s var(--zn-ease), border-color .18s var(--zn-ease);
 }
-.zs-switch i { position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: var(--zn-text-3); transition: translate .18s var(--zn-ease), background .18s var(--zn-ease); }
-.zs-switch:disabled { cursor: not-allowed; opacity: .45; }
-.zs-switch:hover:not(:disabled) { border-color: var(--zn-text-3); }
-.zs-switch:hover:not(:disabled) i { background: var(--zn-text-2); }
-.zs-switch[aria-checked="true"] { border-color: var(--zn-solid); background: var(--zn-solid); }
-.zs-switch[aria-checked="true"] i { translate: 16px 0; background: var(--zn-on-solid); }
+.zs-switch i {
+  position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%;
+  background: var(--zs-switch-knob);
+  transition: translate .18s var(--zn-ease), width .18s var(--zn-ease), background .18s var(--zn-ease);
+}
+/* Ligado: o par solido do tema, branco/preto e o seu inverso no tema claro. */
+.zs-switch[aria-checked="true"] { --zs-switch-track: var(--zn-solid); --zs-switch-edge: var(--zn-solid); --zs-switch-knob: var(--zn-on-solid); }
+.zs-switch[aria-checked="true"] i { translate: 16px 0; }
+/* Rato, desligado: o trilho acende e o ponto sobe um degrau de contraste. */
+.zs-switch:not([aria-checked="true"]):hover:not(:disabled):not([aria-disabled="true"]) {
+  --zs-switch-track: var(--zn-pressed); --zs-switch-edge: var(--zn-text-3); --zs-switch-knob: var(--zn-text-2);
+}
+/* Rato, ligado: o trilho recua um passo em direcao a superficie — o sinal e o
+   trilho, nunca o ponto, que se mantem opaco para continuar a ler-se. */
+.zs-switch[aria-checked="true"]:hover:not(:disabled):not([aria-disabled="true"]) {
+  --zs-switch-track: color-mix(in srgb, var(--zn-solid) 86%, var(--zn-surface));
+  --zs-switch-edge: color-mix(in srgb, var(--zn-solid) 86%, var(--zn-surface));
+}
+/* Clique: o ponto estica-se ancorado no lado onde ja esta (2px de folga de cada
+   lado: 2 + 13 + 17 = 32 num interior de 34). */
+.zs-switch:active:not(:disabled):not([aria-disabled="true"]) i { width: 17px; }
+.zs-switch[aria-checked="true"]:active:not(:disabled):not([aria-disabled="true"]) i { translate: 13px 0; }
+/* Desativado sem `opacity` global: esta esbatia trilho e ponto na mesma medida
+   e levava consigo a unica coisa que ainda tem de se ler — se esta ligado. */
+.zs-switch:disabled, .zs-switch[aria-disabled="true"] {
+  cursor: not-allowed;
+  --zs-switch-track: var(--zn-hover); --zs-switch-edge: var(--zn-line);
+  --zs-switch-knob: color-mix(in srgb, var(--zn-text-3) 85%, transparent);
+}
+.zs-switch[aria-checked="true"]:disabled, .zs-switch[aria-checked="true"][aria-disabled="true"] {
+  --zs-switch-track: color-mix(in srgb, var(--zn-solid) 50%, transparent);
+  --zs-switch-edge: color-mix(in srgb, var(--zn-solid) 50%, transparent);
+  --zs-switch-knob: color-mix(in srgb, var(--zn-on-solid) 55%, var(--zn-surface));
+}
 
 .zs-segmented { display: inline-flex; gap: 2px; padding: 2px; border: 1px solid var(--zn-line); border-radius: var(--zn-r-control); background: var(--zn-sunken); }
 .zs-segmented button {
@@ -553,8 +608,12 @@
   font-size: 11px; font-weight: 450; white-space: nowrap;
   transition: color .15s var(--zn-ease), background .15s var(--zn-ease);
 }
-.zs-segmented button:hover { color: var(--zn-text); }
+.zs-segmented button:not(.is-selected):hover:not(:disabled) { color: var(--zn-text); background: var(--zn-hover); }
+.zs-segmented button:not(.is-selected):active:not(:disabled) { background: var(--zn-pressed); }
 .zs-segmented button.is-selected { color: var(--zn-text); background: var(--zn-raised); box-shadow: inset 0 0 0 1px var(--zn-line); }
+/* O escolhido ja esta no topo da hierarquia: o rato so o firma mais um degrau. */
+.zs-segmented button.is-selected:hover:not(:disabled) { background: var(--zn-pressed); box-shadow: inset 0 0 0 1px var(--zn-line-strong); }
+.zs-segmented button:disabled { color: var(--zn-text-3); cursor: not-allowed; }
 
 .zs-slider { display: flex; align-items: center; gap: var(--zn-3); }
 /* A folga vertical do campo é maior que a do trilho: é o puxador que sobra da

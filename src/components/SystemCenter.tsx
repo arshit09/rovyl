@@ -252,8 +252,8 @@ const ToggleBtn = ({ icon: Icon, label, isActive, onClick }: any) => (
     className={`
       flex flex-col items-center justify-center gap-2 py-4 rounded-xl border transition-all duration-200
       ${isActive
-        ? 'bg-white text-black border-white shadow-[0_0_15px_rgba(255,255,255,0.3)]'
-        : 'bg-[#141414] text-white/50 border-white/5 hover:bg-[#1a1a1a] hover:border-white/10'
+        ? 'bg-white text-black border-white shadow-[0_0_15px_rgba(255,255,255,0.3)] hover:bg-white/85 hover:border-white/85 active:bg-white/75'
+        : 'bg-[#141414] text-white/50 border-white/5 hover:bg-[#1a1a1a] hover:border-white/10 hover:text-white/80 active:bg-[#1f1f1f]'
       }
     `}
   >

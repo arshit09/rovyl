@@ -953,6 +953,39 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
   const trimmedQuery = query.trim().toLowerCase();
   const activeMeta = SECTIONS.find((section) => section.id === sectionId)!;
 
+  /**
+   * Onde a lista estava, depois de mexer numa definicao.
+   *
+   * Alternar uma opcao a meio da pagina devolvia a lista ao topo, e a linha que se acabara de
+   * tocar ficava fora do ecra — sem forma de confirmar o que se tinha feito. A pagina nao se
+   * desmonta nesse commit, portanto nao ha nada no React a repor a posicao: e o proprio scroll do
+   * Chromium que se perde, e perde-se por mais do que uma via (a subarvore do painel passa por
+   * `display:none` no gesto da roda, e uma opcao que esconde as linhas abaixo dela encolhe o
+   * conteudo por baixo do `scrollTop` atual). Guardar a posicao e reescreve-la depois de cada
+   * commit cobre-as a todas, sem depender de saber qual delas correu.
+   *
+   * `useLayoutEffect` sem lista de dependencias: corre depois de a DOM estar escrita e ANTES da
+   * pintura, portanto a reposicao nunca chega a ver-se. E um ref, nao estado: escrever a cada
+   * evento de scroll nao pode custar um render.
+   */
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const scrollTopRef = useRef(0);
+  /** Mudar de seccao (ou entrar/sair da pesquisa) e outra pagina: essa DEVE comecar no topo. */
+  const scrollKey = trimmedQuery ? 'search' : sectionId;
+  const scrollKeyRef = useRef(scrollKey);
+  useLayoutEffect(() => {
+    const element = scrollRef.current;
+    if (!element) return;
+    if (scrollKeyRef.current !== scrollKey) {
+      scrollKeyRef.current = scrollKey;
+      scrollTopRef.current = 0;
+      element.scrollTop = 0;
+      return;
+    }
+    /** Escreve so quando divergiu: um `scrollTop` igual ainda assim cancelaria um scroll suave. */
+    if (element.scrollTop !== scrollTopRef.current) element.scrollTop = scrollTopRef.current;
+  });
+
   /** Buscar percorre todas as categorias — procurar só na categoria aberta obrigava a adivinhar onde a opção vive. */
   const results = useMemo(() => {
     const matches = (item: SettingItem) =>
@@ -1073,7 +1106,19 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
         </aside>
 
         <main className="zs-main">
-          <div className="zs-scroll">
+          <div
+            className="zs-scroll"
+            ref={scrollRef}
+            onScroll={(event) => {
+              /**
+               * So o que alguem rolou. Uma caixa sem altura e o painel a voltar de `display:none`
+               * com o `scrollTop` ja perdido — gravar esse zero seria gravar exatamente o que
+               * este par de refs existe para desfazer.
+               */
+              if (event.currentTarget.clientHeight === 0) return;
+              scrollTopRef.current = event.currentTarget.scrollTop;
+            }}
+          >
             <div className="zs-canvas">
               <motion.header
                 className="zs-page-head"
@@ -1297,6 +1342,28 @@ function SettingRow({
       </div>
 
       <div className="zs-row-control" onClick={(event) => event.stopPropagation()}>
+        {/*
+          Ahead of the control, and the slot stays even when the button does not.
+
+          The button used to be appended after the control, in a flex box aligned to the right: it
+          did not sit beside the switch, it PUSHED it: the first click on a toggle grew the row's
+          right edge by a button and the switch slid left, out from under the pointer that had just
+          hit it. A reserved column costs the same 26px on every row and never moves anything.
+        */}
+        <span className="zs-row-revert-slot">
+          {onResetToDefault && (
+            <button
+              type="button"
+              className="zs-row-revert"
+              onClick={onResetToDefault}
+              aria-label={`Reset ${item.title} to default`}
+              title="Reset to default"
+            >
+              <RotateCcw size={13} strokeWidth={1.9} />
+            </button>
+          )}
+        </span>
+
         {item.kind === 'bool' && (
           <button
             type="button"
@@ -1376,23 +1443,6 @@ function SettingRow({
             <button type="button" className="zs-btn" onClick={() => setConfirming(false)}>Cancel</button>
             <button type="button" className="zs-btn is-danger" onClick={item.onRun}>{item.confirm.cta}</button>
           </div>
-        )}
-
-        {/*
-          Only on a row that has been changed, so the column stays empty on a settings page nobody
-          has touched — the button is the answer to "what did I do here", and a row of them next to
-          untouched values would be the question instead.
-        */}
-        {onResetToDefault && (
-          <button
-            type="button"
-            className="zs-row-revert"
-            onClick={onResetToDefault}
-            aria-label={`Reset ${item.title} to default`}
-            title="Reset to default"
-          >
-            <RotateCcw size={13} strokeWidth={1.9} />
-          </button>
         )}
       </div>
 
