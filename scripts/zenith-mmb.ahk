@@ -1,18 +1,18 @@
 ; Zenith Radial Menu - MMB Shortcut
-; Este script mapeia o botão do meio do mouse (MMB) para o atalho do Zenith (Alt+Z)
+; This script maps the middle mouse button (MMB) to the Zenith shortcut (Alt+Z)
 
 #NoEnv  ; Recommended for performance and compatibility with future AutoHotkey releases.
 ; #Warn  ; Enable warnings to assist with detecting common errors.
 SendMode Input  ; Recommended for new scripts due to its superior speed and reliability.
 SetWorkingDir %A_ScriptDir%  ; Ensures a consistent starting directory.
 
-; Pressionar MMB para executar ação
+; Press MMB to run the action
 MButton::
-    ; Envia Alt+Z que é o atalho global definido no electron-main.js
+    ; Sends Alt+Z, the global shortcut defined in electron-main.js
     Send, !z
 Return
 
-; Atalho de teste: Ctrl + MMB
+; Test shortcut: Ctrl + MMB
 ^MButton::
     MsgBox, Zenith Radial Menu AHK Script is Active!
 Return

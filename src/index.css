@@ -9,10 +9,10 @@
 @layer base {
   html, body { overflow: hidden; overscroll-behavior: none; }
   /*
-   * Nada de arrastar imagens nem ícones. Numa app de janela — e sobretudo numa roda que se opera
-   * a apontar e largar — o arrasto nativo do browser só produz um fantasma da imagem colado ao
-   * cursor, que interrompe o gesto e não leva a lado nenhum. A seleção de texto sai pela mesma
-   * razão: `Ctrl+A` a azular a interface inteira não é comportamento de aplicação nativa.
+   * No dragging images or icons. In a windowed app — and above all in a wheel operated by
+   * pointing and releasing — the browser's native drag only produces a ghost of the image stuck
+   * to the cursor, which interrupts the gesture and leads nowhere. Text selection goes for the
+   * same reason: `Ctrl+A` turning the whole interface blue is not native application behaviour.
    */
   img, svg { -webkit-user-drag: none; user-select: none; }
   #root { width: 100%; height: 100%; }
@@ -23,12 +23,12 @@
 }
 
 /* ══ Zenith surface tokens ═════════════════════════════════════════════════
-   Linguagem do Modal Radial / QuickAccess levada às superfícies opacas do
-   produto (titlebar + Settings). O "accent" do Zenith é ausência de cor:
-   branco sólido sobre preto, invertido no tema white. Nada de matiz nova.
+   The Radial Modal / QuickAccess language carried over to the product's opaque
+   surfaces (titlebar + Settings). Zenith's "accent" is absence of colour: solid
+   white on black, inverted in the white theme. No new hue.
 
-   Hierarquia (uma só, os dois temas usam os mesmos degraus):
-     bg → sunken (chrome/nav) → surface (conteúdo) → raised (estado) → solid
+   Hierarchy (one only, both themes use the same steps):
+     bg → sunken (chrome/nav) → surface (content) → raised (state) → solid
    ════════════════════════════════════════════════════════════════════════ */
 :root {
   --zn-bg: #151515;
@@ -45,7 +45,7 @@
   --zn-text-2: rgba(255, 255, 255, .55);
   --zn-text-3: rgba(255, 255, 255, .34);
 
-  /* Ação primária: o mesmo par branco/preto do item ativo do radial. */
+  /* Primary action: the same white/black pair as the radial's active item. */
   --zn-solid: #ffffff;
   --zn-on-solid: #0a0a0b;
 
@@ -53,7 +53,7 @@
   --zn-scrim: rgba(6, 6, 8, .66);
   --zn-elev: 0 20px 50px rgba(0, 0, 0, .55);
 
-  /* Escala de espaço — 4px base, sem valores fora dela. */
+  /* Space scale — 4px base, no values outside it. */
   --zn-1: 4px;
   --zn-2: 8px;
   --zn-3: 12px;
@@ -63,13 +63,13 @@
   --zn-8: 32px;
   --zn-10: 40px;
 
-  /* Raio: o raio comunica hierarquia (janela > painel > controlo > chip). */
+  /* Radius: the radius communicates hierarchy (window > panel > control > chip). */
   --zn-r-window: 12px;
   --zn-r-panel: 10px;
   --zn-r-control: 8px;
   --zn-r-chip: 6px;
 
-  /* Altura de controlo e ícone — um valor de cada, reutilizado em tudo. */
+  /* Control and icon height — one value of each, reused everywhere. */
   --zn-ctl: 32px;
   --zn-ctl-sm: 26px;
   --zn-icon: 16px;
@@ -100,9 +100,9 @@
   --zn-elev: 0 18px 44px rgba(0, 0, 0, .16);
 }
 
-/* A janela é uma superfície só: hairline interior, sem sombra recortada a
-   competir com a borda. `hasShadow:false` no main — a separação vem do raio
-   e do contraste, não de um halo desenhado por dentro do próprio rect. */
+/* The window is one surface: interior hairline, no cut-out shadow competing
+   with the border. `hasShadow:false` in main — the separation comes from the
+   radius and the contrast, not from a halo drawn inside the rect itself. */
 .zenith-panel-surface {
   background: var(--zn-bg);
   border-radius: var(--zn-r-window);
@@ -110,24 +110,24 @@
 }
 
 /*
- * O painel pode continuar visível por baixo do radial. Alguns controlos internos
- * usam `pointer-events: auto`, portanto bloquear apenas o contêiner não basta:
- * um descendente ainda pode voltar a ser alvo. `inert` trata foco/teclado e esta
- * regra garante o mesmo bloqueio para todos os eventos de ponteiro.
+ * The panel can stay visible underneath the radial. Some inner controls use
+ * `pointer-events: auto`, so blocking only the container is not enough: a
+ * descendant can still become a target again. `inert` handles focus/keyboard and
+ * this rule guarantees the same block for every pointer event.
  */
 [data-radial-background-inert="true"],
 [data-radial-background-inert="true"] * {
   pointer-events: none !important;
 }
 
-/* A barra do Electron funde-se com a superfície, como uma janela nativa do Windows. */
+/* The Electron bar merges into the surface, like a native Windows window. */
 .zenith-titlebar { background: var(--zn-sunken); border-bottom: 1px solid var(--zn-line); color: var(--zn-text); }
 .zenith-titlebar-wordmark { color: var(--zn-text-2); font: 500 11.5px/1 var(--font-ui); letter-spacing: -.01em; }
-/* Controlos de janela: o Windows não anima o realce destes botões — acende e apaga no
-   momento. Uma transição de 150ms aqui lê-se como efeito da app, não como janela do sistema. */
+/* Window controls: Windows does not animate the highlight on these buttons — it lights up and
+   goes out at once. A 150ms transition here reads as an app effect, not as a system window. */
 .zenith-titlebar-btn { color: var(--zn-text-3); }
-/* Realce do Windows: rectângulo cheio, da altura toda da barra, num cinzento neutro.
-   Um wash translúcido sobre a barra dava um tom sujo e o raio deixava-o a flutuar. */
+/* The Windows highlight: a full rectangle, the whole height of the bar, in a neutral grey.
+   A translucent wash over the bar gave a dirty tone and the radius left it floating. */
 .zenith-titlebar-btn:hover { color: var(--zn-text); background: rgba(255, 255, 255, .08); }
 .zenith-titlebar-btn:active { background: rgba(255, 255, 255, .05); }
 [data-zn-theme="white"] .zenith-titlebar-btn:hover { background: rgba(0, 0, 0, .06); }
@@ -149,12 +149,12 @@
   -webkit-font-smoothing: antialiased;
 }
 /*
- * Saída do painel depois de ativar a licença.
+ * The panel's exit after activating the licence.
  *
- * O fecho da janela é deliberadamente seco — mexer nele traria de volta os flashes do DWM que a
- * máquina de estados do radial existe para evitar. Mas o CONTEÚDO pode sair com calma: encolhe
- * um pouco e desvanece, e só depois a janela desaparece. Ao olho, o que se lê é a janela a
- * fechar-se; ao compositor, nada mudou.
+ * The window close is deliberately abrupt — touching it would bring back the DWM flashes the
+ * radial's state machine exists to avoid. But the CONTENT can leave calmly: it shrinks a little
+ * and fades, and only then does the window go. To the eye, what reads is the window closing;
+ * to the compositor, nothing changed.
  */
 .zs-shell.is-dismissing {
   opacity: 0;
@@ -169,15 +169,15 @@
 .zs-shell *, .zs-shell *::before, .zs-shell *::after { box-sizing: border-box; }
 .zs-shell button, .zs-shell input, .zs-shell textarea, .zs-shell select { font: inherit; }
 .zs-shell :where(button, input, textarea, select, [tabindex]):focus-visible { outline: 2px solid var(--zn-focus); outline-offset: 2px; }
-/* Foco nos campos de texto.
+/* Focus on text fields.
  *
- * O traço de 2px em `--zn-focus` (branco a 55%) é desenhado para botões, onde aparece só na
- * navegação por teclado. Num campo de texto o `:focus-visible` dispara também com o rato, e o
- * resultado era um retângulo claro a envolver o campo a cada clique.
+ * The 2px stroke in `--zn-focus` (white at 55%) is drawn for buttons, where it only shows up on
+ * keyboard navigation. In a text field `:focus-visible` fires with the mouse too, and the
+ * result was a bright rectangle wrapping the field on every click.
  *
- * Aqui o sinal passa a ser a borda a firmar mais um halo suave — segue o raio, lê-se como o
- * campo a acender e não como uma moldura colada por cima. Continua a haver indicação de foco,
- * que é o que a regra existia para garantir. */
+ * Here the signal becomes the border firming up plus a soft halo — it follows the radius, and
+ * reads as the field lighting up and not as a frame stuck on top. There is still a focus
+ * indication, which is what the rule existed to guarantee. */
 .zs-shell :where(input, textarea):focus-visible {
   outline: none;
   border-color: var(--zn-line-strong);
@@ -219,8 +219,8 @@
 }
 
 .zs-sidebar-head { display: flex; align-items: center; justify-content: space-between; gap: var(--zn-2); padding-inline: var(--zn-2); }
-/* Título da barra lateral: tem de estar claramente acima das linhas da navegação (12.5px),
-   senão lê-se como mais um item da lista em vez do nome do painel. */
+/* Sidebar title: it has to sit clearly above the navigation lines (12.5px), otherwise it
+   reads as one more item in the list instead of the panel's name. */
 .zs-sidebar-head h2 { margin: 0; color: var(--zn-text); font-size: 15.5px; font-weight: 600; letter-spacing: -.015em; }
 .zs-sidebar-head button {
   width: var(--zn-ctl-sm); height: var(--zn-ctl-sm); flex: none;
@@ -263,7 +263,7 @@
 .zs-nav button:hover { color: var(--zn-text); background: var(--zn-hover); }
 .zs-nav button:hover svg { color: var(--zn-text-2); }
 
-/* Estado activo discreto: superfície elevada + hairline, nunca uma pill de alto contraste. */
+/* Discreet active state: raised surface + hairline, never a high-contrast pill. */
 .zs-nav button.is-active { color: var(--zn-text); background: var(--zn-raised); box-shadow: inset 0 0 0 1px var(--zn-line); }
 .zs-nav button.is-active svg { color: var(--zn-text); }
 
@@ -284,10 +284,10 @@
 .zs-page-head p { margin: 0; color: var(--zn-text-2); font-size: 12.5px; line-height: 1.45; }
 
 .zs-group + .zs-group { margin-top: var(--zn-6); }
-/* Rótulo de grupo: distinto da descrição (11.5px/400) pelo peso, não por caixa alta nem tracking. */
+/* Group label: set apart from the description (11.5px/400) by weight, not by caps or tracking. */
 .zs-group-title { margin: 0 0 var(--zn-2); color: var(--zn-text-2); font-size: 12px; font-weight: 600; letter-spacing: -.005em; }
 
-/* Composição contínua: os divisores separam, não caixas. */
+/* Continuous composition: dividers separate, not boxes. */
 .zs-rows { border-top: 1px solid var(--zn-line); }
 
 /* ── Wheel preview (Appearance) ─────────────────────────────────────────────
@@ -345,9 +345,9 @@
 .zs-row-copy b { display: block; color: var(--zn-text); font-size: 13px; font-weight: 500; line-height: 1.35; letter-spacing: -.008em; }
 .zs-row-copy small { display: block; margin-top: 3px; color: var(--zn-text-2); font-size: 11.5px; line-height: 1.45; }
 .zs-row-control { display: flex; align-items: center; justify-content: flex-end; gap: var(--zn-2); }
-/* A coluna do revert vem antes do controlo e existe SEMPRE, mesmo vazia: e ela que garante que o
-   interruptor esta no mesmo sitio antes e depois do primeiro clique. Reservada em todas as linhas,
-   porque uma linha que so a reserva quando muda volta a empurrar o controlo. */
+/* The revert column comes before the control and ALWAYS exists, even empty: it is what keeps the
+   switch in the same place before and after the first click. Reserved on every row, because a row
+   that only reserves it once changed pushes the control again. */
 .zs-row-revert-slot { flex: none; display: grid; place-items: center; width: var(--zn-ctl-sm); height: var(--zn-ctl-sm); }
 /* Revert-to-default. Dim until the row is hovered or it has focus: it marks a row that has been
    changed, and a bright icon beside every changed setting reads as a warning about the change. */
@@ -381,8 +381,8 @@
 }
 [data-zn-theme="white"] .zs-confirm-body svg { color: rgba(165, 32, 32, .9); }
 .zs-btn.is-delete-icon:hover { border-color: rgba(239, 68, 68, .34); background: rgba(239, 68, 68, .09); color: #ff9b9b; }
-/* Reordenar por arrasto — mesmo vocabulario da lista de atalhos de um workspace:
-   coluna reservada, manipulo sem tinta ate ao hover, marca de insercao recuada. */
+/* Drag to reorder — the same vocabulary as a workspace's shortcut list:
+   reserved column, grip with no ink until hover, inset insertion mark. */
 .zs-row.is-reorderable { position: relative; grid-template-columns: 16px minmax(0, 1fr) auto; }
 .zs-row-grip {
   display: grid; place-items: center; align-self: stretch;
@@ -405,9 +405,9 @@
 .zs-row.is-slider { grid-template-columns: minmax(0, 1fr) auto; row-gap: var(--zn-3); }
 .zs-row.is-slider .zs-slider { grid-column: 1 / -1; }
 
-/* ── Workspaces em cartoes ──────────────────────────────────────────────────
-   Cada cartao antecipa a roda: os icones reais nas posicoes reais. A grelha adapta a
-   largura disponivel em vez de fixar colunas, para o painel poder encolher. */
+/* ── Workspaces as cards ────────────────────────────────────────────────────
+   Each card previews the wheel: the real icons in the real positions. The grid adapts to
+   the width available instead of fixing columns, so the panel can shrink. */
 .zs-ws-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(148px, 1fr)); gap: var(--zn-2); padding-block: var(--zn-2); }
 .zs-ws-card {
   /* `align-content` matters: a card with no state line has one row fewer than its neighbours, and
@@ -431,8 +431,8 @@
 .zs-ws-card { position: relative; cursor: grab; }
 .zs-ws-card:active { cursor: grabbing; }
 .zs-ws-card.is-dragging { opacity: .35; }
-/* Grelha: a marca de destino e VERTICAL, entre colunas — uma barra horizontal aqui leria-se
-   como separador de linhas e apontaria para o sitio errado. */
+/* Grid: the drop mark is VERTICAL, between columns — a horizontal bar here would read as a
+   row separator and would point at the wrong place. */
 .zs-ws-card.is-drop-before::before,
 .zs-ws-card.is-drop-after::after {
   content: ""; position: absolute; top: 4px; bottom: 4px; width: 2px;
@@ -440,7 +440,7 @@
 }
 .zs-ws-card.is-drop-before::before { left: calc(var(--zn-2) / -2 - 1px); }
 .zs-ws-card.is-drop-after::after { right: calc(var(--zn-2) / -2 - 1px); }
-/* Eliminar mora no cartao, revelado no hover: presente quando se olha, ausente quando nao. */
+/* Delete lives on the card, revealed on hover: there when looked at, gone when not. */
 .zs-ws-card-delete {
   position: absolute; top: 6px; right: 6px;
   display: grid; place-items: center; width: 24px; height: 24px; padding: 0;
@@ -453,12 +453,12 @@
 .zs-ws-card-delete:hover { opacity: 1; color: #ff9b9b; background: rgba(239, 68, 68, .12); }
 .zs-ws-card.is-new { gap: 6px; align-content: center; min-height: 132px; border-style: dashed; color: var(--zn-text-2); cursor: pointer; }
 
-/* Estado do workspace: dois icones, com a explicacao no tooltip em vez de em paragrafos. */
+/* Workspace state: two icons, with the explanation in the tooltip instead of in paragraphs. */
 .zs-workspace-flags { display: flex; align-items: center; gap: var(--zn-1); }
-/* Dica instantanea e com o visual do painel. O `title` nativo demora quase um segundo,
-   herda o estilo do sistema, e nao aparece de todo sobre elementos desativados. */
-/* Aponta para BAIXO: `.zs-editor-body` tem `overflow-y: auto`, e estes botões vivem no topo
-   dele — uma dica para cima saía do contentor e era cortada pelo cabeçalho do editor. */
+/* An instant tip, with the panel's own look. The native `title` takes almost a second,
+   inherits the system style, and does not appear at all over disabled elements. */
+/* Points DOWN: `.zs-editor-body` has `overflow-y: auto`, and these buttons live at the top of
+   it — a tip pointing up left the container and was clipped by the editor's header. */
 .zs-flag-btn[data-tip]::after {
   content: attr(data-tip); position: absolute; top: calc(100% + 6px); left: 50%;
   transform: translateX(-50%) translateY(-3px); z-index: 30;
@@ -478,9 +478,9 @@
   background: transparent; color: var(--zn-text-2); cursor: pointer;
   transition: color .15s var(--zn-ease), border-color .15s var(--zn-ease), background .15s var(--zn-ease);
 }
-/* Mesmo cuidado do interruptor: o rato so pinta o estado a que pertence. A
-   regra unica de `:hover` apagava o botao ligado — devolvia-lhe o fundo de
-   estado e o icone claro, sobre o solido igualmente claro. */
+/* Same care as the switch: the mouse only paints the state it belongs to. A
+   single `:hover` rule erased the on button — it gave it back the state
+   background and the light icon, over the equally light solid. */
 .zs-flag-btn:not(.is-on):hover:not(:disabled):not(.is-inert) { color: var(--zn-text); border-color: var(--zn-line-strong); background: var(--zn-raised); }
 .zs-flag-btn:not(.is-on):active:not(:disabled):not(.is-inert) { background: var(--zn-pressed); }
 .zs-flag-btn.is-on { color: var(--zn-on-solid); border-color: var(--zn-solid); background: var(--zn-solid); }
@@ -493,13 +493,13 @@
   border-color: color-mix(in srgb, var(--zn-solid) 74%, var(--zn-surface));
   background: color-mix(in srgb, var(--zn-solid) 74%, var(--zn-surface));
 }
-/* Inerte, nao desativado: continua a receber o rato para poder explicar-se —
-   e por isso fica de fora das regras de rato acima, sem cor a mudar. */
+/* Inert, not disabled: it still takes the mouse so it can explain itself —
+   and so it stays out of the mouse rules above, with no colour changing. */
 .zs-flag-btn.is-inert { cursor: default; }
 .zs-flag-btn.is-on.is-inert { opacity: .8; }
 .zs-ws-card.is-new:hover { color: var(--zn-text); }
 
-/* A miniatura e um quadrado com tudo posicionado a partir do centro. */
+/* The thumbnail is a square with everything positioned from the centre. */
 .zs-ws-preview { position: relative; display: grid; place-items: center; width: 92px; height: 92px; color: var(--zn-text-2); }
 .zs-ws-preview-ring { position: absolute; width: 68px; height: 68px; border: 1px dashed; border-radius: 50%; }
 .zs-ws-preview-hub { position: absolute; width: 16px; height: 16px; border-radius: 50%; }
@@ -514,7 +514,7 @@
 
 /* ── Controls ───────────────────────────────────────────────────────────── */
 
-/* Todos partilham altura, raio, borda e tipografia. */
+/* They all share height, radius, border and typography. */
 .zs-shell .zs-btn {
   height: var(--zn-ctl); display: inline-flex; align-items: center; gap: var(--zn-2);
   padding-inline: var(--zn-3);
@@ -549,14 +549,14 @@
 .zs-color-prefix { color: var(--zn-text-3); font: 500 11px/1 var(--font-ui); }
 .zs-shell .zs-color-hex { width: 56px; padding: 0; color: var(--zn-text); border: 0; outline: 0; background: transparent; font: 500 11px/1 var(--font-ui); letter-spacing: .025em; text-transform: uppercase; }
 
-/* Interruptor.
+/* Switch.
  *
- * O estado vive em tres variaveis — trilho, borda e ponto — e cada estado
- * reescreve-as por inteiro. E o que impede o rato de herdar meia combinacao:
- * `:hover i` pesava mais do que `[aria-checked="true"] i`, portanto passar
- * sobre um interruptor ligado repintava o ponto de claro por cima do trilho
- * ja claro e o ponto desaparecia. Ligado e desligado tem agora regras de rato
- * proprias, e o ponto e sempre o oposto do trilho que o carrega. */
+ * The state lives in three variables — track, edge and knob — and each state
+ * rewrites all of them. That is what stops the mouse inheriting half a
+ * combination: `:hover i` outweighed `[aria-checked="true"] i`, so passing
+ * over a switch that was on repainted the knob light on top of the already
+ * light track and the knob disappeared. On and off now have their own mouse
+ * rules, and the knob is always the opposite of the track carrying it. */
 .zs-switch {
   --zs-switch-track: var(--zn-raised);
   --zs-switch-edge: var(--zn-line-strong);
@@ -570,25 +570,25 @@
   background: var(--zs-switch-knob);
   transition: translate .18s var(--zn-ease), width .18s var(--zn-ease), background .18s var(--zn-ease);
 }
-/* Ligado: o par solido do tema, branco/preto e o seu inverso no tema claro. */
+/* On: the theme's solid pair, white/black and its inverse in the light theme. */
 .zs-switch[aria-checked="true"] { --zs-switch-track: var(--zn-solid); --zs-switch-edge: var(--zn-solid); --zs-switch-knob: var(--zn-on-solid); }
 .zs-switch[aria-checked="true"] i { translate: 16px 0; }
-/* Rato, desligado: o trilho acende e o ponto sobe um degrau de contraste. */
+/* Mouse, off: the track lights up and the knob climbs one step of contrast. */
 .zs-switch:not([aria-checked="true"]):hover:not(:disabled):not([aria-disabled="true"]) {
   --zs-switch-track: var(--zn-pressed); --zs-switch-edge: var(--zn-text-3); --zs-switch-knob: var(--zn-text-2);
 }
-/* Rato, ligado: o trilho recua um passo em direcao a superficie — o sinal e o
-   trilho, nunca o ponto, que se mantem opaco para continuar a ler-se. */
+/* Mouse, on: the track steps back towards the surface — the signal is the
+   track, never the knob, which stays opaque so it keeps reading. */
 .zs-switch[aria-checked="true"]:hover:not(:disabled):not([aria-disabled="true"]) {
   --zs-switch-track: color-mix(in srgb, var(--zn-solid) 86%, var(--zn-surface));
   --zs-switch-edge: color-mix(in srgb, var(--zn-solid) 86%, var(--zn-surface));
 }
-/* Clique: o ponto estica-se ancorado no lado onde ja esta (2px de folga de cada
-   lado: 2 + 13 + 17 = 32 num interior de 34). */
+/* Click: the knob stretches anchored on the side it is already on (2px of slack
+   each side: 2 + 13 + 17 = 32 in an interior of 34). */
 .zs-switch:active:not(:disabled):not([aria-disabled="true"]) i { width: 17px; }
 .zs-switch[aria-checked="true"]:active:not(:disabled):not([aria-disabled="true"]) i { translate: 13px 0; }
-/* Desativado sem `opacity` global: esta esbatia trilho e ponto na mesma medida
-   e levava consigo a unica coisa que ainda tem de se ler — se esta ligado. */
+/* Disabled without a global `opacity`: that dimmed track and knob by the same
+   amount and took with it the one thing that still has to read — whether it is on. */
 .zs-switch:disabled, .zs-switch[aria-disabled="true"] {
   cursor: not-allowed;
   --zs-switch-track: var(--zn-hover); --zs-switch-edge: var(--zn-line);
@@ -611,24 +611,24 @@
 .zs-segmented button:not(.is-selected):hover:not(:disabled) { color: var(--zn-text); background: var(--zn-hover); }
 .zs-segmented button:not(.is-selected):active:not(:disabled) { background: var(--zn-pressed); }
 .zs-segmented button.is-selected { color: var(--zn-text); background: var(--zn-raised); box-shadow: inset 0 0 0 1px var(--zn-line); }
-/* O escolhido ja esta no topo da hierarquia: o rato so o firma mais um degrau. */
+/* The chosen one is already at the top of the hierarchy: the mouse only firms it one step. */
 .zs-segmented button.is-selected:hover:not(:disabled) { background: var(--zn-pressed); box-shadow: inset 0 0 0 1px var(--zn-line-strong); }
 .zs-segmented button:disabled { color: var(--zn-text-3); cursor: not-allowed; }
 
 .zs-slider { display: flex; align-items: center; gap: var(--zn-3); }
-/* A folga vertical do campo é maior que a do trilho: é o puxador que sobra da
-   linha, e sem esse espaço dos dois lados ele desce em vez de assentar no meio dela. */
+/* The field's vertical slack is larger than the track's: it is the thumb that overhangs
+   the line, and without that space either side it drops instead of sitting in the middle of it. */
 .zs-slider input[type="range"] {
   min-width: 0; flex: 1; height: 14px; margin: 0; padding: 0;
   appearance: none; -webkit-appearance: none;
   background: transparent; accent-color: var(--zn-solid); cursor: pointer;
 }
-/* O trilho passa a pintar a linha; o campo já não a pinta, senão ela engrossaria com ele. */
+/* The track now paints the line; the field no longer does, or it would thicken with it. */
 .zs-slider input[type="range"]::-webkit-slider-runnable-track { height: 4px; border-radius: 999px; background: var(--zn-raised); box-shadow: none; }
 .zs-slider input[type="range"]::-webkit-slider-thumb {
   appearance: none; -webkit-appearance: none;
-  /* (altura do trilho − altura do puxador) / 2: o puxador nasce no topo do trilho,
-     e só esta margem o devolve ao centro da linha. */
+  /* (track height − thumb height) / 2: the thumb starts at the top of the track,
+     and only this margin returns it to the centre of the line. */
   width: 13px; height: 13px; margin-top: -4.5px;
   border: 0; border-radius: 50%; background: var(--zn-solid); cursor: pointer;
   box-shadow: 0 0 0 1px var(--zn-line-strong);
@@ -639,7 +639,7 @@
 .zs-slider-bounds { color: var(--zn-text-3); font-size: 11px; font-variant-numeric: tabular-nums; }
 .zs-readout { min-width: 58px; color: var(--zn-text); font: 500 12.5px/1 var(--font-display); font-variant-numeric: tabular-nums; text-align: right; }
 
-/* ── Editor (o único modal real) ────────────────────────────────────────── */
+/* ── Editor (the only real modal) ───────────────────────────────────────── */
 
 .zs-editor-layer { position: absolute; inset: 0; z-index: 20; display: grid; place-items: center; padding: var(--zn-5); background: var(--zn-scrim); backdrop-filter: blur(8px); }
 .zs-editor {
@@ -741,7 +741,7 @@
   display: flex; flex-direction: column; gap: var(--zn-3);
   padding-bottom: var(--zn-3); border-bottom: 1px solid var(--zn-line);
 }
-/* Identidade em uma única linha; os estados vivem abaixo e não esticam esta área. */
+/* Identity on a single line; the states live below and do not stretch this area. */
 .zs-workspace-identity {
   min-width: 0; display: grid;
   grid-template-columns: 48px minmax(180px, 1fr) auto auto;
@@ -772,8 +772,8 @@
 .zs-workspace-icon-button:hover, .zs-workspace-icon-button.is-active { color: var(--zn-text); border-color: var(--zn-line-strong); background: var(--zn-raised); }
 .zs-workspace-icon-button:focus-visible { outline: 0; }
 .zs-workspace-icon-button svg:last-child { position: absolute; right: 4px; bottom: 4px; padding: 1px; border-radius: 3px; background: var(--zn-surface); }
-/* ── Modal do ícone do workspace ────────────────────────────────────────────
-   Fixo ao ecrã, acima da camada do editor (z-index 20), com o mesmo scrim. */
+/* ── Workspace icon modal ───────────────────────────────────────────────────
+   Fixed to the screen, above the editor layer (z-index 20), with the same scrim. */
 .zs-icon-modal-layer {
   position: fixed; inset: 0; z-index: 40;
   display: grid; place-items: center; padding: var(--zn-5);
@@ -859,10 +859,10 @@
 
 .zs-workspace-items { overflow: hidden; border-top: 1px solid var(--zn-line); }
 .zs-workspace-item { border-bottom: 1px solid var(--zn-line); }
-/* Em edição a linha vira cartão. Antes era só um wash de fundo a toda a largura: um
-   retângulo sem contorno que encostava às linhas vizinhas e não dizia onde começava nem
-   acabava a zona editável. O recuo interno de 4px soma-se ao do cabeçalho e ao do editor,
-   portanto o alinhamento das colunas mantém-se — o cartão envolve, não desloca. */
+/* While editing the row becomes a card. Before it was only a full-width background wash: a
+   rectangle with no outline that butted against the neighbouring rows and did not say where
+   the editable zone started or ended. The 4px inner inset adds to the header's and the
+   editor's, so the columns stay aligned — the card wraps, it does not shift. */
 .zs-workspace-item.is-editing {
   margin: var(--zn-2) 0;
   padding-inline: var(--zn-1);
@@ -870,12 +870,12 @@
   border-radius: var(--zn-r-control);
   background: var(--zn-raised);
 }
-/* Quatro colunas: manipulo, icone, copia, acoes. A do manipulo reserva sempre o espaco —
-   aparecer so no hover sem coluna declarada empurrava a linha inteira a cada passagem do rato. */
+/* Four columns: grip, icon, copy, actions. The grip's always reserves the space —
+   appearing only on hover with no declared column pushed the whole row on every mouse pass. */
 .zs-workspace-item-main { min-height: 50px; display: grid; grid-template-columns: 16px 34px minmax(0, 1fr) auto; align-items: center; gap: var(--zn-2); padding: 6px var(--zn-1); }
-/* ── Reordenar atalhos ──────────────────────────────────────────────────────
-   O manipulo vive na primeira coluna da grelha, sempre com espaco reservado e sem tinta ate
-   o rato entrar na linha. Uma lista densa nao aguenta seis pontos cinzentos permanentes. */
+/* ── Reordering shortcuts ───────────────────────────────────────────────────
+   The grip lives in the grid's first column, always with space reserved and with no ink until
+   the mouse enters the row. A dense list cannot take six permanent grey dots. */
 .zs-workspace-item { position: relative; }
 .zs-item-grip {
   display: grid; place-items: center; align-self: stretch;
@@ -886,14 +886,14 @@
 .zs-workspace-item:focus-within .zs-item-grip { opacity: .5; }
 .zs-item-grip:hover { opacity: 1; color: var(--zn-text); }
 .zs-item-grip:active { cursor: grabbing; }
-/* Em edicao a linha e um cartao: arrastar um formulario aberto nao faz sentido. */
+/* While editing the row is a card: dragging an open form makes no sense. */
 .zs-workspace-item.is-editing .zs-item-grip { opacity: .12; cursor: default; }
 
-/* A origem esvazia-se em vez de desaparecer, para a lista nao saltar de altura. */
+/* The source empties out instead of disappearing, so the list does not jump in height. */
 .zs-workspace-item.is-dragging > .zs-workspace-item-main { opacity: .3; }
 
-/* Marca de insercao: recuada como o conteudo e na cor de maior contraste, que inverte com o
-   tema. Sem o recuo encostava as bordas e lia-se como mais uma linha divisoria da lista. */
+/* Insertion mark: inset like the content and in the highest-contrast colour, which inverts with
+   the theme. Without the inset it touched the edges and read as one more divider in the list. */
 .zs-workspace-item.is-drop-above::before,
 .zs-workspace-item.is-drop-below::after {
   content: ""; position: absolute; left: var(--zn-1); right: var(--zn-1); height: 2px;
@@ -901,7 +901,7 @@
 }
 .zs-workspace-item.is-drop-above::before { top: -1px; }
 .zs-workspace-item.is-drop-below::after { bottom: -1px; }
-/* O cartao de edicao tem margem propria; sem isto a marca flutuava fora da linha. */
+/* The editing card has a margin of its own; without this the mark floated outside the row. */
 .zs-workspace-item.is-editing.is-drop-above::before { top: calc(var(--zn-2) * -1 - 1px); }
 .zs-workspace-item.is-editing.is-drop-below::after { bottom: calc(var(--zn-2) * -1 - 1px); }
 
@@ -917,15 +917,15 @@
 .zs-item-actions button { width: 25px; height: 25px; display: grid; place-items: center; padding: 0; color: var(--zn-text-3); border: 0; border-radius: var(--zn-r-chip); background: transparent; cursor: pointer; }
 .zs-item-actions button:hover, .zs-item-actions button.is-active { color: var(--zn-text); background: var(--zn-raised); }
 .zs-item-actions button:disabled { opacity: .22; cursor: default; }
-/* O editor alinha com a linha que o abriu: recuo esquerdo até à coluna do título
-   (4px de padding + 34px de ícone + 8px de gap = 46px) e margem direita igual à do
-   cabeçalho. Os 42px simétricos de antes desalinhavam dos dois lados — à esquerda por
-   4px, à direita por 38px — e era isso que fazia o bloco parecer cortado. */
+/* The editor lines up with the row that opened it: left inset out to the title column
+   (4px of padding + 34px of icon + 8px of gap = 46px) and a right margin equal to the
+   header's. The symmetric 42px of before were off on both sides — by 4px on the left,
+   by 38px on the right — and that is what made the block look cut. */
 .zs-workspace-item-editor { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--zn-3); padding: 0 var(--zn-1) var(--zn-3) 46px; }
-/* Um campo de nome esticado à largura do painel lê-se como caixa de texto longa; o valor é curto. */
+/* A name field stretched to the panel's width reads as a long text box; the value is short. */
 .zs-workspace-item-editor > .zs-field { max-width: 340px; }
-/* Um caminho de ficheiro é longo e o botão que o troca tem de caber ao lado — este é o único
-   campo do editor que quer a largura toda. */
+/* A file path is long and the button that swaps it has to fit beside it — this is the only
+   field in the editor that wants the whole width. */
 .zs-workspace-item-editor > .zs-field.is-with-action { max-width: none; }
 .zs-field-row { display: flex; align-items: center; gap: var(--zn-2); }
 .zs-field-row input { min-width: 0; flex: 1; }
@@ -957,8 +957,8 @@
 .zs-launch-options { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--zn-3); padding: var(--zn-3); border: 1px solid var(--zn-line); border-radius: var(--zn-r-control); background: var(--zn-sunken); }
 .zs-launch-options b { display: block; color: var(--zn-text); font-size: 11.5px; font-weight: 550; }
 .zs-launch-options small { display: block; max-width: 520px; margin-top: 2px; color: var(--zn-text-3); font-size: 9.5px; line-height: 1.4; }
-/* Aviso de modo de arranque: âmbar, dentro do próprio bloco, para se ler como consequência
-   da escolha acabada de fazer e não como erro do painel. */
+/* Launch-mode warning: amber, inside the block itself, so it reads as a consequence of the
+   choice just made and not as an error in the panel. */
 .zs-launch-risk {
   grid-column: 1 / -1;
   display: grid;
@@ -975,7 +975,7 @@
   line-height: 1.5;
 }
 .zs-launch-risk svg { margin-top: 1px; color: rgba(233, 189, 120, .9); }
-/* No tema claro o mesmo âmbar teria de escurecer para se ler sobre superfície branca. */
+/* In the light theme the same amber would have to darken to read over a white surface. */
 [data-zn-theme="white"] .zs-launch-risk {
   border-color: rgba(146, 92, 6, .3);
   background: rgba(180, 120, 20, .09);
@@ -1112,43 +1112,43 @@
 .zs-firstrun footer .zs-btn { flex: none; }
 .zs-firstrun footer small { color: var(--zn-text-3); font-size: 10.5px; line-height: 1.4; }
 
-/* ══ Falha de arranque ═════════════════════════════════════════════════════
-   O cartão vive FORA de `.zs-shell` — é irmão do painel, não filho — por isso
-   nada aqui pode depender de um seletor `.zs-shell …`: nem o anel de foco nem
-   o bloco de `prefers-reduced-motion`. O tema chega por `data-zn-theme` no
-   próprio cartão (daí os seletores sem espaço), e o travão ao movimento é
-   feito em JS com `useReducedMotion`.
+/* ══ Launch failure ════════════════════════════════════════════════════════
+   The card lives OUTSIDE `.zs-shell` — it is the panel's sibling, not its
+   child — so nothing here can depend on a `.zs-shell …` selector: neither the
+   focus ring nor the `prefers-reduced-motion` block. The theme arrives through
+   `data-zn-theme` on the card itself (hence the selectors with no space), and
+   the brake on motion is done in JS with `useReducedMotion`.
 
-   A regra que impede o regresso da caixa vermelha gigante: o único texto sem
-   limite é o `stderr`, e esse só existe dentro de `.zs-fault-raw`, que tem
-   altura máxima e rola. Título e frase são de uma linha, cortadas por CSS e
-   já limitadas em `src/launchFailure.ts`.
+   The rule that keeps the giant red box from coming back: the only text with
+   no limit is `stderr`, and that only exists inside `.zs-fault-raw`, which has
+   a maximum height and scrolls. Title and sentence are one line, clipped by
+   CSS and already capped in `src/launchFailure.ts`.
 
-   Centrar é feito com `margin-inline: auto` e nunca com `translateX(-50%)`:
-   quem desenha o cartão é um `motion.div`, e o framer-motion escreve o
-   `transform` em estilo inline — a folha de estilos perdia sempre.
+   Centring is done with `margin-inline: auto` and never with `translateX(-50%)`:
+   what draws the card is a `motion.div`, and framer-motion writes the
+   `transform` as an inline style — the stylesheet always lost.
 
-   Sem matiz nova: superfície, linha e sombra são os tokens de sempre. O
-   vermelho aparece só no quadrado do ícone, no mesmo registo do
-   `.zs-launch-risk` — fio e lavagem, nunca um fundo saturado.
+   No new hue: surface, line and shadow are the usual tokens. The red shows up
+   only in the icon's square, in the same register as `.zs-launch-risk` —
+   hairline and wash, never a saturated background.
    ════════════════════════════════════════════════════════════════════════ */
 .zs-fault-stack {
   position: fixed;
   right: var(--zn-5);
   bottom: var(--zn-5);
-  /* Largura definida: sem ela o `min(380px, 100%)` do cartão resolvia contra um
-     contentor shrink-to-fit, e a percentagem não tem contra o que medir. */
+  /* A definite width: without it the card's `min(380px, 100%)` resolved against a
+     shrink-to-fit container, and the percentage has nothing to measure against. */
   width: min(380px, calc(100vw - var(--zn-5) * 2));
   max-height: calc(100vh - var(--zn-5) * 2);
   z-index: 1000;
   display: grid;
   justify-items: end;
   gap: var(--zn-2);
-  /* A raiz do `App` é `pointer-events-none` no modo ambiente de trabalho. */
+  /* The `App` root is `pointer-events-none` in desktop mode. */
   pointer-events: none;
 }
-/* Modo ilha: a janela tem `setIgnoreMouseEvents(true)` e é um quadrado centrado
-   no monitor — encostado ao canto o cartão caía a meio do ecrã. Ali é só aviso. */
+/* Island mode: the window has `setIgnoreMouseEvents(true)` and is a square centred on the
+   monitor — pinned to the corner the card landed mid-screen. There it is only a notice. */
 .zs-fault-stack.is-glance {
   left: var(--zn-5);
   width: auto;
@@ -1173,7 +1173,7 @@
   font-family: var(--font-ui);
   -webkit-font-smoothing: antialiased;
   pointer-events: auto;
-  /* A base pinta as barras quase a branco; fora de `.zs-shell` o override do painel não chega cá. */
+  /* The base paints the bars almost white; outside `.zs-shell` the panel's override does not reach here. */
   scrollbar-color: var(--zn-line-strong) transparent;
 }
 .zs-fault *::-webkit-scrollbar-thumb { background: var(--zn-line-strong); }
@@ -1189,7 +1189,7 @@
   color: #ef7c7c; background: rgba(239, 68, 68, .12);
 }
 .zs-fault.is-warning .zs-fault-mark { color: rgba(233, 189, 120, .92); background: rgba(224, 160, 60, .1); }
-/* No tema claro os dois tons têm de escurecer para se lerem sobre superfície branca. */
+/* In the light theme both tones have to darken to read over a white surface. */
 [data-zn-theme="white"].zs-fault .zs-fault-mark { color: #b53228; background: rgba(200, 50, 40, .1); }
 [data-zn-theme="white"].zs-fault.is-warning .zs-fault-mark { color: rgba(146, 92, 6, .95); background: rgba(180, 120, 20, .12); }
 
@@ -1204,14 +1204,14 @@
   display: -webkit-box; -webkit-box-orient: vertical;
 }
 .zs-fault-message { -webkit-line-clamp: 3; color: var(--zn-text-2); font-size: 11.5px; line-height: 1.45; }
-/* `--zn-text-3` é o tom das legendas passivas; aqui o texto é a instrução que resolve o
-   problema, e a esse tamanho sobre superfície clara não se lia. */
-/* Três linhas, não duas: a 282px de coluna útil a instrução de recuperação do aviso de
-   configuração ocupa três, e a duas ficava cortada a meio do nome do ficheiro. */
+/* `--zn-text-3` is the tone of passive captions; here the text is the instruction that solves
+   the problem, and at that size over a light surface it did not read. */
+/* Three lines, not two: at 282px of usable column the recovery instruction of the configuration
+   warning takes three, and at two it was cut halfway through the file name. */
 .zs-fault-hint { -webkit-line-clamp: 3; color: var(--zn-text-2); font-size: 10.5px; line-height: 1.45; }
 
-/* O despejo do Windows, e o único sítio onde ele pode estar. A raiz do `App` é
-   `select-none`: sem `user-select: text` aqui nem selecionar à mão dava. */
+/* The Windows dump, and the only place it can be. The `App` root is `select-none`:
+   without `user-select: text` here not even selecting it by hand worked. */
 .zs-fault-raw {
   max-height: 168px; margin: 2px 0 0; padding: var(--zn-2); overflow: auto;
   color: var(--zn-text-2);
@@ -1245,7 +1245,7 @@
 }
 .zs-fault-close:hover { color: var(--zn-text); background: var(--zn-raised); }
 
-/* Janelas estreitas (Windows a 150–175%): o cartão passa a ocupar a largura útil. */
+/* Narrow windows (Windows at 150–175%): the card takes the usable width instead. */
 @media (max-width: 460px) {
   .zs-fault-stack,
   .zs-fault-stack.is-glance {
@@ -1255,10 +1255,10 @@
   .zs-fault { width: 100%; }
 }
 
-/* ── Escala / viewport ──────────────────────────────────────────────────── */
+/* ── Scale / viewport ───────────────────────────────────────────────────── */
 
-/* Windows 150–175%: o viewport CSS encolhe. Colapsa a nav para ícones antes
-   de a coluna de conteúdo ficar estreita demais para label + controlo. */
+/* Windows 150–175%: the CSS viewport shrinks. Collapses the nav to icons before
+   the content column gets too narrow for label + control. */
 @media (max-width: 760px) {
   .zs-window { grid-template-columns: 60px minmax(0, 1fr); }
   .zs-sidebar { padding-inline: var(--zn-2); }
@@ -1269,7 +1269,7 @@
   .zs-row { gap: var(--zn-4); }
   .zs-options-grid { grid-template-columns: 1fr; }
   .zs-workspace-overview { gap: var(--zn-3); }
-  /* Estreito: identidade em cima, estados e contagem descem para a segunda linha. */
+  /* Narrow: identity on top, states and count drop to the second line. */
   .zs-workspace-identity { grid-template-columns: 48px minmax(0, 1fr) auto; }
   .zs-workspace-identity > .zs-workspace-flags { grid-area: 1 / 3; }
   .zs-workspace-meta { grid-area: 2 / 2; align-self: start; margin: var(--zn-1) 0 0; }
@@ -1298,13 +1298,13 @@
   .zs-shell, .zs-shell * { animation-duration: .01ms !important; transition-duration: .01ms !important; }
 }
 
-/* ══ Modal radial — animação no compositor ═════════════════════════════════
-   A roda era animada por springs de JS (uma por ícone + uma por rótulo, todas
-   recalculadas a cada fatia atravessada). Aqui a posição/presença de cada
-   fatia é apenas uma variável CSS: o React escreve o valor, o compositor
-   interpola. Nenhum trabalho por frame na thread principal.
+/* ══ Radial modal — animation on the compositor ════════════════════════════
+   The wheel used to be animated by JS springs (one per icon + one per label,
+   all recomputed on every slice crossed). Here each slice's position/presence
+   is only a CSS variable: React writes the value, the compositor interpolates.
+   No per-frame work on the main thread.
 
-   `--zn-tf` / `--zn-op` são o estado alvo; a transição é o movimento.
+   `--zn-tf` / `--zn-op` are the target state; the transition is the movement.
    ════════════════════════════════════════════════════════════════════════ */
 .zn-radial-slice,
 .zn-radial-hub,
@@ -1318,8 +1318,8 @@
     opacity var(--zn-dur-op, 175ms) ease-out;
 }
 
-/* O hub também troca de cor/anel ao ficar ativo — vem depois da regra comum
-   para redefinir o atalho `transition` inteiro (mesma especificidade). */
+/* The hub also swaps colour/ring when it goes active — it comes after the shared
+   rule so it redefines the whole `transition` shorthand (same specificity). */
 .zn-radial-hub {
   transition:
     transform var(--zn-dur, 190ms) var(--zn-ease, cubic-bezier(.2, .82, .28, 1)),
@@ -1329,20 +1329,20 @@
     box-shadow 170ms ease-out;
 }
 
-/* Só as fatias e o hub sobem a camada própria: promover tudo custaria mais
-   memória de GPU do que poupa em repintura. */
+/* Only the slices and the hub get a layer of their own: promoting everything
+   would cost more GPU memory than it saves in repaint. */
 .zn-radial-slice,
 .zn-radial-hub {
   will-change: transform, opacity;
 }
 
-/* Anel de progresso da mira sustentada (executar sem clique).
-   É CSS e não React de propósito: o arco é o único sinal de que um temporizador está a correr,
-   por isso desenha-o durante exatamente o gesto em que a roda tem de continuar a responder ao
-   rato. Um arco animado em React custava um commit por frame na main thread, justamente aí.
-   O `key` do <svg> reinicia a animação ao trocar de alvo — não há estado a repor.
-   Deliberadamente NÃO suprimido em `prefers-reduced-motion`: sem o arco, um lançamento por
-   tempo passa a acontecer sem aviso nenhum, que é pior do que o movimento. */
+/* Progress ring for the sustained aim (run without clicking).
+   It is CSS and not React on purpose: the arc is the only sign that a timer is running, so it
+   draws during exactly the gesture where the wheel still has to answer the mouse. An arc
+   animated in React cost one commit per frame on the main thread, precisely there.
+   The <svg>'s `key` restarts the animation on a target change — there is no state to reset.
+   Deliberately NOT suppressed under `prefers-reduced-motion`: without the arc, a launch on a
+   timer starts happening with no warning at all, which is worse than the motion. */
 @keyframes zn-dwell-arc {
   from {
     stroke-dashoffset: 1;
@@ -1359,15 +1359,15 @@
 }
 
 /**
- * Execucao sem clique: o ponteiro deixa de existir para o utilizador.
+ * Run without clicking: the pointer stops existing for the user.
  *
- * `cursor` herda-se, mas cada tile pede `cursor-pointer` por classe do Tailwind e a superficie da
- * App pede `crosshair` enquanto se arrasta — os descendentes tem de ser cobertos um a um, e com
- * `!important`, senao a roda esconde o ponteiro em todo o lado menos por cima dos icones, que e
- * precisamente onde ele se ve.
+ * `cursor` inherits, but every tile asks for `cursor-pointer` through a Tailwind class and the
+ * App surface asks for `crosshair` while dragging — the descendants have to be covered one by
+ * one, and with `!important`, or the wheel hides the pointer everywhere except over the icons,
+ * which is precisely where it shows.
  *
- * Isto so pinta por cima da janela do radial; o cursor so esta la porque o main o estacionou no
- * centro ao abrir (ver `captureRadialCursor`).
+ * This only paints over the radial's window; the cursor is only there because main parked it in
+ * the centre on open (see `captureRadialCursor`).
  */
 .zn-radial--nocursor,
 .zn-radial--nocursor * {
@@ -1375,20 +1375,20 @@
 }
 
 /**
- * ...e, pela mesma razao, nada dentro dela recebe cliques.
+ * ...and, for the same reason, nothing inside it takes clicks.
  *
- * Os alvos de rato do radial sao testados contra o ponteiro FISICO, e por direcao esse ponteiro ja
- * nao e a mira: ele fica estacionado no centro (ou onde a mao o deixou ate ao reencosto) enquanto
- * a fatia acesa sai do vetor do gesto. Os dois divergem por construcao, portanto deixar o DOM
- * decidir significava confirmar uma coisa e ter aceso outra:
+ * The radial's mouse targets are tested against the PHYSICAL pointer, and by direction that
+ * pointer is no longer the aim: it stays parked in the centre (or where the hand left it until it
+ * is parked again) while the lit slice follows the gesture's vector. The two diverge by
+ * construction, so letting the DOM decide meant confirming one thing with another one lit:
  *
- * - o tile por baixo do ponteiro invisivel lancava-se a si proprio em vez do setor apontado;
- * - o quadrado de 70px do centro engolia o clique — a mira acende aos 18px, muito antes de o
- *   ponteiro sair dele — e a roda FECHAVA em vez de lancar.
+ * - the tile under the invisible pointer launched itself instead of the sector being aimed at;
+ * - the 70px square at the centre swallowed the click — the aim lights up at 18px, long before
+ *   the pointer leaves it — and the wheel CLOSED instead of launching.
  *
- * Ambos chamam `stopPropagation`, que em React 17+ para tambem o evento nativo, portanto o
- * `mouseup` da janela (o unico que sabe o que e a mira por direcao) nunca corria. Inertes, o
- * evento cai para o scrim, ninguem o para, e esse `mouseup` decide sozinho — centro incluido.
+ * Both call `stopPropagation`, which in React 17+ also stops the native event, so the window's
+ * `mouseup` (the only one that knows what the aim by direction is) never ran. Inert, the event
+ * falls through to the scrim, nobody stops it, and that `mouseup` decides alone — centre included.
  */
 .zn-radial--nocursor .zn-radial-slice *,
 .zn-radial--nocursor .zn-radial-hub,
@@ -1396,15 +1396,15 @@
   pointer-events: none !important;
 }
 
-/* Modo normal: expansão progressiva, com desaceleração longa o bastante para a
-   troca de workspace/pasta não parecer um corte seco. */
+/* Normal mode: progressive expansion, with a deceleration long enough that swapping
+   workspace/folder does not look like a hard cut. */
 .zn-radial-slice {
   --zn-ease: cubic-bezier(.16, .86, .24, 1);
   --zn-dur: 220ms;
   --zn-dur-op: 165ms;
 }
 
-/* `performanceMode`: mesmo desenho, sem overshoot e mais curto. */
+/* `performanceMode`: same drawing, no overshoot and shorter. */
 .zn-radial--fast .zn-radial-slice,
 .zn-radial--fast .zn-radial-hub,
 .zn-radial--fast .zn-radial-label,
@@ -1414,7 +1414,7 @@
   --zn-dur-op: 90ms;
 }
 
-/* Fechar é sempre mais curto que abrir — esperar pela saída lê-se como lag. */
+/* Closing is always shorter than opening — waiting for the exit reads as lag. */
 .zn-radial--closing .zn-radial-slice,
 .zn-radial--closing .zn-radial-hub,
 .zn-radial--closing .zn-radial-label,
@@ -1433,23 +1433,23 @@
   .zn-radial-scrim { transition-duration: .01ms !important; }
 }
 
-/* ══ Eco de lançamento ══════════════════════════════════════════════════════
-   O que acontece entre escolher e a app aparecer. Confirmar era um corte seco:
-   a roda inteira desaparecia no frame do despacho e o desktop nu ficava a
-   responder pelo lançamento — durante um tempo que só a app decide. Não havia
-   como saber qual dos ícones tinha sido apanhado, nem se algum tinha.
+/* ══ Launch echo ════════════════════════════════════════════════════════════
+   What happens between choosing and the app appearing. Confirming was a hard cut:
+   the whole wheel vanished on the dispatch frame and the bare desktop was left
+   answering for the launch — for a stretch of time only the app decides. There
+   was no way to know which of the icons had been caught, or whether any had.
 
-   O eco isola o ícone confirmado (tudo o resto sai já), segura-o no sítio onde
-   já estava, dá-lhe um impulso e manda duas ondas para fora dele. Tudo aqui é
-   `transform` + `opacity` — a main thread nesse meio segundo pertence ao
-   processo que está a arrancar, não a nós. `--zn-echo-ms` vem do React e é o
-   MESMO número que o temporizador que despacha o comando: a app parte quando a
-   última onda se apaga, nunca antes nem muito depois.
+   The echo isolates the confirmed icon (everything else leaves at once), holds it
+   where it already was, gives it a kick and sends two waves out of it. Everything
+   here is `transform` + `opacity` — the main thread in that half second belongs
+   to the process that is starting, not to us. `--zn-echo-ms` comes from React and
+   is the SAME number as the timer that dispatches the command: the app sets off
+   when the last wave goes out, never before nor much after.
    ═══════════════════════════════════════════════════════════════════════════ */
 
-/* O ícone confirmado: impulso curto, assentamento, e só então a saída. A ordem
-   importa — o impulso é a resposta ao clique, e tem de ser vista ANTES de o
-   ícone começar a ir-se embora, senão as duas leem-se como um só desvanecer. */
+/* The confirmed icon: short kick, settle, and only then the exit. The order
+   matters — the kick is the answer to the click, and has to be seen BEFORE the
+   icon starts leaving, or the two read as a single fade. */
 @keyframes zn-launch-pop {
   0%   { transform: scale(1);    opacity: 1; }
   18%  { transform: scale(1.18); opacity: 1; }
@@ -1458,10 +1458,10 @@
   100% { transform: scale(.82);  opacity: 0; }
 }
 
-/* Igual, mas com o `translate(-50%, -50%)` que o hub precisa: o hub é
-   posicionado pelo centro e uma animação de `transform` substitui o transform
-   todo — sem a translação aqui dentro, lançar pelo centro atirava o hub para
-   fora do sítio no primeiro frame. */
+/* The same, but with the `translate(-50%, -50%)` the hub needs: the hub is
+   positioned from its centre and a `transform` animation replaces the whole
+   transform — without the translation in here, launching from the centre threw
+   the hub out of place on the first frame. */
 @keyframes zn-launch-pop-center {
   0%   { transform: translate(-50%, -50%) scale(1);    opacity: 1; }
   18%  { transform: translate(-50%, -50%) scale(1.14); opacity: 1; }
@@ -1470,32 +1470,32 @@
   100% { transform: translate(-50%, -50%) scale(.84);  opacity: 0; }
 }
 
-/* A onda. Abre já quase toda no primeiro terço e depois abranda: uma expansão
-   linear lê-se como um anel a ser arrastado, esta lê-se como algo que foi
-   EMPURRADO de dentro e vai perdendo força. */
+/* The wave. It opens almost fully in the first third and then slows: a linear
+   expansion reads as a ring being dragged, this one reads as something PUSHED
+   from inside that keeps losing force. */
 @keyframes zn-launch-wave {
   0%   { transform: translate(-50%, -50%) scale(.92); opacity: 0; }
-  /* Acesa quase de imediato: até à escala 1 o anel corre por trás da placa opaca
-     do tile e não se vê de todo, portanto uma entrada lenta só o faria nascer
-     já longe do ícone — visivelmente descolado daquilo de onde devia sair. */
+  /* Lit almost at once: up to scale 1 the ring runs behind the tile's opaque plate
+     and is not seen at all, so a slow entrance would only make it appear already
+     far from the icon — visibly detached from what it was supposed to come out of. */
   8%   { opacity: .58; }
   100% { transform: translate(-50%, -50%) scale(2.7); opacity: 0; }
 }
 
-/* As não escolhidas saem antes de a onda arrancar. Deixá-las esbater-se ao
-   ritmo normal punha meia roda ainda visível por baixo do anel a expandir, e o
-   ícone confirmado deixava de ser a única coisa no ecrã — que é tudo o que o
-   eco tem para dizer. */
+/* The unchosen ones leave before the wave starts. Letting them fade at the
+   normal rate put half a wheel still visible under the expanding ring, and the
+   confirmed icon stopped being the only thing on screen — which is all the echo
+   has to say. */
 .zn-radial-slice--faded {
   --zn-dur-op: 120ms;
   --zn-dur: 180ms;
   --zn-ease: ease-in;
 }
 
-/* A confirmada sobe à presença de fatia apontada e fica lá: quem a anima daí em
-   diante é `zn-launch-pop`, no invólucro do ícone. Este transform continua a
-   transitar de propósito — vindo de um clique num tile que não estava apontado,
-   é ele que faz o pequeno salto de "apanhei este". */
+/* The confirmed one steps up to the presence of an aimed slice and stays there: what
+   animates it from then on is `zn-launch-pop`, on the icon's wrapper. This transform
+   keeps transitioning on purpose — coming from a click on a tile that was not being
+   aimed at, it is what makes the small jump of "got this one". */
 .zn-radial-slice--fired {
   --zn-dur: 120ms;
 }
@@ -1517,15 +1517,15 @@
   will-change: transform, opacity;
 }
 
-/* A segunda onda sai a meio da primeira. Um anel só lê-se como um contorno que
-   cresceu; dois desfasados leem-se como algo que partiu dali. */
+/* The second wave leaves halfway through the first. One ring alone reads as an
+   outline that grew; two offset read as something that left from there. */
 .zn-launch-wave--late {
   animation-delay: calc(var(--zn-echo-ms, 520ms) * .16);
   animation-duration: calc(var(--zn-echo-ms, 520ms) * .66);
 }
 
-/* O rótulo do que foi lançado sai com o ícone: fica legível o tempo do impulso
-   e só depois se apaga, para que o nome ainda seja lido em vez de piscar. */
+/* The label of what was launched leaves with the icon: legible for the length of
+   the kick and only then out, so the name is still read instead of flashing. */
 @keyframes zn-launch-fade {
   0%   { opacity: 1; }
   55%  { opacity: 1; }
@@ -1536,9 +1536,9 @@
   animation: zn-launch-fade var(--zn-echo-ms, 520ms) ease-out forwards;
 }
 
-/* O escurecimento levanta-se ao longo do eco em vez de desaparecer com a
-   janela: a última onda acaba já sobre o desktop, e o que o utilizador vê é o
-   ícone a entregar-se ao ambiente de trabalho — não um recorte a apagar-se. */
+/* The dimming lifts across the echo instead of vanishing with the window: the
+   last wave ends over the desktop already, and what the user sees is the icon
+   handing itself to the desktop — not a cut-out being switched off. */
 @keyframes zn-launch-scrim {
   0%   { opacity: 1; }
   100% { opacity: 0; }
@@ -1549,10 +1549,10 @@
 }
 
 /*
-  Sem eco nenhum com movimento reduzido — e isto é só a metade do CSS. A outra
-  metade está no `onClose` embrulhado do `RadialMenu`, que nesse caso despacha
-  o comando IMEDIATAMENTE: sem o impulso e sem as ondas, o que sobrava aqui era
-  meio segundo de atraso puro antes de a app abrir, que é o oposto do pedido.
+  No echo at all under reduced motion — and this is only half of the CSS. The other
+  half is in `RadialMenu`'s wrapped `onClose`, which in that case dispatches the
+  command IMMEDIATELY: without the kick and without the waves, what was left here
+  was half a second of pure delay before the app opens, the opposite of the ask.
 */
 @media (prefers-reduced-motion: reduce) {
   .zn-launch-pop,

@@ -1,9 +1,9 @@
 /**
- * Tiles do pacote MSIX. O electron-builder tem assets por omissão, mas são placeholders vazios —
- * quem instalasse ficava com um quadrado branco no Menu Iniciar, e a ficha na Microsoft Store
- * mostra o ícone tirado DO PACOTE, não das imagens da listagem.
+ * MSIX package tiles. electron-builder ships default assets, but they are empty placeholders —
+ * anyone who installed ended up with a white square in the Start Menu, and the Microsoft Store
+ * page shows the icon taken FROM THE PACKAGE, not the listing images.
  *
- * Gera build/appx/* a partir de public/icon.png antes do electron-builder correr.
+ * Generates build/appx/* from public/icon.png before electron-builder runs.
  */
 import { existsSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -21,10 +21,10 @@ if (!existsSync(source)) {
 
 mkdirSync(outDir, { recursive: true });
 
-/** Igual ao `backgroundColor` em build.appx — o tile largo precisa de preencher o que sobra. */
+/** Same as `backgroundColor` in build.appx — the wide tile has to fill what is left over. */
 const BACKGROUND = { r: 0x10, g: 0x10, b: 0x14, alpha: 1 };
 
-/** Quadrados: o ícone já traz a sua própria moldura, por isso vai de bordo a bordo. */
+/** Squares: the icon already brings its own frame, so it goes edge to edge. */
 const squares = [
   ["Square44x44Logo.png", 44],
   ["Square71x71Logo.png", 71],
@@ -34,8 +34,8 @@ const squares = [
 ];
 
 /**
- * Tiles largos: o ícone é quadrado, portanto centra-se sobre o fundo em vez de ser esticado.
- * Deixa-se margem para o ícone não encostar às arestas.
+ * Wide tiles: the icon is square, so it is centred over the background instead of stretched.
+ * Margin is left so the icon does not touch the edges.
  */
 const wides = [
   ["Wide310x150Logo.png", 310, 150],
@@ -53,7 +53,7 @@ for (const [name, width, height] of wides) {
     .composite([{ input: icon, gravity: "centre" }])
     .png()
     .toFile(join(outDir, name));
-  console.log(`generate-appx-assets: ${name} (${width}x${height}, ícone ${inner}px centrado)`);
+  console.log(`generate-appx-assets: ${name} (${width}x${height}, icon ${inner}px centred)`);
 }
 
 console.log(`generate-appx-assets: wrote ${outDir}`);

@@ -2,31 +2,31 @@ const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("electron", {
   /**
-   * Resolve com `{ ok: true, method }` ou `{ ok: false, error, details }` — nunca rejeita.
+   * Resolves with `{ ok: true, method }` or `{ ok: false, error, details }` — never rejects.
    *
-   * Era um `send` sem resposta, e a falha voltava por `execution-error`, um canal de difusão que
-   * não dizia QUAL atalho falhou. O renderer emparelhava-o com o último despacho comparando
-   * comandos dentro de 15 s; ao voltar por aqui, o item é o da própria chamada.
+   * It used to be a `send` with no reply, and the failure came back on `execution-error`, a broadcast
+   * channel that did not say WHICH shortcut failed. The renderer paired it with the last dispatch by
+   * matching commands within 15 s; coming back this way, the item is the call's own.
    */
   executeCommand: (command, commandType, options) =>
     ipcRenderer.invoke("execute-command", command, commandType, options),
   hideWindow: () => ipcRenderer.send("hide-window"),
   showWindow: () => ipcRenderer.send("show-window"),
-  /** Superfícies com campo de texto (gate da licença) precisam do HWND em foreground para receber teclas. */
+  /** Surfaces with a text field (the license gate) need the HWND in the foreground to receive keys. */
   requestKeyboardFocus: () => ipcRenderer.send("request-keyboard-focus"),
   getAppVersion: () => ipcRenderer.invoke("get-app-version"),
-  /** Quem atualiza: "store" (MSIX) e "unsupported" (por empacotar) não têm updater próprio. */
+  /** Who updates: "store" (MSIX) and "unsupported" (not yet packaged) have no updater of their own. */
   getBuildChannel: () => ipcRenderer.invoke("get-build-channel"),
   getUpdateState: () => ipcRenderer.invoke("get-update-state"),
   checkForUpdates: () => ipcRenderer.invoke("check-for-updates"),
   installUpdateNow: () => ipcRenderer.send("install-update-now"),
-  /** Estado da atualização automática — alimenta o selo no hub do radial. */
+  /** Auto-update state — feeds the badge on the radial's hub. */
   onUpdateState: (callback) => {
     const listener = (_event, payload) => callback(payload);
     ipcRenderer.on("update-state", listener);
     return () => ipcRenderer.removeListener("update-state", listener);
   },
-  /** Distingue arranque com o Windows de abertura manual — ver o adiamento da varredura. */
+  /** Tells a Windows startup apart from a manual open — see the scan deferral. */
   wasOpenedAtLogin: () => ipcRenderer.invoke("was-opened-at-login"),
   appSupportsRecents: (appName, appCommand) => ipcRenderer.invoke("app-supports-recents", appName, appCommand),
   onOpenMenu: (callback) => {
@@ -34,7 +34,7 @@ contextBridge.exposeInMainWorld("electron", {
     ipcRenderer.on("open-menu", listener);
     return () => ipcRenderer.removeListener("open-menu", listener);
   },
-  /** zenith-verify:radial-handshake-preload — Main vai mostrar o radial — pintar cobertura neutra e confirmar antes de `open-menu` (evita flash pós-minimizar). */
+  /** zenith-verify:radial-handshake-preload — Main is about to show the radial — paint a neutral cover and confirm before `open-menu` (avoids a flash after minimize). */
   onPrepareRadialShow: (callback) => {
     const listener = () => callback();
     ipcRenderer.on("prepare-radial-show", listener);
@@ -42,10 +42,10 @@ contextBridge.exposeInMainWorld("electron", {
   },
   notifyRadialPrepPaintDone: () =>
     ipcRenderer.send("radial-prep-paint-done"),
-  /** Confirma que o DOM do radial já atravessou um paint antes de o main revelar o HWND. */
+  /** Confirms the radial's DOM has already been through a paint before main reveals the HWND. */
   notifyRadialOpenPaintDone: (paintToken) =>
     ipcRenderer.send("radial-open-paint-done", paintToken),
-  /** Main revelou o HWND já pintado; só agora a animação visual pode sair do frame transparente. */
+  /** Main revealed the HWND already painted; only now may the visual animation leave the transparent frame. */
   onRadialNativeRevealed: (callback) => {
     const listener = (_event, paintToken) => callback(paintToken);
     ipcRenderer.on("radial-native-revealed", listener);
@@ -61,7 +61,7 @@ contextBridge.exposeInMainWorld("electron", {
     ipcRenderer.on("mouse-up", listener);
     return () => ipcRenderer.removeListener("mouse-up", listener);
   },
-  /** Posição do cursor sondada pelo main enquanto o botão do meio está premido (o Windows retém a captura noutra janela). */
+  /** Cursor position polled by main while the middle button is held (Windows keeps the capture in another window). */
   onMmbCursor: (callback) => {
     const listener = (_event, point) => callback(point);
     ipcRenderer.on("mmb-cursor", listener);
@@ -106,12 +106,12 @@ contextBridge.exposeInMainWorld("electron", {
   collapseIdleOverlay: () => ipcRenderer.invoke("collapse-idle-overlay"),
   setRadialViewport: (payload) =>
     ipcRenderer.send("set-radial-viewport", payload),
-  /** Execução sem clique: o main estaciona o ponteiro no centro da roda e devolve-o ao fechar. */
+  /** Clickless execution: main parks the pointer at the wheel's centre and gives it back on close. */
   setRadialCursorCapture: (enabled) =>
     ipcRenderer.send("set-radial-cursor-capture", !!enabled),
-  /** Reencosta o ponteiro ao centro a meio do gesto — não o termina nem mexe no ponto de regresso. */
+  /** Pulls the pointer back to the centre mid-gesture — does not end it, does not touch the return point. */
   parkRadialCursor: () => ipcRenderer.send("park-radial-cursor"),
-  /** Estado geométrico crítico: o próximo atalho pode ocorrer no mesmo tick do fecho de Settings. */
+  /** Critical geometry state: the next shortcut can land on the same tick as the Settings close. */
   setPanelSurfaceVisible: (visible) => {
     try {
       return !!ipcRenderer.sendSync("set-panel-surface-visible", !!visible);

@@ -142,8 +142,8 @@ export function workspaceContainsBundledDemoApp(workspace: Workspace): boolean {
 }
 
 /**
- * Main workspace before Start Menu discovery: vazio — nunca a roda de demonstração completa
- * (evita apps errados no primeiro paint / no disco). Era aqui que viviam os widgets internos.
+ * Main workspace before Start Menu discovery: empty — never the full demo wheel
+ * (keeps the wrong apps out of the first paint / off disk). The internal widgets used to live here.
  */
 export const MINIMAL_MAIN_WORKSPACE_APPS: AppItem[] = [];
 
@@ -156,7 +156,7 @@ export const DEFAULT_WORKSPACES: Workspace[] = [
     enabled: true,
     apps: MINIMAL_MAIN_WORKSPACE_APPS,
     color: "#3B82F6", // Blue
-    /** Sem isto todos os workspaces entram na roda com o mesmo `Layers` e só se distinguem pelo nome. */
+    /** Without this every workspace lands in the wheel with the same `Layers` and is told apart only by name. */
     pickerIconName: "Home",
   },
   {
@@ -246,9 +246,9 @@ export const DEFAULT_UI_CONFIG: UIConfig = {
   appearanceTheme: 'black',
   radialSelectionMode: 'angle',
   /**
-   * Desligado por omissão: com isto ligado, parar o rato sobre um ícone LANÇA-O. Mudar o
-   * comportamento por baixo de quem já usa a roda seria transformar um gesto neutro (mirar) num
-   * gesto destrutivo. Quem quer, liga nas definições.
+   * Off by default: with this on, resting the mouse over an icon LAUNCHES IT. Changing the
+   * behaviour under someone already using the wheel would turn a neutral gesture (aiming) into a
+   * destructive one. Whoever wants it turns it on in settings.
    */
   radialInstantActivate: 'off',
   radialInstantDwellMs: 400,
@@ -262,8 +262,8 @@ export const DEFAULT_UI_CONFIG: UIConfig = {
 };
 
 /**
- * Configs antigos guardaram atalhos `internal:*` (Notas / Alarme / Cronómetro / Pomodoro).
- * Esses widgets já não existem: sem esta limpeza na hidratação o radial mostraria ícones mortos.
+ * Old configs saved `internal:*` shortcuts (Notes / Alarm / Stopwatch / Pomodoro).
+ * Those widgets are gone: without this cleanup on hydration the radial would show dead icons.
  */
 export function stripInternalWidgetApps(items: AppItem[]): AppItem[] {
   const out: AppItem[] = [];
@@ -274,7 +274,7 @@ export function stripInternalWidgetApps(items: AppItem[]): AppItem[] {
   return out;
 }
 
-/** Aplica `stripInternalWidgetApps` a todos os workspaces e ao botão central. */
+/** Applies `stripInternalWidgetApps` to every workspace and to the center button. */
 export function stripInternalWidgetsFromConfig(config: UIConfig): UIConfig {
   const workspaces = config.workspaces?.map((ws) => ({
     ...ws,

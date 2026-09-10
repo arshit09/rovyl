@@ -1,13 +1,13 @@
-# Rovyl — helper persistente que rouba o primeiro plano para um HWND.
+# Rovyl — persistent helper that steals the foreground for an HWND.
 #
-# O radial é revelado com ShowWindow(SW_SHOWNOACTIVATE) + always-on-top, portanto o Windows aplica
-# o foreground lock: SetForegroundWindow chamado pelo próprio processo (ou por app.focus do Electron)
-# é ignorado e a janela fica visível mas sem teclado — as teclas continuam a ir para a app de baixo.
-# A saída documentada do lock é partilhar a fila de input com a thread que ESTÁ em primeiro plano
-# (AttachThreadInput) e só então pedir o foreground.
+# The radial is revealed with ShowWindow(SW_SHOWNOACTIVATE) + always-on-top, so Windows applies
+# the foreground lock: SetForegroundWindow called by the process itself (or by Electron's app.focus)
+# is ignored and the window stays visible but with no keyboard — keys keep going to the app below.
+# The documented way out of the lock is to share the input queue with the thread that IS in the
+# foreground (AttachThreadInput) and only then ask for the foreground.
 #
-# Fica vivo a ler stdin ("FOCUS <hwnd>" / "EXIT") porque arrancar um powershell custa centenas de
-# milissegundos — tempo suficiente para o utilizador começar a escrever para a janela errada.
+# Stays alive reading stdin ("FOCUS <hwnd>" / "EXIT") because spawning a powershell costs hundreds
+# of milliseconds — long enough for the user to start typing into the wrong window.
 $ErrorActionPreference = 'Stop'
 
 Add-Type @"
@@ -48,7 +48,7 @@ function Invoke-ForegroundSteal([string]$rawHandle) {
       $attachedTarget = [RovylForeground]::AttachThreadInput($selfThread, $targetThread, $true)
     }
 
-    # SW_SHOW (5): nunca SW_RESTORE — a janela é transparente e um restore anima/pisca o HWND.
+    # SW_SHOW (5): never SW_RESTORE — the window is transparent and a restore animates/flashes it.
     [void][RovylForeground]::ShowWindow($target, 5)
     [void][RovylForeground]::BringWindowToTop($target)
     [void][RovylForeground]::SetForegroundWindow($target)

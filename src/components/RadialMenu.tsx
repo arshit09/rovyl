@@ -21,7 +21,7 @@ const weatherCache: { data: { temp: number; condition: string } | null; lastFetc
 };
 const WEATHER_TTL_MS = 10 * 60 * 1000; // 10 minutes
 
-/** Subconjunto da API Battery — evita `BatteryManager` quando o TS/DOM local não o expõe. */
+/** Subset of the Battery API — avoids `BatteryManager` when the local TS/DOM does not expose it. */
 type ZenithBattery = {
   level: number;
   addEventListener(type: 'levelchange', listener: () => void): void;
@@ -76,9 +76,9 @@ const normalizePathForDedup = (item: any): string => {
 };
 
 /**
- * O nível raiz é reconstruído (array novo) sempre que o efeito de sincronização corre — em modo
- * `picker` os itens são sintéticos. Trocar a lista por uma equivalente re-renderiza a roda inteira
- * e, agora que a abertura é uma transição CSS presa à identidade do nível, faria a roda "renascer".
+ * The root level is rebuilt (a new array) every time the sync effect runs — in `picker` mode the
+ * items are synthetic. Swapping the list for an equivalent one re-renders the whole wheel and, now
+ * that opening is a CSS transition tied to the level's identity, would make the wheel "reborn".
  */
 function sameRadialLevel(a: AppItem[], b: AppItem[]): boolean {
   if (a === b) return true;
@@ -115,8 +115,9 @@ function applyOpenTerminalForRecents(recents: AppItem[], parent: AppItem): AppIt
 }
 
 /**
- * Calibração da roda. Extraída para módulo porque o gate da licença desenha a MESMA roda
- * (bloqueada): raio, tamanho de tile e respiração têm de vir daqui, nunca de constantes paralelas.
+ * Wheel calibration. Pulled out to module scope because the licence gate paints the SAME wheel
+ * (locked): radius, tile size and breathing room have to come from here, never from parallel
+ * constants.
  */
 export function computeRadialLayout({
   numberOfApps,
@@ -173,8 +174,8 @@ export function computeRadialLayout({
 }
 
 /**
- * Escurecimento do radial: poça radial em smoothstep de 9 stops (2 stops tão largos fazem
- * banding a 8-bit, e banding lê-se como borrão). Partilhado com o gate da licença.
+ * Radial scrim: a radial pool in smoothstep across 9 stops (2 stops that wide band at 8-bit, and
+ * banding reads as blur). Shared with the licence gate.
  */
 export function radialScrimGradient(
   position: { x: number; y: number },
@@ -208,107 +209,109 @@ interface RadialMenuProps {
   triggerSource?: 'mmb' | 'mmb-click' | 'shortcut';
   onWorkspaceSwitch?: (workspaceIndex: number) => void;
   currentWorkspace?: Workspace;
-  /** False enquanto o HWND oculto recebe o primeiro paint transparente. */
+  /** False while the hidden HWND takes its first transparent paint. */
   animationReady?: boolean;
-  /** Atualização descarregada e à espera de reinício — selo no hub. */
+  /** Update downloaded and waiting on a restart — badge on the hub. */
   updateReady?: boolean;
 }
 
 /**
- * Executar sem clique ("mira sustentada"): parar sobre um alvo durante `dwellMs` lança-o.
+ * Launching without a click ("dwell aim"): holding on a target for `dwellMs` launches it.
  *
- * O atraso de armar conta-se a partir do PRIMEIRO PAINT da roda, não de `openingTimeRef`. Esse é
- * escrito dentro do `flushSync` de `openMenu`, antes de o main revelar o HWND — e a revelação tem
- * um fallback de 120ms (240ms a restaurar de minimizado). Medido de lá, o atraso podia expirar com
- * a roda ainda invisível e cada tile ainda `pointer-events: none`: o utilizador levava com um
- * lançamento antes de ver o que quer que fosse.
+ * The arming delay counts from the wheel's FIRST PAINT, not from `openingTimeRef`. That one is
+ * written inside `openMenu`'s `flushSync`, before main reveals the HWND — and the reveal has a
+ * 120ms fallback (240ms when restoring from minimised). Measured from there, the delay could
+ * expire with the wheel still invisible and every tile still `pointer-events: none`: the user got
+ * a launch before seeing anything at all.
  *
- * `INSTANT_ARM_DISPLACEMENT_PX` é deslocamento OBSERVADO desde uma referência posta por um
- * `mousemove` anterior — nunca `hasMoved`, que mede a distância ao CENTRO da roda e portanto já
- * está verdadeiro assim que o ponteiro está parado longe do centro, que é o caso perigoso.
+ * `INSTANT_ARM_DISPLACEMENT_PX` is displacement OBSERVED from a reference set by an earlier
+ * `mousemove` — never `hasMoved`, which measures distance to the wheel's CENTRE and is therefore
+ * already true as soon as the pointer sits still far from the centre, which is the dangerous case.
  */
 const INSTANT_ARM_DELAY_MS = 120;
 const INSTANT_ARM_DISPLACEMENT_PX = 24;
-/** Absorve o clique reflexo que chega logo a seguir a um lançamento por tempo. */
+/** Absorbs the reflex click that lands right after a dwell launch. */
 const INSTANT_QUARANTINE_MS = 300;
 /**
- * Assentar antes de contar.
+ * Settle before counting.
  *
- * Sem isto o temporizador media "há quanto tempo estou nesta cunha", não "há quanto tempo estou
- * parado num alvo" — e em modo ângulo uma cunha não tem limite de distância. Num nível com UM
- * item a cunha é o plano todo: atravessar a zona morta arrancava o relógio e 400ms depois lançava,
- * fizesse o ponteiro o que fizesse pelo caminho.
+ * Without this the timer measured "how long have I been in this wedge", not "how long have I been
+ * held on a target" — and in angle mode a wedge has no distance limit. On a level with ONE item
+ * the wedge is the whole plane: crossing the dead zone started the clock and 400ms later it
+ * launched, whatever the pointer did on the way.
  *
- * A contagem só começa quando o ponteiro fica dentro de `DWELL_SETTLE_PX` durante
- * `DWELL_SETTLE_MS`. Enquanto se move, o que se reagenda é este `setTimeout` — não há um commit
- * do React por frame, que é o que uma reposição direta do arco custaria.
+ * The count only starts once the pointer stays within `DWELL_SETTLE_PX` for `DWELL_SETTLE_MS`.
+ * While it moves, what gets rescheduled is this `setTimeout` — there is no React commit per frame,
+ * which is what resetting the arc directly would cost.
  */
 const DWELL_SETTLE_PX = 10;
 const DWELL_SETTLE_MS = 90;
 /**
- * Já a contar, a tolerância é outra — e maior. As duas fases medem coisas diferentes: assentar
- * pergunta "a mão parou?", contar pergunta "a mão continua neste alvo?". Com um só raio, e ainda
- * medido a partir da última amostra em MOVIMENTO, uma contagem de 1.1s herdava um orçamento quase
- * gasto e um arrastar lento ficava preso num ciclo — o arco a aparecer e a morrer sem nunca abrir.
+ * Once counting, the tolerance is a different one — and larger. The two phases measure different
+ * things: settling asks "has the hand stopped?", counting asks "is the hand still on this target?".
+ * With a single radius, and one still measured from the last MOVING sample, a 1.1s count inherited
+ * an almost spent budget and a slow drag got stuck in a loop — the arc appearing and dying without
+ * ever opening.
  */
 const DWELL_HOLD_PX = 26;
 /**
- * Abaixo disto o arco nao e informacao, e um flash: apareceria e morreria dentro do mesmo par de
- * frames. Com a espera opcional (0ms) isso passou a ser um caso REAL e nao teorico, portanto a
- * contagem curta executa sem desenhar nada — o feedback dessa escolha e a propria app a abrir.
+ * Below this the arc is not information, it is a flash: it would appear and die within the same
+ * pair of frames. With the optional wait (0ms) that became a REAL case and not a theoretical one,
+ * so a short count runs without drawing anything — the feedback for that choice is the app itself
+ * opening.
  */
 const DWELL_ARC_MIN_MS = 90;
 /**
- * Mira por direcao — o modo em que a execucao sem clique vive.
+ * Direction aiming — the mode the clickless launch lives in.
  *
- * O ponteiro esta escondido e estacionado no centro da roda, portanto a fatia sai do VETOR que a
- * mao desenhou desde ai, nao da posicao onde o cursor por acaso ja estava. O vetor e acumulado a
- * partir dos deltas de cada `mousemove`, o que o torna imune ao ponto de partida — que era
- * exatamente o defeito: abrir a roda com o rato em baixo acendia o item de baixo ao primeiro
- * tremor, e a mira sustentada lancava-o sem ninguem ter escolhido nada.
+ * The pointer is hidden and parked at the wheel's centre, so the slice comes from the VECTOR the
+ * hand drew from there, not from the position the cursor happened to already be at. The vector is
+ * accumulated from the deltas of each `mousemove`, which makes it immune to the starting point —
+ * which was exactly the defect: opening the wheel with the mouse low lit the bottom item on the
+ * first tremor, and dwell aim launched it without anyone having chosen anything.
  *
- * O vetor e limitado a um multiplo da sensibilidade porque isto e uma DIRECAO, nao uma posicao:
- * sem teto, virar do topo para o fundo depois de um gesto largo obrigava a desfazer o caminho
- * todo. Com teto, inverter custa sempre mais ou menos o mesmo.
+ * The vector is clamped to a multiple of the sensitivity because this is a DIRECTION, not a
+ * position: with no ceiling, turning from top to bottom after a wide gesture meant undoing the
+ * whole path. With a ceiling, reversing always costs roughly the same.
  *
- * O fator nao e livre: o que sobra acima do limiar (1.5x ele) e a folga que separa "comprometido"
- * de "de volta ao centro", e tem de ser maior que `DWELL_HOLD_PX` -- senao um tremor que a mira
- * sustentada ainda aceita como mao parada ja desfazia a direcao, e o arco morria sozinho.
+ * The factor is not free: what is left above the threshold (1.5x it) is the slack that separates
+ * "committed" from "back at the centre", and it has to be larger than `DWELL_HOLD_PX` -- otherwise
+ * a tremor that dwell aim still accepts as a still hand already undid the direction, and the arc
+ * died on its own.
  */
 const DIRECTION_CLAMP_FACTOR = 2.5;
 /**
- * O `SetCursorPos` do estacionamento chega ao DOM como um `mousemove` normal — e como um salto de
- * centenas de pixeis, que somado ao vetor apontaria para o lado oposto ao do gesto. Enquanto um
- * estacionamento esta pendente, a amostra que aterra no centro (ou que salta mais do que uma mao
- * consegue num evento) e a do teleporte: serve de nova referencia e o seu delta e deitado fora.
+ * The parking `SetCursorPos` reaches the DOM as an ordinary `mousemove` — and as a jump of
+ * hundreds of pixels, which added to the vector would point opposite to the gesture. While a
+ * parking is pending, the sample that lands at the centre (or that jumps further than a hand can
+ * in one event) is the teleport's: it becomes the new reference and its delta is thrown away.
  */
 const PARK_LANDING_PX = 28;
 const PARK_JUMP_PX = 120;
-/** Sem aterragem nenhuma — Windows sem helper, outro sistema — o gesto volta ao normal. */
+/** No landing at all — Windows without the helper, another system — and the gesture goes back to normal. */
 const PARK_TIMEOUT_MS = 400;
-/** Folga ate a borda da janela; passar disto pede um reencosto antes de o cursor sair (e reaparecer). */
+/** Slack to the window edge; past this a re-park is requested before the cursor leaves (and reappears). */
 const PARK_STRAY_MARGIN_PX = 140;
 
 /**
- * Eco de lançamento — a única janela em que o utilizador vê o que escolheu.
+ * Launch echo — the only window in which the user sees what they chose.
  *
- * Confirmar era um CORTE: a roda desaparecia no mesmo frame em que o comando era despachado, e o
- * que vinha a seguir era o desktop nu durante o tempo que a app levasse a abrir — meio segundo
- * numa app quente, vários numa fria. Nada nesse intervalo dizia qual dos ícones tinha sido
- * apanhado, nem sequer que algum tinha: um lançamento bem sucedido e um clique que não acertou em
- * nada eram, para os olhos, o mesmo acontecimento.
+ * Confirming was a CUT: the wheel vanished on the same frame the command was dispatched, and what
+ * followed was the bare desktop for as long as the app took to open — half a second on a warm app,
+ * several on a cold one. Nothing in that gap said which of the icons had been caught, or even that
+ * any had: a successful launch and a click that hit nothing were, to the eye, the same event.
  *
- * O eco segura o ícone confirmado no sítio onde ele já estava, apaga tudo o resto à volta e manda
- * uma onda para fora dele. É por isso que o atraso ANTECEDE o despacho em vez de correr por cima:
- * a janela do radial é `alwaysOnTop` e a app que abre rouba o foreground — animar depois punha a
- * onda a competir com a janela nova, ou escondida por trás dela.
+ * The echo holds the confirmed icon where it already was, fades everything else around it and
+ * sends a wave out of it. That is why the delay PRECEDES the dispatch rather than running over it:
+ * the radial window is `alwaysOnTop` and the app that opens steals the foreground — animating
+ * afterwards left the wave competing with the new window, or hidden behind it.
  *
- * O custo é real e é este número: o comando parte `LAUNCH_ECHO_MS` mais tarde. Fica curto de
- * propósito — longo o suficiente para o olho registar QUAL ícone, curto o suficiente para não se
- * ler como lentidão do launcher.
+ * The cost is real and it is this number: the command leaves `LAUNCH_ECHO_MS` later. It is kept
+ * short on purpose — long enough for the eye to register WHICH icon, short enough not to read as
+ * the launcher being slow.
  */
 const LAUNCH_ECHO_MS = 520;
-/** `performanceMode` encurta tudo o resto da roda; o eco segue a mesma regra. */
+/** `performanceMode` shortens everything else on the wheel; the echo follows the same rule. */
 const LAUNCH_ECHO_FAST_MS = 340;
 
 interface RadialMenuItemProps {
@@ -328,22 +331,22 @@ interface RadialMenuItemProps {
   folderStackLength: number;
   /** `false` keeps the slice collapsed at the hub — the frame before the bloom and the whole closed state. */
   bloom: boolean;
-  /** Small chip inside the label pill (workspace number, "recentes"…). Omitted when the slice has no hint. */
+  /** Small chip inside the label pill (workspace number, "recents"…). Omitted when the slice has no hint. */
   shortcutHint?: string;
   /**
-   * Duração do arco de mira sustentada. Definido SÓ no tile que tem o temporizador a correr —
-   * `undefined` em todos os outros, para que o `React.memo` deles não seja invalidado a cada dwell.
+   * Duration of the dwell aim arc. Set ONLY on the tile whose timer is running — `undefined` on
+   * every other one, so their `React.memo` is not invalidated on each dwell.
    */
   dwellMs?: number;
-  /** Id da tentativa. Mudar remonta o `<svg>` e é isso que reinicia a animação CSS. */
+  /** Attempt id. Changing it remounts the `<svg>`, and that is what restarts the CSS animation. */
   dwellKey?: number;
   /**
-   * Papel desta fatia no eco de lançamento: `fired` é a que foi confirmada (fica, pulsa e emite a
-   * onda), `faded` é todas as outras (saem já). `undefined` fora do eco — e é assim que o
-   * `React.memo` de toda a roda continua intacto na vida normal.
+   * This slice's role in the launch echo: `fired` is the confirmed one (it stays, pulses and emits
+   * the wave), `faded` is all the others (they leave at once). `undefined` outside the echo — and
+   * that is how the whole wheel's `React.memo` stays intact in normal life.
    */
   echo?: 'fired' | 'faded';
-  /** Duração do eco, para as animações CSS acompanharem o temporizador que despacha o comando. */
+  /** Echo duration, so the CSS animations track the timer that dispatches the command. */
   echoMs?: number;
   onClick: (app: AppItem) => void;
 }
@@ -365,14 +368,15 @@ export function getLabelPlacement(angleDeg: number, iconSize: number) {
 }
 
 /**
- * Destaque binário: a fatia apontada acende e todas as outras ficam iguais entre si. Variar a
- * presença pela distância angular fazia os vizinhos parecerem parcialmente selecionados.
+ * Binary highlight: the aimed slice lights up and every other one looks the same as the rest.
+ * Varying presence by angular distance made the neighbours look partly selected.
  *
- * A opacidade do contentor NÃO é o canal de "não selecionado". Cada fatia traz o seu próprio fundo,
- * e o alfa multiplica esse fundo também: a 0.5 o tile deixava de ser um objeto e passava a ser uma
- * mancha sobre o desktop — pior ainda com ícone monocromático (workspaces) e wallpaper claro, onde
- * o glifo branco a meio alfa desaparecia. Aqui a opacidade só dá o afastamento mínimo; a seleção
- * lê-se por cor, anel e escala, que são sinais que não destroem o contraste do que está por baixo.
+ * Container opacity is NOT the "not selected" channel. Each slice carries its own background, and
+ * alpha multiplies that background too: at 0.5 the tile stopped being an object and became a
+ * smudge over the desktop — worse still with a monochrome icon (workspaces) and a light wallpaper,
+ * where the white glyph at half alpha disappeared. Here opacity only gives the minimum remove;
+ * selection reads through colour, ring and scale, which are signals that do not destroy the
+ * contrast of what sits underneath.
  */
 function getSlicePresence(distance: number | null) {
   if (distance === null) return { opacity: 0.96, scale: 1 };
@@ -381,28 +385,29 @@ function getSlicePresence(distance: number | null) {
 }
 
 /**
- * A escala em que a fatia confirmada FICA durante o eco de lançamento — a mesma da fatia apontada,
- * e não um valor novo. Confirmar por mira já a tinha aí: mudar o número faria a fatia dar um passo
- * lateral no instante em que o utilizador está a lê-la. Só quem confirma por clique num tile que
- * não estava apontado vê aqui movimento, e aí o pequeno salto é a própria resposta ao clique.
+ * The scale the confirmed slice STAYS at during the launch echo — the same as the aimed slice, not
+ * a new value. Confirming by aim already had it there: changing the number would make the slice
+ * take a sideways step at the very moment the user is reading it. Only someone confirming by
+ * clicking a tile that was not aimed sees movement here, and there the small jump is the response
+ * to the click itself.
  */
 const FIRED_SLICE_SCALE = 1.06;
 
 /**
- * Alinha um valor à grelha de pixels FÍSICOS do monitor. A roda posiciona cada fatia por
- * trigonometria, o que produz coordenadas fracionárias (`84.0, 48.5`). Um tile tem três contornos
- * a 1px — borda clara, anel escuro exterior e luz interior — e em meio-pixel cada um deles é
- * espalhado por dois pixels físicos com alfas diferentes: é isso que se lê como aresta "à mão",
- * com rebarba e pontos irregulares. Com escala do Windows a 125/150% o erro nem sequer é de meio
- * pixel CSS, por isso não basta arredondar — tem de se dividir pelo `devicePixelRatio`.
+ * Snaps a value to the monitor's PHYSICAL pixel grid. The wheel positions each slice by
+ * trigonometry, which produces fractional coordinates (`84.0, 48.5`). A tile has three 1px
+ * outlines — light border, dark outer ring and inner light — and on a half pixel each of them is
+ * spread across two physical pixels with different alphas: that is what reads as a "hand-drawn"
+ * edge, with burrs and uneven dots. With Windows scaling at 125/150% the error is not even half a
+ * CSS pixel, so rounding is not enough — it has to be divided by the `devicePixelRatio`.
  */
 /**
- * Retângulo arredondado que COMEÇA no topo, ao centro.
+ * Rounded rectangle that STARTS at the top, centred.
  *
- * O caminho implícito de um `<rect>` arranca no fim do arco superior esquerdo, ou seja deslocado
- * para a direita pelo raio do canto — o anel de progresso começava a encher num ponto arbitrário
- * da aresta de cima, e o desvio mudava com o tamanho do ícone porque o raio também muda. Um
- * relógio que não começa às doze lê-se como um erro.
+ * A `<rect>`'s implicit path begins at the end of the top-left arc, that is, offset to the right
+ * by the corner radius — the progress ring started filling at an arbitrary point on the top edge,
+ * and the offset changed with the icon size because the radius changes too. A clock that does not
+ * start at twelve reads as a bug.
  */
 export function roundedRectPathFromTop(size: number, inset: number, radius: number): string {
   const near = inset;
@@ -428,7 +433,7 @@ export function snapToDevicePixel(value: number): number {
   return Math.round(value * ratio) / ratio;
 }
 
-/** Mantém ícones e rótulos legíveis quando o utilizador escolhe um hover claro ou escuro. */
+/** Keeps icons and labels readable when the user picks a light or dark hover. */
 function getReadableForeground(background: string): '#000000' | '#FFFFFF' {
   const hex = background.replace('#', '');
   if (!/^[0-9a-f]{6}$/i.test(hex)) return '#000000';
@@ -499,15 +504,15 @@ const RadialMenuItem = React.memo(({
 
   const hasRasterIcon = Boolean(app.customIconUrl) && !remoteIconFailed;
   /**
-   * Ícone por resolver: item nativo, com comando, mas ainda sem imagem. Acontece logo depois de
-   * uma restauração ou da primeira descoberta, enquanto o PowerShell extrai os ícones — e um
-   * glifo genérico nesse momento parece um ícone errado, não um ícone em falta.
+   * Unresolved icon: native item, with a command, but still without an image. It happens right
+   * after a restore or the first discovery, while PowerShell extracts the icons — and a generic
+   * glyph at that moment looks like a wrong icon, not a missing one.
    */
   const iconPending = app.iconSource === 'native' && !app.customIconUrl && Boolean(app.command);
   /**
-   * O indicador tem prazo. Um ícone que nunca vai resolver — alvo inválido, app desinstalada —
-   * deixava a fatia a girar indefinidamente, e uma espera sem fim lê-se pior do que um ícone
-   * genérico. Passados 10 segundos, mostra-se o glifo e a fatia fica utilizável.
+   * The indicator has a deadline. An icon that will never resolve — invalid target, uninstalled
+   * app — left the slice spinning indefinitely, and an endless wait reads worse than a generic
+   * icon. After 10 seconds the glyph is shown and the slice becomes usable.
    */
   const [pendingExpired, setPendingExpired] = React.useState(false);
   React.useEffect(() => {
@@ -521,11 +526,11 @@ const RadialMenuItem = React.memo(({
   const presence = getSlicePresence(angularDistance);
   const activeForeground = getReadableForeground(hoverColor);
   /**
-   * Anel concêntrico com o tile. O que tem de ser concêntrico é a LINHA MÉDIA do traço, não a sua
-   * aresta exterior: o retângulo está encolhido 1.25 de cada lado (metade dos 2.5 de traço), por
-   * isso a linha média corre 5.75px por fora do tile e o raio certo é 18 + 5.75, não 18 + 7.
-   * O limite também se mede contra o lado REAL do retângulo — contra a caixa do SVG, um ícone no
-   * mínimo caía no recorte silencioso do browser, que é exatamente o que este limite evita.
+   * Ring concentric with the tile. What has to be concentric is the stroke's CENTRE LINE, not its
+   * outer edge: the rectangle is inset 1.25 on each side (half of the 2.5 stroke), so the centre
+   * line runs 5.75px outside the tile and the right radius is 18 + 5.75, not 18 + 7.
+   * The clamp is also measured against the rectangle's REAL side — against the SVG's box, an icon
+   * at the minimum fell into the browser's silent clipping, which is exactly what this clamp avoids.
    */
   const dwellRingSize = actualIconSize + 14;
   const dwellRingInset = (dwellRingSize - actualIconSize) / 2 - 1.25;
@@ -533,13 +538,13 @@ const RadialMenuItem = React.memo(({
   const dwellRingPath = roundedRectPathFromTop(dwellRingSize, 1.25, dwellRingRadius);
 
   /**
-   * A onda nasce com a forma do TILE, não como círculo: sai da silhueta do ícone que o utilizador
-   * acabou de apontar, e é essa continuidade que a faz ler-se como "isto partiu daqui" em vez de um
-   * efeito colado por cima. Ao escalar, o `border-radius` escala com ela e a forma abre para um
-   * quadrado cada vez mais redondo — o que é exatamente a leitura pretendida.
+   * The wave is born with the TILE's shape, not as a circle: it comes out of the silhouette of the
+   * icon the user just aimed at, and it is that continuity that makes it read as "this came from
+   * here" rather than an effect pasted on top. As it scales, the `border-radius` scales with it and
+   * the shape opens into an ever rounder square — which is exactly the intended reading.
    *
-   * Escala e opacidade e mais nada: os dois únicos atributos que o compositor anima sem tocar na
-   * main thread, que é onde a app a ser lançada já está a competir por tempo.
+   * Scale and opacity and nothing else: the only two attributes the compositor animates without
+   * touching the main thread, which is where the app being launched is already competing for time.
    */
   const fired = echo === 'fired';
   const waveSize = actualIconSize + 6;
@@ -548,24 +553,24 @@ const RadialMenuItem = React.memo(({
   return (
     <div
       /**
-       * O invólucro NUNCA recebe cliques. A sua caixa de layout fica na origem do ponto da fatia e
-       * cresce para a direita e para baixo, enquanto o tile é PINTADO centrado nesse ponto (o
-       * `-translate-*-1/2` é transform, não layout). A caixa fica meio tile fora do sítio, e a da
-       * fatia de cima à esquerda chega a invadir o centro da roda — clicar no canto superior
-       * esquerdo do hub caía nela, sempre na mesma, e executava-a. Quem recebe o clique passa a
-       * ser o tile, cuja área de acerto acompanha o transform e portanto coincide com o desenho.
+       * The wrapper NEVER takes clicks. Its layout box sits at the origin of the slice's point and
+       * grows right and down, while the tile is PAINTED centred on that point (the
+       * `-translate-*-1/2` is transform, not layout). The box ends up half a tile out of place, and
+       * the top-left slice's box even reaches into the wheel's centre — clicking the hub's top-left
+       * corner landed on it, always the same one, and launched it. What takes the click is now the
+       * tile, whose hit area follows the transform and therefore matches the paint.
        */
       className={`zn-radial-slice absolute top-0 left-0 pointer-events-none${
         echo ? ` zn-radial-slice--${echo}` : ''
       }`}
       style={{
-        /* Um único transform por fatia: posição + presença. O hover só troca este valor. */
+        /* One transform per slice: position + presence. Hover only swaps this value. */
         ['--zn-tf' as string]: bloom
           ? `translate3d(${snapToDevicePixel(pos.x)}px, ${snapToDevicePixel(pos.y)}px, 0) scale(${
               /**
-               * A confirmada fica FIXA no ponto onde já estava — mexê-la seria pedir ao olho que a
-               * seguisse no exato momento em que ele tem de a identificar. As outras encolhem um
-               * pouco ao sair, para a saída delas se ler como recuo e não como um apagar.
+               * The confirmed one stays FIXED at the point it was already at — moving it would ask
+               * the eye to follow it at the exact moment it has to identify it. The others shrink a
+               * little on the way out, so their exit reads as a retreat and not as a fade-out.
                */
               fired
                 ? FIRED_SLICE_SCALE
@@ -575,12 +580,12 @@ const RadialMenuItem = React.memo(({
             })`
           : 'translate3d(0px, 0px, 0) scale(0.2)',
         /**
-         * A confirmada fica a 1 e é a animação de dentro que a apaga, para que a saída dela não se
-         * confunda com a das outras — todo o eco existe para as separar.
+         * The confirmed one stays at 1 and it is the inner animation that fades it, so its exit is
+         * not confused with the others' — the whole echo exists to separate them.
          */
         ['--zn-op' as string]: fired ? 1 : echo === 'faded' ? 0 : bloom ? presence.opacity : 0,
         ...(echoMs ? { ['--zn-echo-ms' as string]: `${echoMs}ms` } : null),
-        /** A confirmada por cima de tudo: a onda dela atravessa o sítio dos vizinhos. */
+        /** The confirmed one above everything: its wave crosses where the neighbours sit. */
         zIndex: fired ? 300 : isActive ? 200 : 100,
       }}
       onMouseDown={(e) => e.stopPropagation()}
@@ -592,28 +597,28 @@ const RadialMenuItem = React.memo(({
     >
       <div className="relative flex items-center justify-center -translate-x-1/2 -translate-y-1/2">
         {/*
-          Arco de mira sustentada. Só aparece em `startDwell`, a partir de uma mira RESOLVIDA DE
-          NOVO nesse instante, e tanto o `startDwell` como o `fireDwell` revalidam a terna
-          `{nível, índice, id}` — um antes de desenhar, o outro antes de abrir. É por isso que o
-          que o anel mostra e o que vai executar não podem divergir: acender um ícone e abrir outro
-          é o que o comentário do `resolveAimAtPoint` chama o pior defeito possível num lançador.
+          Dwell aim arc. It only appears in `startDwell`, from an aim RESOLVED AGAIN at that
+          instant, and both `startDwell` and `fireDwell` revalidate the triple `{level, index, id}`
+          — one before drawing, the other before opening. That is why what the ring shows and what
+          will launch cannot diverge: lighting one icon and opening another is what the comment on
+          `resolveAimAtPoint` calls the worst possible defect in a launcher.
 
-          `pathLength={1}` normaliza o perímetro: o traço anima de 1 para 0 sem aritmética nenhuma
-          sobre o comprimento real do caminho, que muda com o tamanho do ícone.
+          `pathLength={1}` normalises the perimeter: the stroke animates from 1 to 0 with no
+          arithmetic at all over the path's real length, which changes with the icon size.
         */}
         {dwellMs != null && (
           <svg
             key={dwellKey}
             /**
-             * `z-10`, por baixo do tile. O anel corre inteiramente FORA do quadrado do tile, por
-             * isso nada dele se perde — e por cima passava a cortar o selo de pasta, que vive no
-             * `z-30` de dentro do invólucro e é maior do que a folga entre o tile e o anel.
+             * `z-10`, below the tile. The ring runs entirely OUTSIDE the tile's square, so none of
+             * it is lost — and above it would cut across the folder badge, which lives at `z-30`
+             * inside the wrapper and is larger than the gap between the tile and the ring.
              */
             className="absolute pointer-events-none z-10"
             /**
-             * Centragem explícita. Um filho absoluto de um contentor flex herda a posição estática
-             * do alinhamento do flex, o que já o centraria — mas depender disso deixa o anel a
-             * meio tile de distância se alguém trocar `justify-center` por outra coisa.
+             * Explicit centring. An absolute child of a flex container inherits its static position
+             * from the flex alignment, which would already centre it — but relying on that leaves
+             * the ring half a tile away if someone swaps `justify-center` for something else.
              */
             style={{ left: '50%', top: '50%', transform: 'translate(-50%, -50%)' }}
             width={dwellRingSize}
@@ -623,15 +628,16 @@ const RadialMenuItem = React.memo(({
             aria-hidden
           >
             {/*
-              Três camadas, pela mesma razão que o tile tem contorno duplo: o anel corre FORA da
-              placa opaca do tile, portanto o que está por trás dele é o escurecimento e, através
-              dele, um wallpaper que não controlamos. Sozinho, branco a 18% não se lê sobre fundo
-              claro — e um anel de progresso invisível é a única coisa que avisa que algo está
-              prestes a abrir sozinho.
+              Three layers, for the same reason the tile has a double outline: the ring runs
+              OUTSIDE the tile's opaque plate, so what sits behind it is the scrim and, through it,
+              a wallpaper we do not control. On its own, white at 18% does not read over a light
+              background — and an invisible progress ring is the only thing warning that something
+              is about to open by itself.
 
-              Invólucro escuro OPACO por baixo (o mesmo papel do `0 0 0 1px rgba(0,0,0,.5)` do
-              tile), depois a pista, depois o arco. A pista pode ser translúcida porque já tem o
-              invólucro por baixo — não é o alfa a fazer de canal de desênfase.
+              An OPAQUE dark wrapper underneath (the same role as the tile's
+              `0 0 0 1px rgba(0,0,0,.5)`), then the track, then the arc. The track can be
+              translucent because it already has the wrapper beneath it — alpha is not doing duty
+              as the de-emphasis channel.
             */}
             <path
               d={dwellRingPath}
@@ -658,14 +664,14 @@ const RadialMenuItem = React.memo(({
         )}
 
         {/*
-          Onda de lançamento. Dois anéis desfasados, não um: um anel único lê-se como um contorno
-          que cresceu, dois lêem-se como algo que PARTIU do ícone. O segundo sai a meio do primeiro,
-          que é o intervalo em que o olho ainda está a seguir o primeiro e ganha a impressão de
-          continuidade em vez de repetição.
+          Launch wave. Two offset rings, not one: a single ring reads as an outline that grew, two
+          read as something that CAME OUT of the icon. The second leaves halfway through the first,
+          which is the gap in which the eye is still following the first and gets the impression of
+          continuity rather than repetition.
 
-          `z-0`, por baixo do tile: a onda passa por trás do ícone e sai por fora dele. Por cima,
-          cada anel cortava a placa do ícone ao atravessá-la — e o ícone é a única coisa que este
-          momento inteiro existe para mostrar.
+          `z-0`, below the tile: the wave passes behind the icon and comes out around it. Above it,
+          each ring cut across the icon's plate on its way through — and the icon is the only thing
+          this whole moment exists to show.
         */}
         {fired && (
           <>
@@ -707,24 +713,24 @@ const RadialMenuItem = React.memo(({
           {/* INNER MASKED CONTAINER (Overflow Hidden) */}
           <div
             /**
-             * `overflow-hidden` liga uma máscara arredondada, e o Chromium suaviza máscaras pior
-             * que bordas — os cantos ficam serrilhados sobre uma janela transparente. A máscara só
-             * existe para cortar ícones rasterizados, portanto só se liga quando há um.
+             * `overflow-hidden` turns on a rounded mask, and Chromium antialiases masks worse than
+             * borders — the corners come out jagged over a transparent window. The mask only exists
+             * to clip raster icons, so it is only turned on when there is one.
              */
             className={`w-full h-full rounded-[18px] flex items-center justify-center transition-[background-color,border-color,box-shadow] duration-150 relative ${hasRasterIcon ? 'overflow-hidden' : ''}`}
             style={{
               /**
-               * O tile precisa de se sustentar sozinho sobre um desktop que não controlamos: o
-               * fundo é quase opaco e a borda em repouso é forte o suficiente para o recortar sem
-               * depender do escurecimento global nem do contraste do wallpaper.
+               * The tile has to hold up on its own over a desktop we do not control: the background
+               * is almost opaque and the idle border is strong enough to cut it out without
+               * depending on the global scrim or on the wallpaper's contrast.
                */
               /**
-               * Fundo TOTALMENTE opaco. A janela é `transparent: true`: com alfa < 1 cada pixel é
-               * pré-multiplicado e requantizado a 8 bits ao ser composto pelo Windows. Nos lados
-               * retos a cobertura é 0% ou 100% e o erro não existe; na curva os pixels têm
-               * cobertura parcial e o arredondamento cai ora para cima ora para baixo — a linha
-               * fica irregular, com pontos mais claros e outros a desaparecer. A 0.985 a diferença
-               * visual para opaco é nula, mas o custo na aresta não é.
+               * FULLY opaque background. The window is `transparent: true`: with alpha < 1 every
+               * pixel is premultiplied and requantised to 8 bits as Windows composites it. On the
+               * straight sides coverage is 0% or 100% and the error does not exist; on the curve
+               * the pixels have partial coverage and the rounding falls now up, now down — the line
+               * comes out uneven, with some dots lighter and others disappearing. At 0.985 the
+               * visual difference from opaque is nil, but the cost on the edge is not.
                */
               backgroundColor: isActive
                 ? hoverColor
@@ -732,11 +738,11 @@ const RadialMenuItem = React.memo(({
               border: isActive ? `1px solid ${hoverColor}` : `1px solid rgba(255,255,255,${0.28 + backdropOpacity * 0.08})`,
               color: isActive ? activeForeground : '#fff',
               /**
-               * Contorno duplo: borda clara por dentro + anel escuro de 1px por fora.
-               * O tile separa-se do desktop sozinho — em fundo claro lê-se o anel, em fundo
-               * escuro lê-se a borda — sem depender do escurecimento global.
+               * Double outline: light border on the inside + a dark 1px ring on the outside.
+               * The tile separates itself from the desktop — on a light background the ring reads,
+               * on a dark one the border does — without depending on the global scrim.
                */
-              /* `inset` no topo = uma única fonte de luz para toda a roda: os tiles lêem-se como objetos. */
+              /* `inset` at the top = a single light source for the whole wheel: the tiles read as objects. */
               boxShadow: isActive
                 ? `0 0 0 1px rgba(0,0,0,0.45), 0 0 0 5px ${hoverColor}24, 0 12px 28px rgba(0,0,0,0.5)`
                 : 'inset 0 1px 0 rgba(255,255,255,0.08), 0 0 0 1px rgba(0,0,0,0.5), 0 8px 22px rgba(0,0,0,0.42)',
@@ -757,9 +763,9 @@ const RadialMenuItem = React.memo(({
               ) : (
                 /* Vector Icon (Only when no custom icon) */
                 /**
-                 * Glifo monocromático (workspaces, atalhos sem ícone nativo) não tem cor própria a
-                 * segurá-lo: a legibilidade vem toda do traço, por isso é mais grosso que o de um
-                 * ícone de app, que chega com a sua própria forma e cor.
+                 * A monochrome glyph (workspaces, shortcuts without a native icon) has no colour of
+                 * its own holding it up: legibility comes entirely from the stroke, so it is
+                 * thicker than an app icon's, which arrives with its own shape and colour.
                  */
                 <Icon size={Math.round(actualIconSize * 0.55)} strokeWidth={1.75} />
               )}
@@ -795,21 +801,21 @@ const RadialMenuItem = React.memo(({
         {showLabels && (
           <div
             /**
-             * O rótulo da fatia confirmada sai COM o ícone, não antes nem depois: durante o eco ele
-             * é a única coisa que diz por escrito o que foi lançado, e a fatia inteira já não está
-             * a esbater-se (`--zn-op` fica a 1), por isso sem isto ficaria pendurado até a janela
-             * desaparecer.
+             * The confirmed slice's label leaves WITH the icon, not before or after: during the
+             * echo it is the only thing that says in writing what was launched, and the whole slice
+             * is no longer fading (`--zn-op` stays at 1), so without this it would hang around
+             * until the window disappeared.
              */
             className={`zn-radial-label absolute pointer-events-none z-30${fired ? ' zn-launch-fade' : ''}`}
             style={{
               left: '50%',
               top: '50%',
-              /* Âncora (fica fora da roda) + deslocamento + escala num só transform. */
+              /* Anchor (it sits outside the wheel) + offset + scale in a single transform. */
               ['--zn-tf' as string]:
                 `translate(${labelPlacement.originX}, ${labelPlacement.originY})` +
                 ` translate3d(${snapToDevicePixel(labelPlacement.x)}px, ${snapToDevicePixel(labelPlacement.y)}px, 0)` +
                 ` scale(${alwaysShowAppLabels ? (isActive ? 1 : 0.94) : (isActive ? 1 : 0.9)})`,
-              /** Rótulo também tem plate próprio: dimmá-lo a 0.72 apagava o texto, não o destaque. */
+              /** The label has its own plate too: dimming it to 0.72 faded the text, not the highlight. */
               ['--zn-op' as string]: alwaysShowAppLabels
                 ? (isActive ? 1 : 0.9)
                 : (isActive ? 1 : 0),
@@ -861,9 +867,9 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
   position,
   viewportSize,
   /**
-   * O `onClose` CRU: fecha a roda e executa, sem eco nenhum. Todo o resto do ficheiro chama o
-   * `onClose` embrulhado, definido mais abaixo — é ele que segura o ícone confirmado no ecrã
-   * durante o eco de lançamento antes de deixar o App fechar a janela.
+   * The RAW `onClose`: it closes the wheel and launches, with no echo at all. Everything else in
+   * the file calls the wrapped `onClose` defined further down — that is the one that holds the
+   * confirmed icon on screen through the launch echo before letting App close the window.
    */
   onClose: onCloseNow,
   apps,
@@ -879,67 +885,67 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
   const [isCenterActive, setIsCenterActive] = useState(false);
   const [hasMoved, setHasMoved] = useState(false);
   /**
-   * "Esta roda começou a fechar". Escrito SINCRONAMENTE por todos os caminhos de cancelamento —
-   * Escape, botão direito, menu de contexto e o evento de toggle do trigger — antes do `onClose`.
+   * "This wheel has started closing". Written SYNCHRONOUSLY by every cancellation path — Escape,
+   * right button, context menu and the trigger's toggle event — before `onClose`.
    *
-   * Existe porque `!stateRef.current.isOpen` chega tarde: passa por `onClose` → `setIsMenuOpen`
-   * do App → batching do React → render. Um clique não sofre com isso (o listener já foi
-   * desmontado), mas um temporizador de mira sustentada sobrevive a essa janela e dispararia
-   * contra uma roda que o utilizador acabou de mandar embora. Antes disto a ref existia mas nunca
-   * era lida: descrevia uma proteção que não estava lá.
+   * It exists because `!stateRef.current.isOpen` arrives late: it goes through `onClose` → App's
+   * `setIsMenuOpen` → React batching → render. A click does not suffer from that (the listener has
+   * already been unmounted), but a dwell aim timer survives that window and would fire against a
+   * wheel the user has just sent away. Before this the ref existed but was never read: it described
+   * a protection that was not there.
    */
   const closingRef = useRef(false);
   const isCenterActiveRef = useRef(isCenterActive);
   const openingTimeRef = useRef<number>(0);
   /**
-   * A abertura é uma transição CSS, não uma animação JS: as fatias montam colapsadas no hub e
-   * um único `rAF` depois passam ao estado final — o compositor faz o resto. Uma re-renderização
-   * por abertura (e por nível), em vez de uma mola por ícone a cada frame.
+   * Opening is a CSS transition, not a JS animation: the slices mount collapsed at the hub and a
+   * single `rAF` later move to the final state — the compositor does the rest. One re-render per
+   * open (and per level), instead of a spring per icon on every frame.
    */
   const [bloom, setBloom] = useState(false);
 
   /**
-   * Motor da mira sustentada.
+   * Dwell aim engine.
    *
-   * Regra de desenho que governa tudo o que está aqui: ARMAR É UM FACTO OBSERVADO. O gesto só
-   * passa a poder executar depois de um `mousemove` REAL cair a mais de `INSTANT_ARM_DISPLACEMENT_PX`
-   * de uma referência posta por um `mousemove` real anterior. Nada é inferido do estado da roda,
-   * porque o estado perigoso — ponteiro parado longe do centro, com uma fatia já acesa — é
-   * indistinguível de uma mira deliberada se não se olhar para o movimento.
+   * The design rule that governs everything here: ARMING IS AN OBSERVED FACT. The gesture only
+   * becomes able to launch after a REAL `mousemove` lands more than `INSTANT_ARM_DISPLACEMENT_PX`
+   * from a reference set by an earlier real `mousemove`. Nothing is inferred from the wheel's
+   * state, because the dangerous state — pointer still, far from the centre, with a slice already
+   * lit — is indistinguishable from a deliberate aim if you do not look at the movement.
    */
   const levelGenRef = useRef(0);
   const dwellArmedRef = useRef(false);
   const dwellBaselineRef = useRef<{ x: number; y: number } | null>(null);
   const dwellTimerRef = useRef<number | null>(null);
   const dwellTargetRef = useRef<{ gen: number; index: number; itemId: string } | null>(null);
-  /** Alvo à espera de que a mão assente; ainda não conta nem desenha nada. */
+  /** Target waiting for the hand to settle; it does not count or draw anything yet. */
   const dwellPendingRef = useRef<{ gen: number; index: number; itemId: string } | null>(null);
   const dwellSettleTimerRef = useRef<number | null>(null);
-  /** Ponto onde a tentativa atual começou — é contra ele que se mede se o ponteiro parou. */
+  /** Point where the current attempt started — it is what tells whether the pointer has stopped. */
   const dwellAnchorRef = useRef<{ x: number; y: number } | null>(null);
   const dwellStartedAtRef = useRef(0);
   const paintReadyAtRef = useRef<number | null>(null);
   const quarantineUntilRef = useRef(0);
   const dwellSeqRef = useRef(0);
   /**
-   * O efeito de interação regista os listeners uma vez por abertura, e o motor está definido
-   * depois dele (precisa do `handleAppClick`). Uma ref é o que liga os dois sem inverter a ordem
-   * do ficheiro nem recriar listeners a cada render.
+   * The interaction effect registers the listeners once per open, and the engine is defined after
+   * it (it needs `handleAppClick`). A ref is what links the two without inverting the file's order
+   * or recreating listeners on every render.
    */
   const armAndTrackDwellRef = useRef<
     (point: { x: number; y: number }, aim: { isCenter: boolean; index: number | null }) => void
   >(() => {});
-  /** Um commit por início/cancelamento de arco. Zero por frame: a animação é CSS. */
+  /** One commit per arc start/cancel. Zero per frame: the animation is CSS. */
   const [dwellTick, setDwellTick] = useState<{ index: number; key: number } | null>(null);
 
   /**
-   * Estado da mira por direção. `gestureVectorRef` é o deslocamento acumulado desde o centro —
-   * o ponteiro virtual que a roda mira; `gestureSampleRef` é a última posição REAL, só para
-   * calcular o delta seguinte. Zero em ambos significa "ainda não há direção": nada aceso.
+   * Direction aim state. `gestureVectorRef` is the displacement accumulated from the centre — the
+   * virtual pointer the wheel aims with; `gestureSampleRef` is the last REAL position, only to
+   * work out the next delta. Zero in both means "there is no direction yet": nothing lit.
    */
   const gestureVectorRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const gestureSampleRef = useRef<{ x: number; y: number } | null>(null);
-  /** Instante em que se pediu um estacionamento; `0` quando não há nenhum por aterrar. */
+  /** Instant a parking was requested; `0` when there is none waiting to land. */
   const gestureParkAtRef = useRef(0);
 
   const resetDirectionGesture = useCallback((expectPark: boolean) => {
@@ -952,7 +958,7 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
     isCenterActiveRef.current = isCenterActive;
   }, [isCenterActive]);
 
-  /** Mata o temporizador e o arco. NÃO desarma: estar no hub cancela a contagem, não o gesto. */
+  /** Kills the timer and the arc. It does NOT disarm: sitting on the hub cancels the count, not the gesture. */
   const cancelDwell = useCallback(() => {
     if (dwellTimerRef.current !== null) {
       window.clearTimeout(dwellTimerRef.current);
@@ -964,21 +970,21 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
     }
     dwellPendingRef.current = null;
     dwellAnchorRef.current = null;
-    /** O commit só acontece se havia mesmo um arco no ecrã — chamadas repetidas não custam nada. */
+    /** The commit only happens if there really was an arc on screen — repeat calls cost nothing. */
     if (dwellTargetRef.current !== null) {
       dwellTargetRef.current = null;
       setDwellTick(null);
     }
   }, []);
 
-  /** Volta ao estado em que executar exige um deslocamento novo e observado. */
+  /** Back to the state where launching demands fresh, observed displacement. */
   const disarmDwell = useCallback(() => {
     cancelDwell();
     dwellArmedRef.current = false;
     dwellBaselineRef.current = null;
   }, [cancelDwell]);
 
-  /** Reposição total — abrir e fechar. */
+  /** Full reset — opening and closing. */
   const resetDwell = useCallback(() => {
     disarmDwell();
     paintReadyAtRef.current = null;
@@ -986,11 +992,11 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
   }, [disarmDwell]);
 
   /**
-   * Alvo do eco de lançamento: o índice da fatia confirmada, ou `-1` para o hub. `null` enquanto
-   * nada foi confirmado — que é o estado em toda a vida normal da roda.
+   * Launch echo target: the index of the confirmed slice, or `-1` for the hub. `null` while
+   * nothing has been confirmed — which is the state through the wheel's whole normal life.
    *
-   * O `key` remonta os anéis: uma segunda confirmação sem ele reutilizaria os mesmos elementos e a
-   * animação CSS, já terminada, não voltava a correr.
+   * The `key` remounts the rings: a second confirmation without it would reuse the same elements
+   * and the CSS animation, already finished, would not run again.
    */
   const [launchEcho, setLaunchEcho] = useState<{ index: number; key: number } | null>(null);
   const launchEchoTimerRef = useRef<number | null>(null);
@@ -998,21 +1004,22 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
   const launchEchoMs = config.performanceMode ? LAUNCH_ECHO_FAST_MS : LAUNCH_ECHO_MS;
 
   /**
-   * O `onClose` que o resto do ficheiro usa. Confirmar um alvo executável passa a desenhar o eco e
-   * só depois deixa o App fechar; tudo o resto atravessa sem tocar em nada.
+   * The `onClose` the rest of the file uses. Confirming a launchable target now draws the echo and
+   * only then lets App close; everything else passes straight through untouched.
    *
-   * Cancelar NÃO tem eco, e a distinção não é estética: um cancelamento não executa, portanto não
-   * há nada para confirmar e qualquer atraso aí é só a roda a demorar a sair do caminho. O centro
-   * segue a mesma regra pela sua configuração — o hub configurado como `cancel` é um cancelamento.
+   * Cancelling has NO echo, and the distinction is not cosmetic: a cancellation launches nothing,
+   * so there is nothing to confirm and any delay there is just the wheel being slow to get out of
+   * the way. The centre follows the same rule through its configuration — a hub set to `cancel` is
+   * a cancellation.
    *
-   * `prefers-reduced-motion` desliga o eco por inteiro em vez de o encurtar: sem a onda e sem a
-   * escala, o que sobrava era um atraso puro antes de a app abrir.
+   * `prefers-reduced-motion` turns the echo off entirely rather than shortening it: without the
+   * wave and without the scale, what was left was pure delay before the app opened.
    */
   const onClose = useCallback(
     (selectedId: string | null, selectedApp?: AppItem | null) => {
       const fireNow = () => onCloseNow(selectedId, selectedApp);
       if (selectedId === null) return void fireNow();
-      /** Já há um eco a correr: a segunda confirmação seria uma segunda execução. */
+      /** There is already an echo running: the second confirmation would be a second launch. */
       if (launchEchoTimerRef.current !== null) return;
       if (typeof window !== 'undefined' &&
           window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
@@ -1022,22 +1029,22 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
       let index: number;
       if (selectedId === '__CENTER__') {
         /**
-         * `cancel` e `none` não executam nada — o App devolve sem despachar comando nenhum — e um
-         * eco por cima de um lançamento que não aconteceu seria uma confirmação a mentir.
+         * `cancel` and `none` launch nothing — App returns without dispatching any command — and an
+         * echo over a launch that did not happen would be a confirmation telling a lie.
          */
         const centerType = stateRef.current.config.centerButton?.type;
         if (!centerType || centerType === 'cancel' || centerType === 'none') return void fireNow();
         index = -1;
       } else {
         index = stateRef.current.currentLevelApps.findIndex((item) => item.id === selectedId);
-        /** Sem fatia no ecrã não há nada para ecoar — atalho de teclado sobre um nível já trocado. */
+        /** With no slice on screen there is nothing to echo — a keyboard shortcut over a level already swapped. */
         if (index === -1) return void fireNow();
       }
 
       /**
-       * A roda fica inerte durante o eco. `closingRef` é o mesmo sinal síncrono que os
-       * cancelamentos escrevem, e é o que impede um temporizador de mira sustentada — que
-       * sobrevive à janela inteira do eco — de confirmar um SEGUNDO alvo por cima deste.
+       * The wheel goes inert during the echo. `closingRef` is the same synchronous signal the
+       * cancellations write, and it is what stops a dwell aim timer — which survives the echo's
+       * entire window — from confirming a SECOND target on top of this one.
        */
       closingRef.current = true;
       gestureConsumedRef.current = true;
@@ -1045,7 +1052,7 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
       launchEchoSeqRef.current += 1;
       setLaunchEcho({ index, key: launchEchoSeqRef.current });
       launchEchoTimerRef.current = window.setTimeout(() => {
-        /** Limpo ANTES de despachar: o efeito de `isOpen` que se segue não tem nada para cancelar. */
+        /** Cleared BEFORE dispatching: the `isOpen` effect that follows has nothing left to cancel. */
         launchEchoTimerRef.current = null;
         fireNow();
       }, launchEchoMs);
@@ -1054,9 +1061,9 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
   );
 
   /**
-   * A roda fechou por outra via enquanto o eco corria — Escape, botão direito, o trigger a
-   * alternar. O temporizador ainda pendente é uma execução que já ninguém pediu: um cancelamento a
-   * meio da onda tem de cancelar também a app.
+   * The wheel closed by another route while the echo was running — Escape, right button, the
+   * trigger toggling. The still-pending timer is a launch nobody asked for any more: a cancellation
+   * halfway through the wave has to cancel the app too.
    */
   useEffect(() => {
     if (isOpen) return;
@@ -1103,9 +1110,9 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
   const [folderStack, setFolderStack] = useState<{ label: string, apps: AppItem[] }[]>([]);
   const [isLoadingRecents, setIsLoadingRecents] = useState(false);
   /**
-   * Uma busca de MRU em curso não muda o nível: as fatias do nível ANTERIOR continuam à vista e o
-   * efeito de mudança de nível não corre, portanto nada desarma sozinho. Enquanto o hub roda,
-   * ninguém executa nada por tempo — o utilizador já escolheu e está à espera.
+   * An MRU fetch in flight does not change the level: the PREVIOUS level's slices stay in view and
+   * the level-change effect does not run, so nothing disarms on its own. While the hub spins,
+   * nothing launches by dwell — the user has already chosen and is waiting.
    */
   const isLoadingRecentsRef = useRef(isLoadingRecents);
   isLoadingRecentsRef.current = isLoadingRecents;
@@ -1114,16 +1121,16 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
   const configRef = useRef(config);
   configRef.current = config;
   /**
-   * O tempo escolhido é o TOTAL até abrir, e é repartido entre as duas fases: assentar a mão e
-   * depois contar. Assentar leva `DWELL_SETTLE_MS`, mas nunca mais do que o orçamento inteiro —
-   * daí o `min`.
+   * The chosen time is the TOTAL until it opens, and it is split between the two phases: settling
+   * the hand and then counting. Settling takes `DWELL_SETTLE_MS`, but never more than the whole
+   * budget — hence the `min`.
    *
-   * Antes havia aqui um piso, porque o mínimo das definições (250ms) era maior que a fase de
-   * assentar e nenhuma repartição podia dar negativo. Com a espera opcional isso deixou de ser
-   * verdade: a 0ms um piso significaria a roda a prometer "instantâneo" e a esperar 90ms na mesma,
-   * e a 50ms significaria esperar 90. Repartir em vez de aplicar um piso mantém o número das
-   * definições honesto em todo o intervalo — a zero, as duas fases medem zero e a direção executa
-   * assim que se compromete.
+   * There used to be a floor here, because the settings' minimum (250ms) was larger than the
+   * settle phase and no split could come out negative. With the optional wait that stopped being
+   * true: at 0ms a floor would mean the wheel promising "instant" and waiting 90ms anyway, and at
+   * 50ms it would mean waiting 90. Splitting instead of applying a floor keeps the settings' number
+   * honest across the whole range — at zero, both phases measure zero and the direction launches as
+   * soon as it commits.
    */
   const dwellMsRef = useRef(0);
   dwellMsRef.current = clampDwellMs(config.radialInstantDwellMs);
@@ -1132,18 +1139,18 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
   const dwellRunMsRef = useRef(0);
   dwellRunMsRef.current = Math.max(0, dwellMsRef.current - dwellSettleMsRef.current);
   /**
-   * O interruptor da execução sem clique liga as DUAS metades do mesmo gesto: mirar por direção
-   * com o ponteiro escondido, e executar ao fim do tempo de mira. Uma só expressão para as duas,
-   * porque uma roda que esconde o cursor e continua a mirar por posição não tem como ser usada.
+   * The clickless-launch switch turns on BOTH halves of the same gesture: aiming by direction with
+   * the pointer hidden, and launching at the end of the aim time. One expression for both, because
+   * a wheel that hides the cursor and keeps aiming by position cannot be used at all.
    *
-   * O efeito de interação depende só de `[isOpen]`, portanto captura os seus callbacks uma vez por
-   * abertura — o que muda com as definições tem de lá chegar por ref, não por closure.
+   * The interaction effect depends only on `[isOpen]`, so it captures its callbacks once per open —
+   * whatever changes with the settings has to reach it through a ref, not a closure.
    *
-   * `swipe` é lido como desligado de propósito: o valor está reservado no tipo, não implementado.
-   * MMB em modo segurar fica de fora porque já executa ao largar, e a sua mira vem da sondagem do
-   * main (`mmb-cursor`), cujo primeiro ponto é onde o botão foi premido — alimentar um
-   * temporizador com isso seria disparar num tique da sonda, não numa intenção. É também por isso
-   * que o main não estaciona o cursor nesse caminho.
+   * `swipe` is read as off on purpose: the value is reserved in the type, not implemented. MMB in
+   * hold mode is left out because it already launches on release, and its aim comes from main's
+   * polling (`mmb-cursor`), whose first point is where the button was pressed — feeding a timer
+   * with that would be firing on a poll tick, not on an intention. That is also why main does not
+   * park the cursor on that path.
    */
   const directionMode =
     config.radialInstantActivate === 'dwell' && triggerSource !== 'mmb';
@@ -1151,10 +1158,10 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
   directionModeRef.current = directionMode;
   const dwellEnabledRef = useRef(false);
   dwellEnabledRef.current = directionMode;
-  /** Deslocamento que uma direção precisa para acender a fatia desse lado. */
+  /** Displacement a direction needs before it lights the slice on that side. */
   const directionCommitRef = useRef(0);
   directionCommitRef.current = directionCommitPx(config.radialInstantSensitivity);
-  /** A janela do radial: é dela que sai o raio a partir do qual o cursor real é reencostado. */
+  /** The radial window: it is what sets the radius past which the real cursor is re-parked. */
   const viewportSizeRef = useRef(viewportSize);
   viewportSizeRef.current = viewportSize;
   const radialHoverColor = normalizeHoverColor(config.radialHoverColor);
@@ -1188,8 +1195,9 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
   }, [isOpen, folderStack.length, apps, config.workspaceSwitchMode, config.workspaces, config]);
 
   /**
-   * Dispara a saída das fatias: montam colapsadas no hub e o frame seguinte assume o estado final.
-   * Corre também a cada troca de nível (pasta / workspace), por isso o mesmo movimento serve os dois.
+   * Triggers the slices coming out: they mount collapsed at the hub and the next frame takes the
+   * final state. It also runs on every level swap (folder / workspace), so the same movement serves
+   * both.
    */
   useLayoutEffect(() => {
     if (!isOpen) {
@@ -1199,10 +1207,10 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
     }
     setBloom(false);
     /**
-     * Marco de "a roda está mesmo à vista". As dependências deste efeito incluem
-     * `currentLevelApps`, portanto a janela de assentamento de `INSTANT_ARM_DELAY_MS` é reganha a
-     * cada NÍVEL e não só a cada abertura — que é exatamente a garantia de que uma execução por
-     * tempo precisa quando uma pasta troca as fatias debaixo de um ponteiro parado.
+     * The "the wheel is really in view" mark. This effect's dependencies include
+     * `currentLevelApps`, so the `INSTANT_ARM_DELAY_MS` settling window is won back on every LEVEL
+     * and not only on every open — which is exactly the guarantee a dwell launch needs when a
+     * folder swaps the slices under a still pointer.
      */
     paintReadyAtRef.current = null;
     cancelDwell();
@@ -1214,7 +1222,7 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
     return () => cancelAnimationFrame(raf);
   }, [isOpen, currentLevelApps, animationReady, cancelDwell]);
 
-  /** Lista vazia: manter foco visual no centro (volta / centro) — antes o rato não atualizava o hub. */
+  /** Empty list: keep the visual focus on the centre (back / centre) — before, the mouse did not update the hub. */
   useEffect(() => {
     if (!isOpen || currentLevelApps.length > 0) return;
     setActiveIndex(null);
@@ -1235,7 +1243,7 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
   useLayoutEffect(() => {
     if (isOpen) {
       openingTimeRef.current = Date.now();
-      /** Abertura nova: nada herdado do gesto anterior pode executar seja o que for. */
+      /** A fresh open: nothing inherited from the previous gesture may launch anything. */
       resetDwell();
       closingRef.current = false;
       levelGenRef.current += 1;
@@ -1260,37 +1268,38 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
   // We use refs to access current state inside stable event listeners
   // to avoid destroying/recreating listeners on every hover (index change).
   /**
-   * Tamanho do centro: constante, vindo do `iconSize` das definições e NÃO do tamanho calculado
-   * das fatias. O tamanho das fatias sobe com a quantidade de itens, portanto o hub encolhia num
-   * workspace com 3 apps e crescia noutro com 8 — o mesmo botão, dois tamanhos, e o alvo mudava
-   * de sítio conforme o workspace. Só encolhe se o anel não tiver espaço para ele.
+   * Centre size: constant, taken from the settings' `iconSize` and NOT from the slices' computed
+   * size. Slice size grows with the item count, so the hub shrank in a workspace with 3 apps and
+   * grew in another with 8 — the same button, two sizes, and the target moved depending on the
+   * workspace. It only shrinks if the ring has no room for it.
    *
-   * Diâmetro par: o hub centra-se com `translate(-50%)`, e metade de um ímpar cai em meio-pixel.
+   * Even diameter: the hub centres with `translate(-50%)`, and half an odd number lands on a half
+   * pixel.
    */
   const hubDiameter = Math.max(
     32,
     Math.min(
       /**
-       * O tamanho compacto — o que a roda tinha com poucas apps, que é o que se lê melhor. A rampa
-       * de densidade (0.82 → 1.0) fica reservada às fatias; o centro não engorda com o número de
-       * itens, senão o mesmo botão tem um tamanho por workspace.
+       * The compact size — the one the wheel had with few apps, which is the one that reads best.
+       * The density ramp (0.82 → 1.0) is reserved for the slices; the centre does not grow with the
+       * item count, or the same button ends up with one size per workspace.
        */
       Math.round((config.iconSize || 64) * 0.82 * 1.2),
       Math.round((actualMenuRadius - actualIconSize / 2 - 10) * 2),
     ),
   ) & ~1;
 
-  /** O alvo cobre a caixa do hub já com a escala do estado ativo, mais 4px de folga. */
+  /** The target covers the hub's box already at the active state's scale, plus 4px of slack. */
   const hubHitSize = Math.round(hubDiameter * 1.06) + 4;
   /**
-   * Zona de cancelamento — tem de cobrir a CAIXA do hub, não a circunferência.
+   * Cancel zone — it has to cover the hub's BOX, not the circle.
    *
-   * O hub é um `<div>` quadrado com `rounded-full`, e o `border-radius` também recorta o teste de
-   * acerto: um clique no canto da caixa cai fora do círculo, atravessa para o overlay e vira
-   * direção. Só que esse canto está a `r × √2` do centro (41% mais longe que a aresta do círculo)
-   * e o utilizador lê-o como "dentro do botão" — daí clicar no canto superior esquerdo do botão de
-   * voltar e executar uma fatia. O `× 1.06` acompanha a escala que o hub ganha quando está ativo,
-   * que é exatamente o estado em que este clique acontece.
+   * The hub is a square `<div>` with `rounded-full`, and `border-radius` clips the hit test too: a
+   * click on the box's corner falls outside the circle, passes through to the overlay and becomes a
+   * direction. Except that corner is `r × √2` from the centre (41% further than the circle's edge)
+   * and the user reads it as "inside the button" — hence clicking the top-left corner of the back
+   * button and launching a slice. The `× 1.06` follows the scale the hub gains when it is active,
+   * which is exactly the state this click happens in.
    */
   const deadZoneRadius = Math.max(
     config.activationThreshold ?? 60,
@@ -1298,20 +1307,21 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
   );
 
   /**
-   * Raio a partir do qual a mira deixa de ser "centro" e passa a ser uma fatia.
+   * Radius past which the aim stops being "centre" and becomes a slice.
    *
-   * Por direção quem manda é a sensibilidade, e não a zona de cancelamento: a zona morta é o
-   * tamanho do BOTÃO do meio — mede um alvo de clique, e num gesto sem clique nem sequer há
-   * ponteiro para lá acertar. Mantê-la aqui tornava a sensibilidade alta indistinguível da média,
-   * porque nada acenderia antes dos ~60px do hub.
+   * By direction, what rules is the sensitivity and not the cancel zone: the dead zone is the size
+   * of the middle BUTTON — it measures a click target, and in a clickless gesture there is not even
+   * a pointer to hit it with. Keeping it here made high sensitivity indistinguishable from medium,
+   * because nothing would light before the hub's ~60px.
    */
   const aimGateRef = useRef(deadZoneRadius);
   aimGateRef.current = directionMode ? directionCommitRef.current : deadZoneRadius;
 
   /**
-   * Diagnóstico da confirmação. Fica no log de persistência (`rovyl-persistence.log`) e diz, para
-   * cada gesto que executa algo, de onde veio a decisão: ponto, centro assumido, distância, zona
-   * morta e o item escolhido. Sem isto, um "abriu o que eu não cliquei" é impossível de atribuir.
+   * Confirmation diagnostics. It lands in the persistence log (`rovyl-persistence.log`) and says,
+   * for every gesture that launches something, where the decision came from: point, assumed centre,
+   * distance, dead zone and the chosen item. Without it, an "it opened what I did not click" is
+   * impossible to pin down.
    */
   const logRadialConfirm = useCallback(
     (
@@ -1326,8 +1336,8 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
         : -1;
       const label = aim.index !== null ? currentLevelApps[aim.index]?.label ?? '?' : '—';
       /**
-       * Execução por tempo não tem gesto humano a que se agarrar num relato — sem estes campos,
-       * um "abriu o que eu não apontei" é impossível de distinguir de um clique mal-apontado.
+       * A dwell launch has no human gesture for a report to hold on to — without these fields, an
+       * "it opened what I did not aim at" is impossible to tell from a badly aimed click.
        */
       const dwellForensics =
         origin === 'dwell'
@@ -1335,23 +1345,23 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
               dwellBaselineRef.current
                 ? `${Math.round(dwellBaselineRef.current.x)},${Math.round(dwellBaselineRef.current.y)}`
                 : 'null'
-            } espera=${Date.now() - dwellStartedAtRef.current}ms nivel=${levelGenRef.current} ` +
-            `alvo=${dwellTargetRef.current?.itemId ?? '?'}`
+            } waited=${Date.now() - dwellStartedAtRef.current}ms level=${levelGenRef.current} ` +
+            `target=${dwellTargetRef.current?.itemId ?? '?'}`
           : '';
       window.electron?.savePersistenceLog?.(
-        `[RadialConfirm] ${origin} ponto=${point ? `${Math.round(point.x)},${Math.round(point.y)}` : 'null'} ` +
-          `centro=${Math.round(position.x)},${Math.round(position.y)} dist=${distance} zonaMorta=${Math.round(deadZoneRadius)} ` +
-          `→ ${aim.isCenter ? 'CENTRO' : `fatia ${aim.index} (${label})`}${dwellForensics}`,
+        `[RadialConfirm] ${origin} point=${point ? `${Math.round(point.x)},${Math.round(point.y)}` : 'null'} ` +
+          `centre=${Math.round(position.x)},${Math.round(position.y)} dist=${distance} deadZone=${Math.round(deadZoneRadius)} ` +
+          `→ ${aim.isCenter ? 'CENTRE' : `slice ${aim.index} (${label})`}${dwellForensics}`,
       );
     },
     [],
   );
 
-  /** Ação do centro: voltar um nível dentro de uma pasta, fechar na raiz. */
+  /** Centre action: go back one level inside a folder, close at the root. */
   const handleCenterActivate = useCallback(() => {
-    /** Clique reflexo logo a seguir a uma execução por tempo — e o hub já mudou de nível. */
+    /** Reflex click right after a dwell launch — and the hub has already changed level. */
     if (Date.now() < quarantineUntilRef.current) return;
-    /** Eco a correr: o centro deixou de ser um alvo tanto quanto as fatias. */
+    /** Echo running: the centre has stopped being a target just as much as the slices have. */
     if (launchEchoTimerRef.current !== null) return;
     const { folderStack, currentLevelApps: _ignored, apps, config, onClose } = stateRef.current;
     if (folderStack.length > 0) {
@@ -1383,7 +1393,7 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
     deadZoneRadius,
   });
 
-  /** Layout: pointer math uses `position` — must match props before paint or first rAF sees stale center (fullscreen vs ilha small). */
+  /** Layout: pointer math uses `position` — must match props before paint or first rAF sees stale center (fullscreen vs island small). */
   useLayoutEffect(() => {
     stateRef.current = {
       isOpen,
@@ -1403,23 +1413,24 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
   }, [isOpen, position, activeIndex, onClose, currentLevelApps, config, isCenterActive, hasMoved, folderStack, apps, actualMenuRadius, actualIconSize, deadZoneRadius]);
 
   /**
-   * Ponto que a roda MIRA, escrito no próprio evento — sem passar por render. Por direção é o
-   * ponteiro virtual (centro + vetor do gesto); nos outros modos é a posição real do cursor.
+   * The point the wheel AIMS at, written in the event itself — without going through a render. By
+   * direction it is the virtual pointer (centre + gesture vector); in the other modes it is the
+   * cursor's real position.
    */
   const lastPointerRef = useRef<{ x: number; y: number } | null>(null);
   /**
-   * Onde a MÃO está, sempre real. A mira sustentada pergunta "a mão parou?", e por direção o
-   * ponteiro virtual satura no teto do vetor: continuar a empurrar deixava-o imóvel e a contagem
-   * concluía que a mão tinha assentado quando ela ainda ia a meio do gesto.
+   * Where the HAND is, always real. Dwell aim asks "has the hand stopped?", and by direction the
+   * virtual pointer saturates at the vector's ceiling: pushing on left it motionless and the count
+   * concluded the hand had settled while it was still halfway through the gesture.
    */
   const lastAnchorPointRef = useRef<{ x: number; y: number } | null>(null);
 
   /**
-   * Traduz uma amostra real no ponto que a roda deve mirar.
+   * Translates a real sample into the point the wheel should aim at.
    *
-   * Fora do modo por direção é a identidade. Dentro dele acumula o delta desta amostra no vetor do
-   * gesto, corta o salto do estacionamento e pede um reencosto antes de o cursor sair da janela —
-   * fora dela não há `mousemove` nenhum e o ponteiro voltaria a ser desenhado.
+   * Outside direction mode it is the identity. Inside it, it accumulates this sample's delta into
+   * the gesture vector, cuts out the parking jump and asks for a re-park before the cursor leaves
+   * the window — outside it there is no `mousemove` at all and the pointer would be drawn again.
    */
   const trackAimPoint = useCallback(
     (point: { x: number; y: number }): { x: number; y: number } => {
@@ -1434,16 +1445,16 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
       });
 
       /**
-       * A assinatura do nosso próprio `SetCursorPos`: um salto grande que ATERRA no centro da
-       * roda. As duas metades juntas não descrevem mão nenhuma — uma mão que atravesse 120px num
-       * só evento não pára em cima do centro — portanto isto identifica o teleporte pelo que ele
-       * é, e não por estarmos à espera dele.
+       * The signature of our own `SetCursorPos`: a large jump that LANDS on the wheel's centre. The
+       * two halves together describe no hand at all — a hand that crosses 120px in a single event
+       * does not stop on top of the centre — so this identifies the teleport by what it is, and not
+       * by us expecting it.
        *
-       * Tem de ser incondicional. O `WARP` fica em fila enquanto o helper de PowerShell arranca
-       * (`writeRadialCursorCommand` guarda-o até ao READY), e o primeiro radial de uma sessão pode
-       * abrir antes disso: a bandeira de "estacionamento pendente" expira ao fim de
-       * `PARK_TIMEOUT_MS` e o salto chegava DEPOIS, já a ser somado ao vetor como se fosse gesto —
-       * a roda a saltar para o lado oposto ao da mão a meio de uma mira.
+       * It has to be unconditional. The `WARP` is queued while the PowerShell helper starts up
+       * (`writeRadialCursorCommand` holds it until READY), and a session's first radial can open
+       * before that: the "parking pending" flag expires after `PARK_TIMEOUT_MS` and the jump
+       * arrived AFTER, by then being added to the vector as if it were gesture — the wheel jumping
+       * to the opposite side from the hand halfway through an aim.
        */
       const teleported =
         !!previous &&
@@ -1456,15 +1467,15 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
 
       if (gestureParkAtRef.current !== 0) {
         /**
-         * Estacionamento pedido por nós: a primeira amostra a aterrar no centro fecha a espera e o
-         * delta dela morre aqui. Descartar tudo até à aterragem comia o arranque do movimento, que
-         * é precisamente onde a sensibilidade alta se joga.
+         * A parking we asked for: the first sample to land on the centre closes the wait and its
+         * delta dies here. Discarding everything until the landing ate the start of the movement,
+         * which is precisely where high sensitivity is decided.
          */
         if (Math.hypot(point.x - position.x, point.y - position.y) <= PARK_LANDING_PX) {
           gestureParkAtRef.current = 0;
           return virtual();
         }
-        /** Nenhuma aterragem — sem helper, ou noutro sistema: o gesto segue sem estacionamento. */
+        /** No landing — no helper, or another system: the gesture carries on without parking. */
         if (Date.now() - gestureParkAtRef.current > PARK_TIMEOUT_MS) {
           gestureParkAtRef.current = 0;
         } else {
@@ -1478,8 +1489,8 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
           y: gestureVectorRef.current.y + (point.y - previous.y),
         };
         /**
-         * Teto do vetor. Só a direção conta — o ponteiro virtual nunca precisa de alcançar o anel
-         * de ícones, porque por direção a mira é o setor e não o ícone.
+         * The vector's ceiling. Only the direction counts — the virtual pointer never needs to
+         * reach the icon ring, because by direction the aim is the sector and not the icon.
          */
         const clamp = directionCommitRef.current * DIRECTION_CLAMP_FACTOR;
         const length = Math.hypot(next.x, next.y);
@@ -1490,9 +1501,9 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
       }
 
       /**
-       * O cursor real continua a andar mesmo depois de o vetor saturar. Reencostá-lo ao centro
-       * mantém-no dentro da janela — que é a única superfície onde o conseguimos esconder — e o
-       * gesto nem dá por isso, porque só soma deltas.
+       * The real cursor keeps travelling even after the vector saturates. Re-parking it at the
+       * centre keeps it inside the window — the only surface where we can hide it — and the gesture
+       * never notices, because it only sums deltas.
        */
       if (gestureParkAtRef.current === 0 && window.electron?.parkRadialCursor) {
         const { width, height } = viewportSizeRef.current;
@@ -1511,20 +1522,20 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
     [],
   );
   /**
-   * Uma abertura confirma uma vez. Entre o `onClose` e o render que desmonta os listeners há uma
-   * janela em que outro `mouseup` (ou o release do MMB a chegar logo a seguir ao clique) ainda é
-   * entregue — e era isso que lançava uma app com o radial já a fechar.
+   * One open confirms once. Between `onClose` and the render that unmounts the listeners there is a
+   * window in which another `mouseup` (or the MMB release arriving right after the click) is still
+   * delivered — and that was what launched an app with the radial already closing.
    */
   const gestureConsumedRef = useRef(false);
 
   /**
-   * Resolve o alvo a partir de um ponto concreto, com a mesma matemática do `mousemove`.
+   * Resolves the target from a concrete point, with the same maths as `mousemove`.
    *
-   * A confirmação não pode ler `activeIndex`/`isCenterActive` do estado: esses valores percorrem
-   * `mousemove` → rAF → `setState` → render → `stateRef`, e o botão pode ser largado antes de esse
-   * ciclo fechar. Nesse caso o radial confirmava a fatia onde o cursor ESTEVE, não onde está — daí
-   * abrir itens que não foram apontados, e a sensação de clique com atraso. Recalcular no momento
-   * do release custa uma raiz quadrada e elimina a corrida por completo.
+   * Confirmation cannot read `activeIndex`/`isCenterActive` from state: those values travel through
+   * `mousemove` → rAF → `setState` → render → `stateRef`, and the button can be released before
+   * that cycle closes. In that case the radial confirmed the slice the cursor WAS on, not the one
+   * it is on — hence opening items that were not aimed at, and the feeling of a click with a lag.
+   * Recomputing at the moment of release costs one square root and removes the race entirely.
    */
   const resolveAimAtPoint = useCallback(
     (point: { x: number; y: number } | null): { isCenter: boolean; index: number | null } => {
@@ -1542,18 +1553,18 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
       const sliceAngle = 360 / currentLevelApps.length;
 
       /**
-       * Modo por cursor: o alvo é o ícone SOB o ponteiro, não a direção em que ele está.
+       * Cursor mode: the target is the icon UNDER the pointer, not the direction it lies in.
        *
-       * Na mira por ângulo, estar do lado direito do ecrã acende o item da direita mesmo com o
-       * cursor a centenas de píxeis dele — rápido para quem já sabe onde as coisas estão, e
-       * desconcertante para quem não sabe. Aqui nada acende fora do raio do ícone, e largar sem
-       * estar sobre nenhum não abre nada.
+       * With angle aiming, being on the right of the screen lights the right-hand item even with
+       * the cursor hundreds of pixels from it — fast for anyone who already knows where things are,
+       * and disorienting for anyone who does not. Here nothing lights outside the icon's radius,
+       * and releasing while over none of them opens nothing.
        *
-       * Não se aplica à execução sem clique, e essa exceção é a funcionalidade inteira: não há
-       * ponteiro no ecrã para pousar em cima de nada. Aí a roda é uma torta de setores IGUAIS — com
-       * dois itens, meio ecrã cada; com quatro, um quadrante cada — e apontar para o lado certo
-       * basta, por muito longe que a mão vá. Deixar a definição de mira decidir aqui punha o
-       * utilizador a caçar um ícone com um cursor que ele não consegue ver.
+       * It does not apply to the clickless launch, and that exception is the whole feature: there
+       * is no pointer on screen to rest on top of anything. There the wheel is a pie of EQUAL
+       * sectors — with two items, half a screen each; with four, a quadrant each — and pointing the
+       * right way is enough, however far the hand travels. Letting the aim setting decide here left
+       * the user hunting an icon with a cursor they cannot see.
        */
       if (config.radialSelectionMode === 'cursor' && !directionModeRef.current) {
         const hitRadius = Math.max(actualIconSize * 0.85, 22);
@@ -1574,8 +1585,8 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
       }
 
       /**
-       * Sem limite de distância: apontar é dar uma direção, e a fatia continua a ser o alvo com o
-       * cursor no outro extremo do ecrã. Quem quer desistir usa o centro ou o Escape.
+       * No distance limit: aiming is giving a direction, and the slice stays the target with the
+       * cursor at the other end of the screen. Anyone who wants out uses the centre or Escape.
        */
       let angle = Math.atan2(deltaY, deltaX) * (180 / Math.PI) + 90;
       if (angle < 0) angle += 360;
@@ -1589,32 +1600,32 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
   );
 
   /**
-   * Entrar ou sair de um nível (workspace, pasta, recentes) troca as fatias debaixo de um cursor
-   * que não se mexeu — e como o realce só é recalculado em `mousemove`, o novo nível aparecia
-   * inteiro apagado até se dar um toque no rato. Aqui a mira é reavaliada na posição real assim
-   * que o nível muda, portanto a fatia sob o cursor já chega acesa.
+   * Entering or leaving a level (workspace, folder, recents) swaps the slices under a cursor that
+   * has not moved — and since the highlight is only recomputed on `mousemove`, the new level came
+   * up entirely dark until the mouse was nudged. Here the aim is re-evaluated at the real position
+   * as soon as the level changes, so the slice under the cursor already arrives lit.
    */
   useLayoutEffect(() => {
     if (!isOpen) return;
     /**
-     * Entrar ou sair de um nível desarma a execução sem clique, sem exceção: voltar a armar custa
-     * sempre `INSTANT_ARM_DISPLACEMENT_PX` de deslocamento novo e observado. É isto que impede uma
-     * execução por tempo de cascatear por pastas encadeadas — e cobre também as trocas de nível
-     * que ninguém gesticulou: o `setConfig` atrasado da mudança de workspace com a roda do rato, e
-     * uma promessa de MRU a resolver depois de o utilizador já ter navegado para outro lado.
+     * Entering or leaving a level disarms the clickless launch, no exceptions: arming again always
+     * costs `INSTANT_ARM_DISPLACEMENT_PX` of fresh, observed displacement. This is what stops a
+     * dwell launch from cascading through nested folders — and it also covers the level swaps
+     * nobody gestured for: the delayed `setConfig` from switching workspace with the mouse wheel,
+     * and an MRU promise resolving after the user has already navigated elsewhere.
      *
-     * `lastPointerRef` fica intocado de propósito: a reavaliação abaixo é o que faz o nível novo
-     * chegar já com a fatia sob o cursor acesa.
+     * `lastPointerRef` is left untouched on purpose: the re-evaluation below is what makes the new
+     * level arrive with the slice under the cursor already lit.
      */
     levelGenRef.current += 1;
     disarmDwell();
-    /** Mudar de nível é navegar, não confirmar: o gesto seguinte tem de voltar a valer. */
+    /** Changing level is navigating, not confirming: the next gesture has to count again. */
     gestureConsumedRef.current = false;
     /**
-     * Por direção o nível novo tem de nascer neutro. A direção que abriu a pasta continuava a
-     * apontar para o mesmo lado lá dentro, e a mira sustentada abria de imediato o item desse
-     * lado — uma pasta encadeava-se na seguinte sem ninguém escolher nada. Zerar o vetor faz o
-     * mesmo que a regra de armar já fazia por posição: exigir movimento NOVO.
+     * By direction the new level has to be born neutral. The direction that opened the folder went
+     * on pointing the same way inside it, and dwell aim immediately opened the item on that side —
+     * one folder chained into the next without anyone choosing anything. Zeroing the vector does
+     * the same thing the arming rule already did by position: demand NEW movement.
      */
     if (directionModeRef.current) {
       resetDirectionGesture(false);
@@ -1630,16 +1641,16 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
     if (!isOpen) return;
 
     /**
-     * Abertura nova, ponteiro por conhecer. Sem isto sobrava a posição da abertura ANTERIOR, que
-     * está longe do novo centro: largar o botão sem mexer no rato confirmaria uma fatia. `null`
-     * resolve para o centro, ou seja, cancelar — o único padrão seguro.
+     * A fresh open, pointer unknown. Without this the PREVIOUS open's position was left over, and
+     * it sits far from the new centre: releasing the button without moving the mouse would confirm
+     * a slice. `null` resolves to the centre, that is, to cancelling — the only safe default.
      */
     lastPointerRef.current = null;
     lastAnchorPointRef.current = null;
     /**
-     * Por direção o main já mandou o cursor para o centro antes deste `open-menu`. A aterragem
-     * desse salto ainda vem a caminho como um `mousemove` — marcá-la como pendente é o que impede
-     * o vetor de a somar e apontar para o lado oposto ao da mão.
+     * By direction main has already sent the cursor to the centre before this `open-menu`. That
+     * jump's landing is still on its way as a `mousemove` — marking it as pending is what stops the
+     * vector from summing it and pointing to the opposite side from the hand.
      */
     resetDirectionGesture(directionModeRef.current);
     gestureConsumedRef.current = false;
@@ -1649,8 +1660,8 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
     const processMouseMove = () => {
       rafId = null;
       /**
-       * O ponto já foi resolvido no próprio evento: por direção, o vetor do gesto tem de somar
-       * TODAS as amostras, e um rAF coalesce-as. Aqui só se lê o resultado.
+       * The point has already been resolved in the event itself: by direction, the gesture vector
+       * has to sum EVERY sample, and a rAF coalesces them. Here we only read the result.
        */
       const aimPoint = lastPointerRef.current;
       const anchorPoint = lastAnchorPointRef.current;
@@ -1663,7 +1674,7 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
       const MOVEMENT_BUFFER = 15;
 
       if (currentLevelApps.length === 0) {
-        /** Nível vazio: não há fatia nenhuma para executar, e `resolveAimAtPoint` devolve índice nulo. */
+        /** Empty level: there is no slice to launch, and `resolveAimAtPoint` returns a null index. */
         cancelDwell();
         if (!hasMoved && distance > MOVEMENT_BUFFER) {
           setHasMoved(true);
@@ -1683,7 +1694,7 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
       }
 
       if (distance < aimGateRef.current) {
-        /** Voltar ao hub é o gesto de desistir: mata a contagem, mas não o direito de recomeçar. */
+        /** Coming back to the hub is the gesture for giving up: it kills the count, not the right to start over. */
         cancelDwell();
         if (activeIndex !== null) setActiveIndex(null);
         if (!stateRef.current.isCenterActive) setIsCenterActive(true);
@@ -1693,26 +1704,26 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
       if (stateRef.current.isCenterActive) setIsCenterActive(false);
 
       /**
-       * Uma só matemática para o realce e para a confirmação.
+       * One set of maths for the highlight and for the confirmation.
        *
-       * Estavam duplicadas, e qualquer divergência entre as duas significa acender um ícone e
-       * abrir outro — o pior defeito possível num lançador. Agora ambas passam por aqui.
+       * They were duplicated, and any divergence between the two means lighting one icon and
+       * opening another — the worst possible defect in a launcher. Both now go through here.
        */
       const aim = resolveAimAtPoint(aimPoint);
       if (activeIndex !== aim.index) setActiveIndex(aim.index);
 
       /**
-       * Alimentado com o MESMO objeto `aim` que acabou de escrever o realce, no mesmo tique — daí
-       * o alvo candidato nunca poder ser outro que não o que está aceso. Ainda assim, quem desenha
-       * o anel e quem executa voltam a resolver a mira por sua conta (`startDwell`, `fireDwell`):
-       * entre marcar um alvo e abri-lo passa quase meio segundo, e nesse intervalo o nível pode
-       * mudar por baixo de um ponteiro que não se mexeu.
+       * Fed the SAME `aim` object that just wrote the highlight, on the same tick — hence the
+       * candidate target can never be anything but the one that is lit. Even so, whoever draws the
+       * ring and whoever launches resolve the aim again on their own (`startDwell`, `fireDwell`):
+       * almost half a second passes between marking a target and opening it, and in that gap the
+       * level can change under a pointer that has not moved.
        */
       armAndTrackDwellRef.current(anchorPoint, aim);
     };
 
     const handleMouseMove = (e: MouseEvent) => {
-      /** Síncrono: o realce pode esperar pelo próximo frame, a confirmação não. */
+      /** Synchronous: the highlight can wait for the next frame, the confirmation cannot. */
       const raw = { x: e.clientX, y: e.clientY };
       lastAnchorPointRef.current = raw;
       lastPointerRef.current = trackAimPoint(raw);
@@ -1723,26 +1734,26 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
 
     const handleMouseUp = (e: MouseEvent) => {
       /**
-       * MMB é tratado exclusivamente pelo IPC `mmb-release` no modo segurar e pelo main no modo
-       * clique. Aceitá-lo também aqui fazia o mesmo gesto confirmar a fatia e alternar o modal.
+       * MMB is handled exclusively by the `mmb-release` IPC in hold mode and by main in click mode.
+       * Accepting it here too made the same gesture confirm the slice and toggle the modal.
        */
       if (e.button === 1) return;
       if (e.button !== 0) return;
-      /** Clique reflexo a chegar depois de uma execução por tempo já ter mudado o que está à vista. */
+      /** A reflex click arriving after a dwell launch has already changed what is in view. */
       if (Date.now() < quarantineUntilRef.current) return;
       if (gestureConsumedRef.current || !stateRef.current.isOpen) return;
       /**
-       * Mesma regra do `handleAppClick`: um clique é uma escolha, e o que estava a ser contado
-       * deixou de valer. Este caminho tem a sua própria cópia do ramo de recentes assíncrono — em
-       * modo ângulo é ELE o caminho normal, porque a fatia é o alvo mesmo com o cursor longe do
-       * ícone — e durante essa espera o nível não muda, portanto nada mais desarmaria: o arco
-       * continuava a encher sobre um tile que já não vai abrir nada.
+       * Same rule as `handleAppClick`: a click is a choice, and whatever was being counted has
+       * stopped counting. This path has its own copy of the async recents branch — in angle mode it
+       * IS the normal path, because the slice is the target even with the cursor far from the icon
+       * — and during that wait the level does not change, so nothing else would disarm: the arc
+       * went on filling over a tile that is no longer going to open anything.
        */
       disarmDwell();
       gestureConsumedRef.current = true;
       const { folderStack, apps, currentLevelApps, onClose, config } = stateRef.current;
 
-      /** O alvo é onde a mira está AGORA, não o que o último render chegou a registar. */
+      /** The target is where the aim is NOW, not what the last render managed to record. */
       const point = trackAimPoint({ x: e.clientX, y: e.clientY });
       const aim = resolveAimAtPoint(point);
       logRadialConfirm('click', point, aim);
@@ -1877,10 +1888,10 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
     };
 
     /**
-     * Cancelar nunca pode executar nada. `closingRef` é escrito aqui, síncrono, porque o sinal
-     * "isto está a fechar" só chega ao estado do React depois de `onClose` → `setIsMenuOpen` →
-     * batching → render, e um temporizador de mira sustentada sobrevive a essa janela inteira:
-     * dispararia contra uma roda que o utilizador já mandou embora.
+     * Cancelling can never launch anything. `closingRef` is written here, synchronously, because
+     * the "this is closing" signal only reaches React state after `onClose` → `setIsMenuOpen` →
+     * batching → render, and a dwell aim timer survives that whole window: it would fire against a
+     * wheel the user has already sent away.
      */
     const handleMouseDown = (e: MouseEvent) => {
       if (e.button === 2) {
@@ -1899,20 +1910,20 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
       onClose(null);
     };
 
-    /** Ver `handleMouseDown`: o trigger a alternar para fechado é um cancelamento como os outros. */
+    /** See `handleMouseDown`: the trigger toggling to closed is a cancellation like any other. */
     const handleToggleClose = () => {
       closingRef.current = true;
       cancelDwell();
     };
 
     /**
-     * O ponteiro saiu da janela, ou a janela perdeu o foco.
+     * The pointer left the window, or the window lost focus.
      *
-     * Isto é a ÚNICA defesa contra um alvo abandonado, e tem de ser dirigida por eventos. A janela
-     * do radial é uma caixa (~988px), não o ecrã: o ponteiro sai dela facilmente e, a partir daí,
-     * `lastPointerRef` fica congelado num ponto que em modo ângulo ainda resolve para uma fatia
-     * perfeitamente válida. Comparar carimbos de tempo não serve — uma mão parada também não
-     * produz eventos, e estar parado é o gesto.
+     * This is the ONLY defence against an abandoned target, and it has to be event-driven. The
+     * radial window is a box (~988px), not the screen: the pointer leaves it easily and, from then
+     * on, `lastPointerRef` stays frozen at a point that in angle mode still resolves to a perfectly
+     * valid slice. Comparing timestamps is no good — a still hand produces no events either, and
+     * being still is the gesture.
      */
     const handleWindowBlur = () => disarmDwell();
     const handleDocumentMouseOut = (e: MouseEvent) => {
@@ -2001,7 +2012,7 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
           setTypeAhead('');
           return;
         }
-        /** Ver `handleMouseDown`: cancelar tem de calar o temporizador antes de o React desmontar. */
+        /** See `handleMouseDown`: cancelling has to silence the timer before React unmounts. */
         closingRef.current = true;
         cancelDwell();
         onClose(null);
@@ -2009,9 +2020,10 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
       }
 
       /**
-       * Eco a correr: já há uma app a caminho. O teclado fica surdo a tudo menos ao Escape acima,
-       * que continua a ser a forma de desistir — trocar de workspace ou escrever no filtro durante
-       * a onda mexia num nível que está a desaparecer e cujo alvo já foi decidido.
+       * Echo running: an app is already on its way. The keyboard goes deaf to everything but the
+       * Escape above, which remains the way out — switching workspace or typing into the filter
+       * during the wave touched a level that is on its way out and whose target has already been
+       * decided.
        */
       if (launchEchoTimerRef.current !== null) return;
 
@@ -2059,10 +2071,11 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
   }, [isOpen, onClose, onWorkspaceSwitch]);
 
   /**
-   * Modo "segurar": a janela abre com o botão do meio ainda premido, e no Windows a captura do rato
-   * fica na janela que recebeu o clique — esta não recebe `mousemove` nenhum até ao release, por isso
-   * o ângulo nunca atualizava e nada era selecionável. O main sonda o cursor (`mmb-cursor`) e aqui
-   * reproduzimo-lo como um `mousemove` real, para alimentar exatamente o mesmo pipeline de mira.
+   * "Hold" mode: the window opens with the middle button still pressed, and on Windows the mouse
+   * capture stays with the window that took the click — this one gets no `mousemove` at all until
+   * the release, so the angle never updated and nothing was selectable. Main polls the cursor
+   * (`mmb-cursor`) and here we replay it as a real `mousemove`, to feed exactly the same aim
+   * pipeline.
    */
   useEffect(() => {
     if (!isOpen || triggerSource !== 'mmb' || !window.electron?.onMmbCursor) return;
@@ -2096,7 +2109,7 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
         gestureConsumedRef.current = true;
         const { folderStack, currentLevelApps, apps, onClose, config } = stateRef.current;
 
-        /** Mesma regra do clique: o alvo sai da posição real, incluindo a sondada pelo main no MMB. */
+        /** Same rule as the click: the target comes from the real position, including the one main polls for MMB. */
         const aim = resolveAimAtPoint(lastPointerRef.current);
         logRadialConfirm('mmb-release', lastPointerRef.current, aim);
         const activeIndex = aim.index;
@@ -2285,27 +2298,27 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
 
   const handleAppClick = React.useCallback((app: AppItem) => {
     /**
-     * Este é o caminho do clique real num ícone: o tile trava a propagação, portanto o
-     * `handleMouseUp` da janela — que também tem esta guarda — nunca chega a vê-lo.
+     * This is the path for a real click on an icon: the tile stops propagation, so the window's
+     * `handleMouseUp` — which has this same guard — never gets to see it.
      *
-     * A quarentena é para o clique treinado que o utilizador dá ~200ms DEPOIS de uma execução por
-     * tempo já ter descido um nível: sem ela, esse clique executa o que quer que tenha calhado na
-     * mesma direção no nível novo. O motor de dwell chama esta função por ref e só marca a
-     * quarentena DEPOIS — a guarda nunca bloqueia a sua própria execução, só um clique humano
-     * seguinte.
+     * The quarantine is for the trained click the user gives ~200ms AFTER a dwell launch has
+     * already gone down a level: without it, that click launches whatever happened to be in the
+     * same direction on the new level. The dwell engine calls this function through a ref and only
+     * marks the quarantine AFTERWARDS — the guard never blocks its own launch, only a following
+     * human click.
      */
     if (Date.now() < quarantineUntilRef.current) return;
-    /** Eco a correr: o alvo já está decidido e a roda a sair — nada por baixo dela abre nada. */
+    /** Echo running: the target is already decided and the wheel on its way out — nothing under it opens anything. */
     if (launchEchoTimerRef.current !== null) return;
     /**
-     * Desarmar aqui, e não só na mudança de nível.
+     * Disarm here, and not only on a level change.
      *
-     * Todos os ramos abaixo trocam o nível de forma síncrona — e é o efeito de nível que desarma —
-     * MENOS a busca de recentes, que só liga o spinner e espera pelo IPC. Nesse intervalo o nível é
-     * o mesmo, a geração é a mesma e nada desarma: um temporizador já a contar sobre este mesmo
-     * tile chegava ao fim e empilhava a pasta uma segunda vez, e o gesto continuava armado para
-     * lançar o que quer que o ponteiro apanhasse enquanto o utilizador esperava pela pasta que
-     * pediu. Um clique é uma escolha; o que estava a ser contado deixou de valer.
+     * Every branch below swaps the level synchronously — and it is the level effect that disarms —
+     * EXCEPT the recents fetch, which only turns on the spinner and waits for the IPC. In that gap
+     * the level is the same, the generation is the same and nothing disarms: a timer already
+     * counting over this very tile reached its end and stacked the folder a second time, and the
+     * gesture stayed armed to launch whatever the pointer caught while the user waited for the
+     * folder they asked for. A click is a choice; whatever was being counted has stopped counting.
      */
     disarmDwell();
     const cfg = configRef.current;
@@ -2380,22 +2393,22 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
     }
   }, [onClose, onWorkspaceSwitch, disarmDwell]);
 
-  /** `handleAppClick` não é estável; o motor tem de chamar sempre a versão do render atual. */
+  /** `handleAppClick` is not stable; the engine has to call the current render's version every time. */
   const handleAppClickRef = useRef(handleAppClick);
   handleAppClickRef.current = handleAppClick;
 
   /**
-   * Motor da mira sustentada — três regras que não se leem do código.
+   * Dwell aim engine — three rules that cannot be read off the code.
    *
-   * 1. O alvo é a TERNA `{ nível, índice, id }`, nunca só o índice. Uma troca de workspace com a
-   *    roda do rato, ou um MRU a resolver tarde, substitui o nível debaixo de um ponteiro parado e
-   *    mantém o índice: um temporizador preso ao índice completava e lançava o item N de um nível
-   *    que o utilizador nunca chegou a apontar.
-   * 2. Ao disparar, a mira é RESOLVIDA DE NOVO e comparada com a do arco. Não coincidindo,
-   *    recomeça-se em vez de executar — a decisão é sempre do ponteiro de agora.
-   * 3. A frescura mede-se contra o carimbo do evento cru: um ponteiro fora da janela do radial não
-   *    produz eventos nenhuns, e em modo ângulo um ponto congelado continua a resolver para uma
-   *    fatia perfeitamente válida.
+   * 1. The target is the TRIPLE `{ level, index, id }`, never just the index. A workspace switch
+   *    with the mouse wheel, or an MRU resolving late, replaces the level under a still pointer and
+   *    keeps the index: a timer tied to the index completed and launched item N of a level the user
+   *    never aimed at.
+   * 2. On firing, the aim is RESOLVED AGAIN and compared with the arc's. If they do not match, it
+   *    starts over instead of launching — the decision always belongs to the pointer of now.
+   * 3. Freshness is measured against the raw event's stamp: a pointer outside the radial window
+   *    produces no events at all, and in angle mode a frozen point goes on resolving to a perfectly
+   *    valid slice.
    */
   const fireDwell = useCallback(() => {
     dwellTimerRef.current = null;
@@ -2407,12 +2420,12 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
     if (target.gen !== levelGenRef.current) return void cancelDwell();
 
     /**
-     * NÃO há verificação de "há quanto tempo não chega um `mousemove`". Parece a defesa óbvia
-     * contra um ponteiro que saiu da janela do radial e deixou `lastPointerRef` congelado num
-     * ponto que, em modo ângulo, continua a resolver para uma fatia — mas é a defesa errada: uma
-     * mão parada não produz eventos nenhuns, e estar parado é EXATAMENTE o gesto. Com essa
-     * verificação o arco fechava e nada executava, sempre. Sair da janela é um evento
-     * (`mouseout` com `relatedTarget` nulo, `mouseleave`, `blur`) e é aí que está tratado.
+     * There is NO "how long since a `mousemove`" check. It looks like the obvious defence against a
+     * pointer that left the radial window and froze `lastPointerRef` at a point that, in angle
+     * mode, goes on resolving to a slice — but it is the wrong defence: a still hand produces no
+     * events at all, and being still is EXACTLY the gesture. With that check the arc closed and
+     * nothing launched, ever. Leaving the window is an event (`mouseout` with a null
+     * `relatedTarget`, `mouseleave`, `blur`) and that is where it is handled.
      */
     const aim = resolveAimAtPoint(lastPointerRef.current);
     if (aim.isCenter || aim.index === null || aim.index !== target.index) return void cancelDwell();
@@ -2420,17 +2433,17 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
     if (!item || item.id !== target.itemId) return void cancelDwell();
     if (gestureConsumedRef.current) return void cancelDwell();
     /**
-     * A quarentena da execução ANTERIOR também trava esta.
+     * The PREVIOUS launch's quarantine stops this one too.
      *
-     * `handleAppClick` já a respeita, mas respeitá-la lá dentro é tarde: a linha abaixo consome o
-     * gesto primeiro, e uma chamada que volta sem trocar de nível não deixa nada por trás que o
-     * volte a libertar — `gestureConsumedRef` só é limpo na mudança de nível e na abertura. O
-     * resultado era uma roda inerte: nem o tempo nem o clique voltavam a confirmar seja o que for.
+     * `handleAppClick` already honours it, but honouring it in there is too late: the line below
+     * consumes the gesture first, and a call that returns without swapping level leaves nothing
+     * behind to release it again — `gestureConsumedRef` is only cleared on a level change and on
+     * opening. The result was an inert wheel: neither dwell nor click confirmed anything again.
      *
-     * Com o mínimo de 250ms isto era inalcançável, porque a segunda execução mais cedo possível
-     * caía em paint+120+250 = 370ms, já fora dos 300ms. Com a espera opcional a segunda execução
-     * chega aos ~140ms, e o encadeamento passou a ser trivial: abrir uma pasta com um empurrão
-     * deixa a mão ainda a travar, e essa travagem volta a atravessar o limiar lá dentro.
+     * With the 250ms minimum this was unreachable, because the earliest possible second launch fell
+     * at paint+120+250 = 370ms, already outside the 300ms. With the optional wait the second launch
+     * arrives at ~140ms, and chaining became trivial: opening a folder with a shove leaves the hand
+     * still braking, and that braking crosses the threshold again inside it.
      */
     if (Date.now() < quarantineUntilRef.current) return void cancelDwell();
 
@@ -2440,16 +2453,17 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
     dwellArmedRef.current = false;
     dwellBaselineRef.current = null;
     /**
-     * A quarentena é marcada DEPOIS de executar, nunca antes: `handleAppClick` abre com a mesma
-     * guarda, e marcá-la primeiro fazia esta chamada bloquear-se a si própria — o dwell contava,
-     * o arco fechava e não acontecia rigorosamente nada. Ela existe para o clique HUMANO seguinte.
+     * The quarantine is marked AFTER launching, never before: `handleAppClick` opens with the same
+     * guard, and marking it first made this call block itself — the dwell counted, the arc closed
+     * and absolutely nothing happened. It exists for the next HUMAN click.
      */
     handleAppClickRef.current(item);
     quarantineUntilRef.current = Date.now() + INSTANT_QUARANTINE_MS;
   }, [cancelDwell, disarmDwell, resolveAimAtPoint, logRadialConfirm]);
 
   /**
-   * A mão assentou. Só agora a contagem visível arranca — e é o único ponto em que o arco aparece.
+   * The hand has settled. Only now does the visible count start — and this is the only point where
+   * the arc appears.
    */
   const startDwell = useCallback(() => {
     dwellSettleTimerRef.current = null;
@@ -2461,22 +2475,22 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
     if (isLoadingRecentsRef.current) return void cancelDwell();
     if (pending.gen !== levelGenRef.current) return void cancelDwell();
 
-    /** Reavaliar: entre agendar e assentar, o nível pode ter mudado por baixo do ponteiro. */
+    /** Re-evaluate: between scheduling and settling, the level may have changed under the pointer. */
     const aim = resolveAimAtPoint(lastPointerRef.current);
     if (aim.isCenter || aim.index === null || aim.index !== pending.index) return void cancelDwell();
     const item = stateRef.current.currentLevelApps[aim.index];
     if (!item || item.id !== pending.itemId) return void cancelDwell();
 
     /**
-     * Reancorar no ponto em que a mão está AGORA. A âncora anterior é a última amostra em
-     * movimento, até 90ms velha: mantê-la fazia a contagem começar já com o orçamento gasto.
+     * Re-anchor at the point the hand is at NOW. The previous anchor is the last moving sample, up
+     * to 90ms old: keeping it made the count start with the budget already spent.
      */
     if (lastAnchorPointRef.current) dwellAnchorRef.current = lastAnchorPointRef.current;
     dwellPendingRef.current = null;
     dwellTargetRef.current = pending;
     dwellStartedAtRef.current = Date.now();
     dwellSeqRef.current += 1;
-    /** Sem arco não há commit do React nenhum nesta contagem — só o `setTimeout` que executa. */
+    /** With no arc there is no React commit at all in this count — only the `setTimeout` that launches. */
     if (dwellRunMsRef.current >= DWELL_ARC_MIN_MS) {
       setDwellTick({ index: pending.index, key: dwellSeqRef.current });
     }
@@ -2487,18 +2501,18 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
     (point: { x: number; y: number }, aim: { isCenter: boolean; index: number | null }) => {
       if (!dwellEnabledRef.current) return void cancelDwell();
       if (closingRef.current || !stateRef.current.isOpen) return void cancelDwell();
-      /** A roda ainda não passou por um paint: nenhum tile está clicável, nada pode executar. */
+      /** The wheel has not been through a paint yet: no tile is clickable, nothing can launch. */
       if (paintReadyAtRef.current === null) return void cancelDwell();
       if (isLoadingRecentsRef.current) return void cancelDwell();
 
-      /** A primeira amostra depois de abrir ou de mudar de nível só serve para pôr a referência. */
+      /** The first sample after opening or after a level change only serves to set the reference. */
       if (dwellBaselineRef.current === null) {
         dwellBaselineRef.current = point;
         /**
-         * Por direção esta amostra NÃO se engole. Só se chega aqui depois de o vetor já ter
-         * passado o limiar (`processMouseMove` devolve antes disso), portanto esta é a primeira
-         * amostra do gesto comprometido — e se a mão parar exatamente aqui, mais nenhuma chega.
-         * Devolver deixava a fatia acesa para sempre e nada a executar.
+         * By direction this sample is NOT swallowed. You only get here after the vector has already
+         * crossed the threshold (`processMouseMove` returns before that), so this is the committed
+         * gesture's first sample — and if the hand stops right here, no other arrives. Returning
+         * left the slice lit forever and nothing launching it.
          */
         if (!directionModeRef.current) return;
       }
@@ -2506,16 +2520,16 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
       if (!dwellArmedRef.current) {
         if (Date.now() - paintReadyAtRef.current < INSTANT_ARM_DELAY_MS) return;
         /**
-         * Armar é um facto observado — e por direção o facto já foi observado.
+         * Arming is an observed fact — and by direction the fact has already been observed.
          *
-         * O limiar existe porque, mirando por posição, um ponteiro PARADO longe do centro acende
-         * uma fatia sem ninguém ter mexido em nada: era preciso ver deslocamento real antes de
-         * deixar o tempo executar. Por direção esse estado não existe — o vetor nasce a zero em
-         * cada abertura e em cada nível, e a única coisa que o faz passar o limiar da
-         * sensibilidade é movimento real da mão. Exigir aqui outro tanto por cima significava
-         * pedir o dobro do que a definição anuncia (36px no "alto", 108px no "baixo") e, pior,
-         * nunca executar quando a mão comprometia a direção e parava — que é literalmente o gesto
-         * que a funcionalidade descreve.
+         * The threshold exists because, aiming by position, a STILL pointer far from the centre
+         * lights a slice without anyone having moved anything: real displacement had to be seen
+         * before letting dwell launch. By direction that state does not exist — the vector is born
+         * at zero on every open and every level, and the only thing that takes it past the
+         * sensitivity threshold is real movement of the hand. Demanding as much again on top here
+         * meant asking for double what the setting advertises (36px on "high", 108px on "low")
+         * and, worse, never launching when the hand committed to the direction and stopped — which
+         * is literally the gesture the feature describes.
          */
         if (directionModeRef.current) {
           dwellArmedRef.current = true;
@@ -2528,14 +2542,14 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
         }
       }
 
-      /** O hub nunca executa por tempo: voltar ao centro é o gesto de desistir. */
+      /** The hub never launches by dwell: coming back to the centre is the gesture for giving up. */
       if (aim.isCenter || aim.index === null) return void cancelDwell();
       const level = stateRef.current.currentLevelApps;
       /**
-       * Um único item em modo ângulo: a fatia é o plano inteiro, e não há direção nenhuma que
-       * aponte para outra coisa. Apontar deixa de ser escolher, portanto nada aqui pode contar como
-       * intenção — é o caso do nível de recurso do MRU vazio, que existe precisamente para nunca
-       * lançar a IDE-mãe sozinho. Em modo cursor o teste é sobre o ícone e continua a valer.
+       * A single item in angle mode: the slice is the whole plane, and there is no direction that
+       * points at anything else. Aiming stops being choosing, so nothing here can count as intent —
+       * this is the empty-MRU fallback level, which exists precisely so the parent IDE never
+       * launches on its own. In cursor mode the test is against the icon and still holds.
        */
       if (
         level.length === 1 &&
@@ -2554,18 +2568,19 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
         running.gen === next.gen &&
         running.index === next.index &&
         running.itemId === next.itemId;
-      /** A contar já: tolerância de manter (larga). Ainda a assentar: tolerância de parar (curta). */
+      /** Already counting: hold tolerance (wide). Still settling: stop tolerance (tight). */
       const holdRadius = dwellTargetRef.current !== null ? DWELL_HOLD_PX : DWELL_SETTLE_PX;
       const stillSettled =
         anchor !== null && Math.hypot(point.x - anchor.x, point.y - anchor.y) <= holdRadius;
 
-      /** Mesmo alvo e mão quieta: a contagem em curso continua — o tremor não a faz recomeçar. */
+      /** Same target and a still hand: the count in progress carries on — a tremor does not restart it. */
       if (sameTarget && stillSettled) return;
 
       /**
-       * Ainda em movimento, ou alvo novo: recomeça daqui. Enquanto o ponteiro anda, o que se
-       * reagenda é só este `setTimeout`; o `cancelDwell` acima já não faz commit nenhum depois do
-       * primeiro, por isso arrastar o rato pela roda não custa uma renderização por frame.
+       * Still moving, or a new target: it starts over from here. While the pointer travels, what
+       * gets rescheduled is only this `setTimeout`; the `cancelDwell` above no longer commits
+       * anything after the first one, so dragging the mouse around the wheel does not cost a render
+       * per frame.
        */
       cancelDwell();
       dwellAnchorRef.current = point;
@@ -2578,16 +2593,16 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
   armAndTrackDwellRef.current = armAndTrackDwell;
 
   /**
-   * A janela Electron é maior que o menu para que gestos largos continuem a receber eventos do rato.
-   * O fundo visual, porém, acompanha apenas a roda (ícones + uma pequena margem) e usa a posição real
-   * do menu como centro — importante quando o radial abre perto da borda do monitor.
+   * The Electron window is larger than the menu so that wide gestures keep receiving mouse events.
+   * The visual backdrop, though, follows only the wheel (icons + a small margin) and uses the
+   * menu's real position as its centre — important when the radial opens near the monitor's edge.
    */
   const bo = config.backdropOpacity;
 
-  /** Eco em curso, e se o alvo confirmado foi o hub em vez de uma fatia. */
+  /** Echo in progress, and whether the confirmed target was the hub rather than a slice. */
   const echoActive = launchEcho !== null;
   const centerFired = launchEcho?.index === -1;
-  /** O escurecimento levanta-se ao longo do eco: a onda acaba já sobre o desktop, sem corte. */
+  /** The scrim lifts across the echo: the wave ends over the bare desktop, with no cut. */
   const echoStyle = echoActive
     ? ({ ['--zn-echo-ms' as string]: `${launchEchoMs}ms` } as React.CSSProperties)
     : null;
@@ -2598,17 +2613,17 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
   );
 
   /**
-   * A janela é `transparent: true` sobre o desktop, por isso `backdrop-filter` não tem nada para
-   * amostrar no Windows — só compomos alfa. Duas consequências de design:
+   * The window is `transparent: true` over the desktop, so `backdrop-filter` has nothing to sample
+   * on Windows — we only composite alpha. Two design consequences:
    *
-   * 1. A legibilidade NÃO depende do escurecimento: cada ícone e cada pílula já trazem o seu
-   *    próprio fundo a 0.92 e borda. O escurecimento serve só para focar. Logo pode ser leve —
-   *    e é o peso que produzia o borrão cinzento sobre desktops claros.
-   * 2. Nada de alfa uniforme em `inset-0`: pinta o retângulo da janela e denuncia-o como um
-   *    quadrado no ecrã. O escurecimento tem de ser só a poça radial, a chegar a zero real
-   *    dentro dos limites da janela — sem aresta reta em lado nenhum.
+   * 1. Legibility does NOT depend on the scrim: every icon and every pill already carries its own
+   *    background at 0.92 and a border. The scrim is only there to focus. So it can be light —
+   *    and it was the weight that produced the grey smear over light desktops.
+   * 2. No uniform alpha on `inset-0`: it paints the window's rectangle and gives it away as a
+   *    square on the screen. The scrim has to be only the radial pool, reaching true zero inside
+   *    the window's bounds — with no straight edge anywhere.
    */
-  /** Memoizado: reconstruir a string a cada hover obrigava o Chromium a repintar um gradiente de ecrã inteiro. */
+  /** Memoised: rebuilding the string on every hover forced Chromium to repaint a full-screen gradient. */
   const overlayDim = React.useMemo(
     () => radialScrimGradient(position, bo, backdropRadius),
     [bo, backdropRadius, position.x, position.y],
@@ -2619,13 +2634,13 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
       data-zenith-radial-modal="true"
       className={`fixed inset-0 z-[70] ${config.performanceMode ? 'zn-radial--fast' : ''} ${isOpen ? '' : 'zn-radial--closing'} ${directionMode ? 'zn-radial--nocursor' : ''}`}
       style={{
-        /* Sem atraso ao fechar — senão o HUD do radial ficava visível por cima/atrás da ilha compacta. */
+        /* No delay on close — otherwise the radial HUD stayed visible over/behind the compact island. */
         visibility: isOpen ? 'visible' : 'hidden',
         pointerEvents: isOpen ? 'auto' : 'none',
       }}
     >
         <>
-          {/* Escurecimento único (sem máscara radial — evita halo / “luz” à volta do radial) */}
+          {/* A single scrim (no radial mask — avoids a halo / “glow” around the radial) */}
           <div
             className={`zn-radial-scrim fixed inset-0 z-[2]${echoActive ? ' zn-launch-scrim' : ''}`}
             style={{
@@ -2639,7 +2654,7 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
           />
 
           <RadialHud
-            /** Relógio, bateria e tempo saem com o resto da roda — o eco deixa só o ícone no ecrã. */
+            /** Clock, battery and weather leave with the rest of the wheel — the echo leaves only the icon on screen. */
             isOpen={isOpen && bloom && !echoActive}
             config={config}
             batteryLevel={batteryLevel}
@@ -2710,11 +2725,11 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
           >
 
             {/*
-              Alvo do centro: um QUADRADO transparente por cima do hub, um pouco maior que ele.
-              O hub é `rounded-full`, e o `border-radius` recorta também o teste de acerto — um
-              clique no canto da caixa não lhe acerta, atravessa para o overlay e vira direção.
-              Era isto que abria a fatia daquele lado com o cursor visivelmente dentro do botão.
-              Aqui o alvo não depende de limiar nenhum: dentro do quadrado é sempre o centro.
+              Centre target: a transparent SQUARE over the hub, slightly larger than it.
+              The hub is `rounded-full`, and `border-radius` clips the hit test too — a click on the
+              box's corner misses it, passes through to the overlay and becomes a direction.
+              This was what opened the slice on that side with the cursor visibly inside the button.
+              Here the target depends on no threshold at all: inside the square it is always the centre.
             */}
             {isOpen && (
               <div
@@ -2736,8 +2751,9 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
             )}
 
             {/*
-              A mesma onda do tile, à volta do hub, quando é o centro que lança. Circular porque o
-              hub é circular — a onda continua a sair da silhueta do que foi confirmado.
+              The same wave as the tile's, around the hub, when it is the centre that launches.
+              Circular because the hub is circular — the wave still comes out of the silhouette of
+              what was confirmed.
             */}
             {centerFired && (
               <>
@@ -2776,20 +2792,20 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
                 ${isCenterActive ? '' : 'text-white/70'}
               `}
               style={{
-                /** Lado par: `translate(-50%)` de um ímpar cai em meio-pixel e serrilha o círculo. */
+                /** Even side: `translate(-50%)` of an odd number lands on a half pixel and jags the circle. */
                 width: `${hubDiameter}px`,
                 height: `${hubDiameter}px`,
                 /**
-                 * Sem borda e sem anel de 1px. Numa circunferência, uma linha fina de alto
-                 * contraste é o que torna cada degrau do antialiasing visível: o olho segue a
-                 * linha e vê-a engrossar e afinar. Aqui o disco define-se pelo próprio
-                 * preenchimento — uma transição cheio→transparente, que é o caso que o
-                 * rasterizador trata melhor — e a separação do desktop vem de sombras DIFUSAS,
-                 * que não têm aresta para serrilhar. O fundo sobe de .78 para .90 porque deixou
-                 * de haver anel a segurar o contorno sobre um wallpaper claro.
+                 * No border and no 1px ring. On a circle, a thin high-contrast line is what makes
+                 * every antialiasing step visible: the eye follows the line and watches it thicken
+                 * and thin. Here the disc is defined by its own fill — a filled→transparent
+                 * transition, which is the case the rasteriser handles best — and its separation
+                 * from the desktop comes from DIFFUSE shadows, which have no edge to jag. The
+                 * background goes from .78 to .90 because there is no longer a ring holding the
+                 * outline over a light wallpaper.
                  */
                 backgroundColor: isCenterActive ? radialHoverColor : 'rgba(6,7,9,0.90)',
-                /** A borda não é CSS — é um `<circle>` SVG lá dentro. Ver o comentário do anel. */
+                /** The border is not CSS — it is an SVG `<circle>` inside. See the ring's comment. */
                 border: 'none',
                 color: isCenterActive ? radialHoverForeground : undefined,
                 boxShadow: isCenterActive
@@ -2797,10 +2813,11 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
                   : '0 1px 3px rgba(0,0,0,0.55), 0 8px 20px rgba(0,0,0,0.5)',
                 ['--zn-tf' as string]: `translate(-50%, -50%) scale(${bloom ? (isCenterActive ? 1.06 : 1) : 0.82})`,
                 /**
-                 * Uma fatia a lançar apaga o hub, tal como apaga as outras fatias: o eco isola o
-                 * que foi escolhido, e o hub é a parte da roda que mais o disputaria — é o único
-                 * outro objeto grande e opaco no ecrã. Quando é ELE que lança, é a animação de
-                 * `zn-launch-pop-center` que manda, e esta opacidade não chega a ser lida.
+                 * A slice launching fades the hub, just as it fades the other slices: the echo
+                 * isolates what was chosen, and the hub is the part of the wheel that would compete
+                 * hardest with it — it is the only other large opaque object on screen. When it is
+                 * IT that launches, `zn-launch-pop-center`'s animation rules and this opacity never
+                 * gets read.
                  */
                 ['--zn-op' as string]: echoActive && !centerFired ? 0 : bloom ? 1 : 0,
                 ['--zn-dur' as string]: '130ms',
@@ -2811,14 +2828,14 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
               onMouseUp={(e) => e.stopPropagation()}
             >
               {/*
-                Selo de atualização. Informativo, nunca clicável: o centro é o gesto de fechar, e
-                um alvo colado a ele reintroduzia a classe de bugs de cliques trocados que custou
-                uma sessão inteira a resolver. A ação vive nas Definições.
+                Update badge. Informative, never clickable: the centre is the gesture for closing,
+                and a target glued to it reintroduced the class of swapped-click bugs that cost a
+                whole session to fix. The action lives in Settings.
 
-                A seta é desenhada, não é um glifo tipográfico: um glifo traz espaçamento lateral e
-                linha de base próprios, e num círculo de 24px isso chega para o pôr torto. Os
-                pontos abaixo saem dos limites da TINTA — traço de 1.7 com pontas redondas cresce
-                0.85 além de cada extremo — e não da geometria nua.
+                The arrow is drawn, not a typographic glyph: a glyph brings its own side bearings
+                and baseline, and in a 24px circle that is enough to set it crooked. The points
+                below come from the INK's bounds — a 1.7 stroke with round caps grows 0.85 past each
+                end — and not from the bare geometry.
               */}
               {updateReady && (
                 <span
@@ -2830,7 +2847,7 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
                     height: Math.round(hubDiameter * 0.32),
                     borderRadius: '50%',
                     background: '#0A84FF',
-                    /** Anel na cor do fundo: separa do hub sem introduzir contorno novo. */
+                    /** Ring in the background colour: it separates from the hub without adding a new outline. */
                     border: `${Math.max(2, Math.round(hubDiameter * 0.026))}px solid #0a0a0a`,
                     boxSizing: 'border-box',
                     zIndex: 40,
@@ -2850,14 +2867,14 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
               )}
 
               {/*
-                O anel é um `<circle>` SVG, não uma `border` CSS.
-                São dois rasterizadores diferentes: a borda de uma caixa com `border-radius` é
-                desenhada como quatro arcos de canto costurados à volta de um retângulo, e é nessas
-                costuras — e na largura fracionária — que aparecem os degraus e a espessura a
-                oscilar. Um `<circle>` é UM caminho vetorial, traçado de uma vez pelo Skia com
-                `geometricPrecision`: a cobertura é calculada pela distância real ao arco, igual em
-                todo o perímetro. `vectorEffect` mantém o traço com a mesma espessura quando o hub
-                escala, em vez de o esticar com a textura.
+                The ring is an SVG `<circle>`, not a CSS `border`.
+                They are two different rasterisers: the border of a box with `border-radius` is
+                drawn as four corner arcs stitched around a rectangle, and it is at those seams —
+                and in the fractional width — that the steps and the wobbling thickness show up. A
+                `<circle>` is ONE vector path, stroked in a single pass by Skia with
+                `geometricPrecision`: coverage is computed from the real distance to the arc, the
+                same all the way round. `vectorEffect` keeps the stroke at the same thickness when
+                the hub scales, instead of stretching it with the texture.
               */}
               <svg
                 className="absolute inset-0 pointer-events-none"
@@ -2870,7 +2887,7 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
                 <circle
                   cx={hubDiameter / 2}
                   cy={hubDiameter / 2}
-                  /** Meio traço para dentro: assim o anel fica alinhado com o limite do disco. */
+                  /** Half a stroke inwards: that way the ring lines up with the disc's edge. */
                   r={(hubDiameter - 1.5) / 2}
                   fill="none"
                   stroke={isCenterActive ? radialHoverColor : 'rgba(255,255,255,0.30)'}
@@ -2914,7 +2931,7 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
                 ['--zn-tf' as string]: `translate(-50%, 0) translate3d(0, ${Math.round(
                   actualMenuRadius + actualIconSize * 0.75 + 34,
                 )}px, 0)`,
-                /** Onde se está na roda deixa de ser informação assim que se sai dela. */
+                /** Where you are in the wheel stops being information the moment you leave it. */
                 ['--zn-op' as string]: isOpen && bloom && !echoActive ? 1 : 0,
                 ...(echoActive ? { ['--zn-dur-op' as string]: '130ms' } : null),
               }}
@@ -2922,7 +2939,7 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
               <div
                 className="flex items-center gap-2 px-3 py-1.5 rounded-full whitespace-nowrap"
                 style={{
-                  /* Opaco por si: um wash branco translúcido desaparecia sobre desktops claros. */
+                  /* Opaque on its own: a translucent white wash disappeared over light desktops. */
                   background: 'rgba(4,5,7,0.92)',
                   border: '1px solid rgba(255,255,255,0.14)',
                   boxShadow: '0 0 0 1px rgba(0,0,0,0.45)',
@@ -2949,13 +2966,13 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
               </div>
             </div>
 
-            {/* App Icons — a troca entre níveis é o próprio bloom (ver efeito `bloom`). */}
+            {/* App Icons — the swap between levels is the bloom itself (see the `bloom` effect). */}
             {currentLevelApps.map((app, index) => {
                 /**
-                 * Durante o eco o destaque é o ALVO CONFIRMADO, não a mira. Os dois divergem: o
-                 * ponteiro continua a produzir eventos por cima de uma roda que já está a sair, e
-                 * um deles trocava a cor de fundo do tile a meio da onda — o ícone confirmado
-                 * perdia o realce e um vizinho invisível ficava com ele.
+                 * During the echo the highlight is the CONFIRMED TARGET, not the aim. The two
+                 * diverge: the pointer goes on producing events over a wheel that is already
+                 * leaving, and one of them swapped the tile's background colour halfway through the
+                 * wave — the confirmed icon lost the highlight and an invisible neighbour got it.
                  */
                 const isActive = launchEcho ? launchEcho.index === index : index === activeIndex;
                 let angularDistance: number | null = null;
@@ -2984,10 +3001,10 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
                     folderStackLength={folderStack.length}
                     bloom={isOpen && bloom}
                     shortcutHint={shortcutHint}
-                    /** `undefined` em todos os outros tiles — o `React.memo` deles não é invalidado. */
+                    /** `undefined` on every other tile — their `React.memo` is not invalidated. */
                     dwellMs={dwellTick && dwellTick.index === index ? dwellRunMsRef.current : undefined}
                     dwellKey={dwellTick && dwellTick.index === index ? dwellTick.key : undefined}
-                    /** Fora do eco é `undefined` em toda a roda — nenhum tile perde o memo por isto. */
+                    /** Outside the echo it is `undefined` across the whole wheel — no tile loses its memo over this. */
                     echo={launchEcho ? (launchEcho.index === index ? 'fired' : 'faded') : undefined}
                     echoMs={launchEcho ? launchEchoMs : undefined}
                     onClick={handleAppClick}

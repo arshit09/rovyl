@@ -25,9 +25,9 @@ export function useIconHealing({
 }): void {
   /** Prevents broken/missing shell targets from spawning PowerShell after every settings edit. */
   const iconHealingAttemptedRef = useRef(new Set<string>());
-  /** Houve ícones que não resolveram nesta passagem — vale a pena repescar daqui a instantes. */
+  /** Some icons failed to resolve this pass — worth a retry in a moment. */
   const healingHadFailuresRef = useRef(false);
-  /** Teto de repescagens: duas. Sem isto, um alvo permanentemente inválido girava para sempre. */
+  /** Retry ceiling: two. Without this, a permanently invalid target spun forever. */
   const healingRetriesRef = useRef(0);
   const [iconHealingPass, setIconHealingPass] = useState(0);
 
@@ -58,7 +58,7 @@ export function useIconHealing({
           const web = isWebShortcutItem(item);
           const iconStr = String(item.customIconUrl ?? '').trim();
           if (web && item.command?.trim()) {
-            // Falta ícone ou só URL remota (renderer não mostra → migrar para data URL)
+            // Missing icon, or only a remote URL (renderer won't show it → migrate to a data URL)
             if ((!iconStr || isRemoteIconUrl(item.customIconUrl)) && canAttempt(item)) {
               missing.push(item);
             }
@@ -129,9 +129,9 @@ export function useIconHealing({
                   hasUpdates = true;
                 } else {
                   /**
-                   * Favicon é rede: no arranque a ligação pode ainda não estar de pé, e uma falha
-                   * assim ficava marcada como tentativa gasta — o atalho só ganhava ícone na
-                   * sessão seguinte. Mesma regra do caminho nativo: falhar devolve a vez.
+                   * A favicon is network: at startup the link may not be up yet, and a failure
+                   * like that stayed marked as a spent attempt — the shortcut only got its icon
+                   * the next session. Same rule as the native path: failing gives the turn back.
                    */
                   iconHealingAttemptedRef.current.delete(healingKey(item));
                   healingHadFailuresRef.current = true;
@@ -154,11 +154,11 @@ export function useIconHealing({
                     hasUpdates = true;
                   } else {
                     /**
-                     * A marca de "já tentado" existe para não repetir extrações em cadeia, mas
-                     * estava a ser posta ANTES da tentativa e nunca retirada: um falhanço isolado
-                     * — a fila do PowerShell ocupada, por exemplo — condenava o ícone até se
-                     * reiniciar a app. Retirar a marca em caso de falha devolve-lhe uma segunda
-                     * oportunidade na passagem seguinte.
+                     * The "already tried" mark exists to keep extractions from repeating back to
+                     * back, but it was being set BEFORE the attempt and never removed: one
+                     * isolated failure — a busy PowerShell queue, say — condemned the icon until
+                     * the app was restarted. Dropping the mark on failure gives it a second
+                     * chance on the next pass.
                      */
                     iconHealingAttemptedRef.current.delete(healingKey(item));
                     healingHadFailuresRef.current = true;
@@ -188,31 +188,31 @@ export function useIconHealing({
 
       hasUpdatesLog.value = hasUpdates;
       /**
-       * O `cancelled` NÃO pode travar a escrita.
+       * `cancelled` must NOT block the write.
        *
-       * O efeito é cancelado sempre que `config.workspaces` muda — e no arranque isso acontece
-       * várias vezes (hidratação, descoberta do Menu Iniciar, normalização) enquanto os ícones
-       * estão a ser resolvidos. O trabalho terminava com sucesso e era deitado fora à porta:
-       * o log dizia `alterou=true falhas=false` e o ficheiro continuava vazio, com a passagem
-       * seguinte a encontrar os mesmos itens. Um ciclo perfeito de trabalho desperdiçado.
+       * The effect is cancelled every time `config.workspaces` changes — and at startup that
+       * happens several times (hydration, Start Menu discovery, normalization) while the icons
+       * are being resolved. The work finished successfully and was thrown away at the door:
+       * the log said `changed=true failures=false` and the file stayed empty, with the next
+       * pass finding the same items. A perfect cycle of wasted work.
        *
-       * `cancelled` serve para PARAR trabalho a meio, não para descartar resultados já obtidos.
-       * A fusão é por ID e só preenche quem continua sem ícone, portanto aplicar tarde é seguro.
+       * `cancelled` is for STOPPING work midway, not for discarding results already obtained.
+       * The merge is by ID and only fills whoever still has no icon, so applying late is safe.
        */
       if (hasUpdates) {
         /**
-         * Aplicar por ID, não por identidade do array.
+         * Apply by ID, not by array identity.
          *
-         * A versão anterior só escrevia se `prev.workspaces` fosse EXATAMENTE o mesmo array com que
-         * a cura começou. Numa restauração isso nunca acontece: a config muda várias vezes
-         * (importação, descoberta do Menu Iniciar, normalização) enquanto o PowerShell resolve os
-         * ícones, que demora segundos. O lote inteiro era descartado — e só na sessão seguinte,
-         * com a config já estável, é que os ícones apareciam. Era isto que obrigava a fechar e
-         * abrir a app para os ver.
+         * The previous version only wrote if `prev.workspaces` was EXACTLY the same array the
+         * healing started with. On a restore that never happens: the config changes several times
+         * (import, Start Menu discovery, normalization) while PowerShell resolves the icons,
+         * which takes seconds. The whole batch was discarded — and only in the next session,
+         * with the config already settled, did the icons show up. This is what forced closing
+         * and reopening the app to see them.
          *
-         * Agora recolhemos apenas os ícones resolvidos e aplicamo-los ao estado atual, seja ele
-         * qual for. Só se preenche quem continua sem ícone, portanto nada do que o utilizador (ou
-         * outra etapa) tenha entretanto definido é sobreposto.
+         * Now we collect only the resolved icons and apply them to the current state, whatever
+         * it is. Only whoever still has no icon gets filled, so nothing the user (or another
+         * step) has set in the meantime is overwritten.
          */
         const resolved = new Map<string, { customIconUrl?: string; iconSource?: AppItem['iconSource']; iconName?: string }>();
         const collect = (items: AppItem[]) => {
@@ -234,7 +234,7 @@ export function useIconHealing({
           let touched = 0;
           const apply = (items: AppItem[]): AppItem[] =>
             items.map((item) => {
-              /** Sem ícone, ou com um URL remoto que o renderer não mostra: nos dois casos entra. */
+              /** No icon, or a remote URL the renderer won't show: both cases qualify. */
               const stale = !item.customIconUrl || isRemoteIconUrl(item.customIconUrl);
               const patch = item.id ? resolved.get(item.id) : undefined;
               const next: AppItem = patch && stale ? { ...item, ...patch } : { ...item };
@@ -251,16 +251,16 @@ export function useIconHealing({
     };
 
     window.electron?.savePersistenceLog?.(
-      `[IconHealing] passagem ${iconHealingPass} | por resolver=${appsToHeal.length} ` +
+      `[IconHealing] pass ${iconHealingPass} | unresolved=${appsToHeal.length} ` +
         `(${appsToHeal.map((a) => a.label).slice(0, 8).join(', ')}${appsToHeal.length > 8 ? '…' : ''})`,
     );
 
     let retryTimer: number | undefined;
     void heal().then(() => {
       window.electron?.savePersistenceLog?.(
-        `[IconHealing] passagem ${iconHealingPass} terminada | alterou=${hasUpdatesLog.value} falhas=${healingHadFailuresRef.current}`,
+        `[IconHealing] pass ${iconHealingPass} finished | changed=${hasUpdatesLog.value} failures=${healingHadFailuresRef.current}`,
       );
-      /** Houve falhas e nada mais vai mexer na config: agendar uma repescagem. */
+      /** There were failures and nothing else will touch the config: schedule a retry. */
       if (cancelled || !healingHadFailuresRef.current) return;
       healingHadFailuresRef.current = false;
       if (healingRetriesRef.current >= 2) return;

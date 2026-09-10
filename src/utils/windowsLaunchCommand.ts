@@ -1,6 +1,6 @@
 /**
- * Garante caminhos absolutos Windows com espaços gravados entre aspas (picker / colagem).
- * O processo principal ainda canonicaliza ao executar — isto evita estado inicial frágil na UI.
+ * Ensures absolute Windows paths with spaces are stored quoted (picker / paste).
+ * The main process still canonicalizes on run — this avoids a fragile initial state in the UI.
  */
 export function normalizeWindowsExecutablePickerPath(filePath: string): string {
   const t = (filePath || '').trim();

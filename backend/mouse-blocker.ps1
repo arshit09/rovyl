@@ -33,7 +33,7 @@ public static class ZenithRadialMouseBlocker {
     private const uint SYNCHRONIZE = 0x00100000;
     private const uint INFINITE = 0xFFFFFFFF;
 
-    /** Assinatura dos eventos que nos proprios injetamos, para o hook nao os voltar a engolir. */
+    /** Signature on the events we inject ourselves, so the hook does not swallow them again. */
     private const uint SYNTHETIC_TAG = 0x524F5659;
 
     private delegate IntPtr LowLevelMouseProc(int nCode, IntPtr wParam, IntPtr lParam);
@@ -90,84 +90,84 @@ public static class ZenithRadialMouseBlocker {
     private static int MonitorLeft, MonitorTop, MonitorRight, MonitorBottom;
 
     /**
-     * Deslocamentos dos campos que o hook precisa de ler. `Marshal.PtrToStructure` encaixotava a
-     * MSLLHOOKSTRUCT inteira a CADA evento; com um rato de 1000 Hz isso e lixo para o GC no unico
-     * thread por onde passa todo o rato do sistema. Ler tres campos soltos nao aloca nada.
+     * Offsets of the fields the hook needs to read. `Marshal.PtrToStructure` boxed the whole
+     * MSLLHOOKSTRUCT on EVERY event; with a 1000 Hz mouse that is GC garbage on the one thread
+     * every mouse event in the system passes through. Reading three loose fields allocates nothing.
      */
     private static readonly int OffsetPoint = (int)Marshal.OffsetOf(typeof(MSLLHOOKSTRUCT), "pt");
     private static readonly int OffsetMouseData = (int)Marshal.OffsetOf(typeof(MSLLHOOKSTRUCT), "mouseData");
     private static readonly int OffsetExtraInfo = (int)Marshal.OffsetOf(typeof(MSLLHOOKSTRUCT), "dwExtraInfo");
 
     /**
-     * Captura do botao de disparo.
+     * Trigger button capture.
      *
-     * O detetor era um poller de `GetAsyncKeyState` noutro processo, que so OBSERVAVA o botao. O
-     * evento seguia intacto para a janela por baixo e, em qualquer superficie com scroll, o
-     * Windows entrava em autoscroll: mirar na roda arrastava a pagina atras dela.
+     * The detector was a `GetAsyncKeyState` poller in another process, which only WATCHED the
+     * button. The event went on intact to the window underneath and, on any scrollable surface,
+     * Windows went into autoscroll: aiming with the wheel dragged the page along behind it.
      *
-     * Um hook que devolve 1 engole o evento -- mas isso tambem esconde o botao do
-     * `GetAsyncKeyState`, portanto quem engole tem de ser tambem quem deteta.
+     * A hook that returns 1 swallows the event -- but that also hides the button from
+     * `GetAsyncKeyState`, so whoever swallows has to be whoever detects too.
      */
-    private static volatile int TriggerButton;      // 0 = desligado, 4 = meio, 5 = X1, 6 = X2
-    private static volatile bool TriggerHoldMode;   // no modo "click" nunca ha clique a devolver
-    private static volatile int TriggerThreshold;   // px; abaixo disto o gesto nao mirou nada
+    private static volatile int TriggerButton;      // 0 = off, 4 = middle, 5 = X1, 6 = X2
+    private static volatile bool TriggerHoldMode;   // in "click" mode there is never a click to hand back
+    private static volatile int TriggerThreshold;   // px; below this the gesture aimed at nothing
     private static int DownX, DownY;
     private static long DownAt;
 
-    /** Uma pressao mais longa que isto foi intencao de abrir a roda, nao um clique. */
+    /** A press longer than this was intent to open the wheel, not a click. */
     private const long PASSTHROUGH_MAX_MS = 250;
 
     /**
-     * Modo "click": limiar acima do qual a pressao NAO e nossa.
+     * "Click" mode: threshold above which the press is NOT ours.
      *
-     * O DOWN foi engolido (ver acima porque tem de ser), logo a janela por baixo nunca soube que o
-     * botao desceu -- e sem esse DOWN nao ha deslocamento por roda premida, nem colar do terminal,
-     * nem pan em CAD. Passado o limiar premimos o botao por baixo nos proprios e largamo-lo quando
-     * o utilizador largar o dele: o gesto chega ao sitio certo, so que com o atraso do limiar.
+     * The DOWN was swallowed (see above why it must be), so the window underneath never knew the
+     * button went down -- and without that DOWN there is no wheel-press scroll, no terminal paste,
+     * no CAD pan. Past the threshold we press the button underneath ourselves and release it when
+     * the user lets go of theirs: the gesture reaches the right place, with the threshold's delay.
      *
-     * Devolver so no fim (um DOWN+UP juntos na largada) nao serve: o deslocamento ancora no DOWN e
-     * vive do movimento DEPOIS dele, portanto entregue no fim nao sobra movimento nenhum -- e no
-     * Chrome/Edge um DOWN+UP parado e justamente o gesto que deixa o deslocamento colado ao
-     * ponteiro depois de o utilizador ja ter largado.
+     * Handing it back only at the end (a DOWN+UP together on release) is no good: the scroll
+     * anchors on the DOWN and lives off the movement AFTER it, so delivered at the end there is no
+     * movement left -- and in Chrome/Edge a stationary DOWN+UP is precisely the gesture that leaves
+     * the scroll stuck to the pointer after the user has already let go.
      *
-     * O valor vem do main (MMB_CLICK_MAX_MS) no comando TRIGGER; este e so o recurso.
+     * The value comes from main (MMB_CLICK_MAX_MS) in the TRIGGER command; this is only the fallback.
      */
     private const int DEFAULT_CLICK_HOLD_MS = 400;
     private static volatile int ClickHoldMs = DEFAULT_CLICK_HOLD_MS;
     /**
-     * Distancia que prova que a pressao NAO e um clique -- e o sinal que devolve o botao mais
-     * depressa do que o tempo consegue.
+     * Distance that proves the press is NOT a click -- the signal that hands the button back
+     * faster than time can.
      *
-     * Esperar pelos 400 ms era a queixa: quem preme a roda para deslocar a pagina ficava com ela
-     * parada ate o limiar passar. Mas deslocar E mover: no instante em que a mao sai do sitio, a
-     * pressao deixou de poder ser um clique, e o botao pode ir para baixo ja. Na pratica o
-     * deslocamento comeca assim que ha alguma coisa para deslocar.
+     * Waiting out the 400 ms was the complaint: pressing the wheel to scroll the page left it
+     * sitting still until the threshold passed. But scrolling IS moving: the instant the hand
+     * leaves the spot, the press can no longer be a click, and the button can go down already. In
+     * practice scrolling starts as soon as there is something to scroll.
      *
-     * Bem acima do tremor de uma mao a clicar (abaixo de 10 px, mesmo com DPI alto) e bem abaixo
-     * de qualquer gesto de deslocar. Nao e o TriggerThreshold de 6 px, que serve para decidir se um
-     * clique curto e devolvido: 6 px aqui roubava cliques a maos tremidas.
+     * Well above the tremor of a hand clicking (under 10 px, even at high DPI) and well below any
+     * scroll gesture. Not the 6 px TriggerThreshold, which is there to decide whether a short click
+     * is handed back: 6 px here stole clicks from shaky hands.
      */
     private const int DEFAULT_CLICK_DRAG_PX = 30;
     private static volatile int ClickDragPx = DEFAULT_CLICK_DRAG_PX;
-    /** Ha uma pressao em modo "click" a decorrer: DOWN visto, UP ainda por vir. */
+    /** A "click" mode press is under way: DOWN seen, UP still to come. */
     private static volatile bool ClickPressArmed;
-    /** Botao cujo DOWN ja injetamos por baixo: devemos-lhe o UP. 0 = nada em divida. */
+    /** Button whose DOWN we already injected underneath: we owe it the UP. 0 = nothing owed. */
     private static volatile int ClickInjectedButton;
 
     /**
-     * Que metades do botao a fila de devolucao deve injetar. O par continua a ser o caso do modo
-     * "segurar"; as metades soltas sao o modo "click", onde o DOWN sai a meio da pressao e o UP so
-     * quando o utilizador larga.
+     * Which halves of the button the passthrough queue should inject. The pair is still the "hold"
+     * mode case; the loose halves are "click" mode, where the DOWN goes out mid-press and the UP
+     * only when the user lets go.
      */
     private const int PT_PAIR = 0;
     private const int PT_DOWN = 1000;
     private const int PT_UP = 2000;
 
     /**
-     * Escrever no stdout a partir do hook e um risco real: se o pai parar de ler, o pipe enche e o
-     * `Console.WriteLine` BLOQUEIA -- e o thread bloqueado e justamente o que serve o hook, ou seja,
-     * congela o rato de todo o sistema ate ao `LowLevelHooksTimeout`. Enfileirar e devolver e sempre
-     * O(1); um thread dedicado faz a escrita.
+     * Writing to stdout from the hook is a real risk: if the parent stops reading, the pipe fills
+     * and `Console.WriteLine` BLOCKS -- and the blocked thread is precisely the one serving the
+     * hook, i.e. it freezes the whole system's mouse until `LowLevelHooksTimeout`. Enqueue and
+     * return is always O(1); a dedicated thread does the writing.
      */
     private static void Emit(string line) {
         Outbound.Enqueue(line);
@@ -190,7 +190,7 @@ public static class ZenithRadialMouseBlocker {
                message == WM_MOUSEWHEEL || message == WM_MOUSEHWHEEL;
     }
 
-    /** Qual botao de disparo esta mensagem representa, se algum. 0 = nenhum. */
+    /** Which trigger button this message stands for, if any. 0 = none. */
     private static int TriggerFor(int message, uint mouseData, out bool isDown) {
         isDown = false;
         if (message == WM_MBUTTONDOWN || message == WM_MBUTTONUP || message == WM_MBUTTONDBLCLK) {
@@ -211,23 +211,23 @@ public static class ZenithRadialMouseBlocker {
         int message = wParam.ToInt32();
 
         /**
-         * Todo o rato do sistema passa por aqui, serializado. O WM_MOUSEMOVE e a esmagadora maioria
-         * dos eventos (um rato gaming de 1000 Hz gera mil por segundo) e NUNCA e acionavel: nao esta
-         * em `IsBlockedMessage` nem em `TriggerFor`. Sair antes de tocar no lParam poupa o
-         * marshalling em ~99% dos eventos.
+         * Every mouse event in the system passes through here, serialized. WM_MOUSEMOVE is the
+         * overwhelming majority of them (a 1000 Hz gaming mouse makes a thousand a second) and is
+         * NEVER actionable: it is in neither `IsBlockedMessage` nor `TriggerFor`. Leaving before
+         * touching lParam saves the marshalling on ~99% of events.
          */
         if (message == WM_MOUSEMOVE) return CallNextHookEx(Hook, nCode, wParam, lParam);
 
         int trigger = TriggerButton;
         bool blocking = Blocking;
-        /** Sem gatilho armado nem bloqueio ativo nao ha decisao nenhuma a tomar. */
+        /** With no trigger armed and no blocking active there is no decision at all to make. */
         if (trigger == 0 && !blocking) return CallNextHookEx(Hook, nCode, wParam, lParam);
 
         ulong extraInfo = IntPtr.Size == 8
             ? (ulong)Marshal.ReadInt64(lParam, OffsetExtraInfo)
             : (ulong)(uint)Marshal.ReadInt32(lParam, OffsetExtraInfo);
 
-        /** Os nossos proprios cliques devolvidos passam sem serem reinterpretados. */
+        /** Our own handed-back clicks go through without being reinterpreted. */
         if ((uint)extraInfo == SYNTHETIC_TAG) {
             return CallNextHookEx(Hook, nCode, wParam, lParam);
         }
@@ -244,7 +244,7 @@ public static class ZenithRadialMouseBlocker {
                     DownX = px;
                     DownY = py;
                     DownAt = Environment.TickCount;
-                    /** So o modo "click" adia a decisao; o "segurar" resolve tudo na largada. */
+                    /** Only "click" mode defers the decision; "hold" settles it all on release. */
                     ClickPressArmed = !TriggerHoldMode;
                     Emit("TRIGGER_DOWN");
                 } else {
@@ -252,20 +252,20 @@ public static class ZenithRadialMouseBlocker {
                     int dy = py - DownY;
                     long held = Environment.TickCount - DownAt;
                     /**
-                     * Environment.TickCount e Int32 e da a volta as ~24.9 dias de uptime. DownAt
-                     * guarda ainda o valor grande de antes da volta, portanto held sai a cerca de
-                     * -4.29e9 e QUALQUER teste de "foi curto" passava a dar VERDADE: um segurar
-                     * longo contava como clique. Uma duracao impossivel de medir conta como
-                     * segurar, que e o lado seguro nos dois modos.
+                     * Environment.TickCount is Int32 and wraps at ~24.9 days of uptime. DownAt
+                     * still holds the large pre-wrap value, so held comes out around -4.29e9
+                     * and ANY "it was short" test started coming out TRUE: a long hold counted
+                     * as a click. A duration that cannot be measured counts as a hold, which is
+                     * the safe side in both modes.
                      */
                     if (held < 0) held = int.MaxValue;
                     int threshold = TriggerThreshold;
                     if (TriggerHoldMode) {
                         Emit("TRIGGER_UP");
                         /**
-                         * Clique curto e parado: o utilizador nao mirou nada, quis mesmo clicar com
-                         * o botao do meio. Devolvemos o clique a janela por baixo -- mas fora do
-                         * hook, porque injetar aqui reentraria nele.
+                         * Short, stationary click: the user aimed at nothing, they really did want
+                         * to middle-click. We hand the click back to the window underneath -- but
+                         * outside the hook, because injecting here would reenter it.
                          */
                         if (held <= PASSTHROUGH_MAX_MS &&
                             (dx * dx + dy * dy) <= threshold * threshold) {
@@ -276,22 +276,22 @@ public static class ZenithRadialMouseBlocker {
                         ClickPressArmed = false;
                         int injected = ClickInjectedButton;
                         if (injected != 0) {
-                            /** O DOWN ja saiu a meio da pressao: largar agora o que fica em divida. */
+                            /** The DOWN already went out mid-press: release now what is owed. */
                             ClickInjectedButton = 0;
                             Passthroughs.Enqueue(PT_UP + injected);
                             Emit("TRIGGER_HOLD");
                         } else if (!armed || held >= ClickHoldMs ||
                                    (dx * dx + dy * dy) >= ClickDragPx * ClickDragPx) {
                             /**
-                             * Segurar sem DOWN injetado. Acontece quando o tique de 15 ms ainda nao
-                             * chegou a injetar (uma pressao curta mas ja arrastada larga dentro dos
-                             * 15 ms), e quando nao houve DOWN emparelhado de todo (hook re-armado
-                             * com o botao ja premido, ao mudar de botao ou de modo nas definicoes
-                             * com o rato na mao): duracao desconhecida conta como segurar.
+                             * A hold with no injected DOWN. Happens when the 15 ms tick has not got
+                             * round to injecting yet (a short but already dragged press lets go
+                             * inside the 15 ms), and when there was no paired DOWN at all (hook
+                             * re-armed with the button already down, on changing button or mode in
+                             * settings with the mouse in hand): unknown duration counts as a hold.
                              *
-                             * Nao ha DOWN em divida, logo nao ha UP a injetar -- e nao se injeta um
-                             * par agora: um arrasto rapido nao e um clique de ninguem, e devolve-lo
-                             * no fim so poria um clique do meio num sitio onde a mao ja nao estava.
+                             * No DOWN is owed, so there is no UP to inject -- and we do not inject
+                             * a pair now: a quick drag is nobody's click, and handing it back at
+                             * the end would only put a middle click where the hand no longer was.
                              */
                             Emit("TRIGGER_HOLD");
                         } else {
@@ -314,12 +314,12 @@ public static class ZenithRadialMouseBlocker {
     }
 
     /**
-     * Injeta o botao que engolimos, marcado para o hook o deixar passar. O codigo e PT_PAIR /
-     * PT_DOWN / PT_UP somado ao botao, para uma fila so servir os tres casos.
+     * Injects the button we swallowed, tagged so the hook lets it through. The code is PT_PAIR /
+     * PT_DOWN / PT_UP added to the button, so a single queue serves all three cases.
      *
-     * Sem MOUSEEVENTF_MOVE nem ABSOLUTE: sai onde o ponteiro estiver, que e o que se quer -- o
-     * DOWN do modo "click" tem de ancorar onde a mao esta ao passar o limiar, nao onde ela estava
-     * quando o botao desceu.
+     * No MOUSEEVENTF_MOVE and no ABSOLUTE: it comes out wherever the pointer is, which is what we
+     * want -- the "click" mode DOWN has to anchor where the hand is when it passes the threshold,
+     * not where it was when the button went down.
      */
     private static void SendPassthrough(int code) {
         int trigger = code % 1000;
@@ -348,12 +348,12 @@ public static class ZenithRadialMouseBlocker {
     }
 
     /**
-     * Rede de seguranca do botao injetado.
+     * Safety net for the injected button.
      *
-     * Sair, desarmar ou re-armar com o DOWN injetado ainda por baixo deixava o sistema com o botao
-     * preso -- e o utilizador nao tem como o largar, porque o botao fisico dele ja foi solto. Toda
-     * a saida passa por aqui. (Morto o processo a martelo, o hook morre com ele e ai o proximo
-     * clique fisico resolve sozinho.)
+     * Exiting, disarming or re-arming with the injected DOWN still held underneath left the system
+     * with the button stuck -- and the user has no way to release it, because their physical button
+     * has already been let go. Every exit goes through here. (Kill the process outright and the
+     * hook dies with it, and then the next physical click sorts it out on its own.)
      */
     private static void ReleaseInjectedButton() {
         int injected = ClickInjectedButton;
@@ -371,7 +371,7 @@ public static class ZenithRadialMouseBlocker {
         }
     }
 
-    /** O hook fica enquanto houver motivo: bloqueio do radial OU captura do botao de disparo. */
+    /** The hook stays while there is a reason: radial blocking OR trigger button capture. */
     private static void ReleaseHookIfIdle() {
         if (Blocking || TriggerButton != 0) return;
         if (Hook != IntPtr.Zero) {
@@ -410,7 +410,7 @@ public static class ZenithRadialMouseBlocker {
         } else if (parts[0] == "TRIGGER") {
             // TRIGGER <vk 4|5|6> <hold|click> <threshold px> [click hold ms] [click drag px]
             //   |   TRIGGER OFF
-            /** Desarmar ou re-armar a meio de uma pressao nao pode deixar o botao preso. */
+            /** Disarming or re-arming mid-press must not leave the button stuck. */
             ReleaseInjectedButton();
             if (parts.Length >= 2 && parts[1] == "OFF") {
                 TriggerButton = 0;
@@ -420,9 +420,9 @@ public static class ZenithRadialMouseBlocker {
             }
             int vk, threshold;
             /**
-             * O 5.o campo e opcional de proposito: um comando de 4 campos continua a armar o
-             * gatilho e cai no limiar por omissao, em vez de ser deixado cair em silencio -- que e
-             * o que este parser faz a qualquer comando com um numero de campos inesperado.
+             * The 5th field is optional on purpose: a 4-field command still arms the trigger and
+             * falls back to the default threshold, instead of being dropped in silence -- which is
+             * what this parser does to any command with an unexpected number of fields.
              */
             if ((parts.Length >= 4 && parts.Length <= 6) &&
                 int.TryParse(parts[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out vk) &&
@@ -448,9 +448,9 @@ public static class ZenithRadialMouseBlocker {
             }
         } else if (parts.Length == 3 && parts[0] == "WARP") {
             /**
-             * Estacionar o ponteiro (execucao sem clique). `SetCursorPos` nao passa pelo hook nem
-             * injeta input -- nao ha reentrancia a proteger e nao acorda o gatilho. Corre no thread
-             * do timer, nunca dentro do `HookCallback`, para o rato do sistema nao esperar por ele.
+             * Park the pointer (launch with no click). `SetCursorPos` skips the hook and injects no
+             * input -- no reentrancy to guard, and it does not wake the trigger. Runs on the timer
+             * thread, never inside `HookCallback`, so the system mouse never waits on it.
              */
             int wx, wy;
             if (int.TryParse(parts[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out wx) &&
@@ -486,20 +486,20 @@ public static class ZenithRadialMouseBlocker {
         input.Start();
 
         /**
-         * Vigia do pai SEM sondagem.
+         * Parent watch WITHOUT polling.
          *
-         * O tick do timer chamava `Process.GetProcessById(parentPid)`. No Windows PowerShell
-         * (.NET Framework) essa chamada tira um retrato de TODA a tabela de processos: medidos
-         * ~12 ms com 350 processos -- num timer de 15 ms, ou seja, 80% do tempo ocupado. E o timer
-         * corre no MESMO thread que serve o hook WH_MOUSE_LL, por onde o Windows serializa todo o
-         * rato do sistema. Resultado: o ecra inteiro engasgava, nao so o radial.
+         * The timer tick called `Process.GetProcessById(parentPid)`. On Windows PowerShell
+         * (.NET Framework) that call takes a snapshot of the WHOLE process table: measured
+         * ~12 ms with 350 processes -- on a 15 ms timer, that is 80% of the time busy. And the
+         * timer runs on the SAME thread that serves the WH_MOUSE_LL hook, where Windows serializes
+         * every mouse event in the system. Result: the whole screen stuttered, not just the radial.
          *
-         * Um handle SYNCHRONIZE mais `WaitForSingleObject` deteta a morte do pai instantaneamente e
-         * nao custa absolutamente nada enquanto ele estiver vivo.
+         * A SYNCHRONIZE handle plus `WaitForSingleObject` detects the parent's death instantly and
+         * costs absolutely nothing while it is alive.
          */
         var parentWatch = new Thread(() => {
             IntPtr handle = OpenProcess(SYNCHRONIZE, false, parentPid);
-            /** Se o handle falhar, o EOF do stdin continua a ser a rede de seguranca. */
+            /** If the handle fails, stdin EOF is still the safety net. */
             if (handle == IntPtr.Zero) return;
             WaitForSingleObject(handle, INFINITE);
             CloseHandle(handle);
@@ -508,28 +508,28 @@ public static class ZenithRadialMouseBlocker {
         parentWatch.IsBackground = true;
         parentWatch.Start();
 
-        /** So esvaziar filas: microssegundos por tick, ao contrario do retrato de processos. */
+        /** Draining queues only: microseconds per tick, unlike the process snapshot. */
         var timer = new System.Windows.Forms.Timer();
         timer.Interval = 15;
         timer.Tick += (sender, args) => {
             string command;
             while (Commands.TryDequeue(out command)) Apply(command, context);
             /**
-             * Modo "click": a pressao deixou de poder ser nossa -- premir o botao por baixo AGORA,
-             * com o utilizador ainda a segurar, para que o movimento que se segue chegue a janela e
-             * o deslocamento por roda premida funcione.
+             * "Click" mode: the press can no longer be ours -- press the button underneath NOW,
+             * with the user still holding, so that the movement that follows reaches the window and
+             * wheel-press scrolling works.
              *
-             * Duas provas, e vale a que chegar primeiro. A do TEMPO cobre quem preme e fica quieto.
-             * A da DISTANCIA e a que interessa a quem esta a deslocar: mover a mao ja diz que nao e
-             * um clique, e nao ha razao para esperar pelo tempo todo. O ponteiro e lido aqui, com
-             * GetCursorPos, e nao no hook -- o caminho do WM_MOUSEMOVE e ~99% dos eventos do
-             * sistema e sai antes sequer de tocar no lParam; poe-se codigo la e paga-se em todo o
-             * rato do Windows. Aqui custa uma chamada a cada 15 ms, e so enquanto o botao esta em
-             * baixo.
+             * Two proofs, and whichever lands first wins. The TIME one covers whoever presses and
+             * stays still. The DISTANCE one is what matters to whoever is scrolling: moving the hand
+             * already says it is not a click, and there is no reason to wait out the whole time. The
+             * pointer is read here, with GetCursorPos, and not in the hook -- the WM_MOUSEMOVE path
+             * is ~99% of the system's events and leaves before even touching lParam; put code there
+             * and you pay for it on every mouse event in Windows. Here it costs one call every
+             * 15 ms, and only while the button is down.
              *
-             * Este tique corre no MESMO thread que serve o hook (o pump onde ele foi instalado),
-             * portanto nao ha concorrencia nenhuma com a largada: ou a injecao ja aconteceu quando
-             * o UP chega, ou nao aconteceu de todo.
+             * This tick runs on the SAME thread that serves the hook (the pump it was installed on),
+             * so there is no concurrency at all with the release: either the injection already
+             * happened when the UP arrives, or it did not happen at all.
              */
             int armed = TriggerButton;
             if (armed != 0 && !TriggerHoldMode && ClickPressArmed && ClickInjectedButton == 0) {

@@ -34,9 +34,9 @@ assert.ok(outFlat.config);
 assert.equal(outFlat.config.globalShortcut, "Alt+Y");
 assert.equal(outFlat.config.workspaces.length, 1);
 /**
- * Um ficheiro plano antigo não enumera chaves de UIConfig: tudo o que não seja uma chave de topo
- * cai em `config`. Sem esta asserção, um campo novo podia ser silenciosamente descartado na
- * leitura e ler-se como "as definições não guardaram".
+ * An old flat file does not enumerate UIConfig keys: anything that is not a top-level key falls
+ * into `config`. Without this assertion, a new field could be silently discarded on read and
+ * look like "the settings did not save".
  */
 assert.equal(outFlat.config.radialInstantActivate, "dwell");
 assert.equal(outFlat.config.radialInstantDwellMs, 550);

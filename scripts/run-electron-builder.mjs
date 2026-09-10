@@ -16,8 +16,8 @@ const outputDir =
 console.log(`electron-builder output: ${outputDir}`);
 
 /**
- * Argumentos extra passam para o electron-builder tal e qual. E assim que o `dist:store` pede o
- * alvo appx (`--win appx`) sem precisar de um segundo runner nem de mexer no alvo por omissao.
+ * Extra arguments pass straight through to electron-builder. That is how `dist:store` asks for the
+ * appx target (`--win appx`) without a second runner or touching the default target.
  */
 const forwardedArgs = process.argv.slice(2);
 if (forwardedArgs.length) {

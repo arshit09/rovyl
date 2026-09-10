@@ -1,9 +1,9 @@
 /**
- * Imagens da listagem da Microsoft Store (não do pacote — essas são `generate-appx-assets.mjs`).
+ * Microsoft Store listing images (not the package's — those are `generate-appx-assets.mjs`).
  *
- * A Store aceita cada uma destas em tamanhos exatos e rejeita o resto. O fundo repete o gradiente
- * quente do material de marketing para o conjunto ler como uma família, em vez de um ícone solto
- * sobre preto.
+ * The Store takes each of these at exact sizes and rejects the rest. The background repeats the
+ * warm gradient from the marketing material so the set reads as a family, rather than a lone icon
+ * on black.
  */
 import { existsSync, mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -22,7 +22,7 @@ mkdirSync(outDir, { recursive: true });
 
 const FLAT = { r: 0x10, g: 0x10, b: 0x14, alpha: 1 };
 
-/** Gradiente quente, do canto inferior esquerdo para o superior direito. */
+/** Warm gradient, from the bottom-left corner to the top-right. */
 const gradient = (width, height) => Buffer.from(
   `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}">
      <defs>
@@ -38,7 +38,7 @@ const gradient = (width, height) => Buffer.from(
    </svg>`,
 );
 
-/** Ícone sozinho, sem fundo composto — para os mosaicos pequenos. */
+/** Icon on its own, with no composited background — for the small tiles. */
 async function tile(name, size) {
   await sharp(source).resize(size, size, { fit: "contain", background: FLAT }).png()
     .toFile(join(outDir, name));
@@ -46,8 +46,8 @@ async function tile(name, size) {
 }
 
 /**
- * Marca centrada sobre o gradiente. `offsetY` sobe o ícone quando a Store escurece o terço
- * inferior da imagem para lá pousar texto.
+ * Mark centred over the gradient. `offsetY` lifts the icon when the Store darkens the bottom
+ * third of the image to lay text there.
  */
 async function poster(name, width, height, iconRatio, offsetY = 0) {
   const iconSize = Math.round(Math.min(width, height) * iconRatio);
@@ -60,18 +60,18 @@ async function poster(name, width, height, iconRatio, offsetY = 0) {
     }])
     .png()
     .toFile(join(outDir, name));
-  console.log(`  ${name}  ${width}x${height}  (ícone ${iconSize}px)`);
+  console.log(`  ${name}  ${width}x${height}  (icon ${iconSize}px)`);
 }
 
-console.log("mosaicos:");
+console.log("tiles:");
 await tile("AppTileIcon-300x300.png", 300);
 await tile("AppTile-150x150.png", 150);
 await tile("AppTile-71x71.png", 71);
 
-console.log("logos e arte:");
+console.log("logos and art:");
 await poster("PosterArt-720x1080.png", 720, 1080, 0.52, 90);
 await poster("BoxArt-1080x1080.png", 1080, 1080, 0.46);
-/** Super hero art: sem título nem texto, e nada de importante no terço inferior. */
+/** Super hero art: no title, no text, and nothing important in the bottom third. */
 await poster("SuperHeroArt-1920x1080.png", 1920, 1080, 0.52, 70);
 
 console.log(`\ngenerate-store-listing-assets: wrote ${outDir}`);

@@ -67,10 +67,10 @@ public class IconExtractor {
     const int SIIGBF_ICONONLY = 0x4;   // never a document thumbnail, always the icon
     const int SIIGBF_SCALEUP  = 0x100; // upscale small assets to the requested box
 
-    // `allowScaleUp` = deixar o shell esticar um ícone pequeno até ao tamanho pedido. Pedimos
-    // primeiro SEM isso: o shell devolve o maior asset NATIVO que a app tiver, e a ampliação
-    // (uma só, bicúbica, aqui) fica do nosso lado. Com SCALEUP havia duas reamostragens em
-    // cadeia — a do shell e a nossa — e o resultado ficava com o aspeto lavado que se via.
+    // `allowScaleUp` = let the shell stretch a small icon up to the requested size. We ask
+    // WITHOUT it first: the shell returns the largest NATIVE asset the app has, and the
+    // upscale (a single bicubic one, here) stays on our side. With SCALEUP there were two
+    // resamples in a chain — the shell's and ours — and the result had the washed-out look.
     public static Bitmap GetShellImage(string parsingName, int size) {
         return GetShellImage(parsingName, size, false) ?? GetShellImage(parsingName, size, true);
     }
@@ -164,16 +164,16 @@ public class IconExtractor {
         return Icon.FromHandle(hIcon);
     }
 
-    // ── Qualidade do ícone: halo de placa e moldura opaca ────────────────────
+    // ── Icon quality: plate halo and opaque border ───────────────────────────
     //
-    // Dois defeitos que aparecem quando a fonte devolve o ícone JÁ COMPOSTO sobre um fundo:
+    // Two defects that appear when the source returns the icon ALREADY COMPOSITED on a background:
     //
-    //  · HALO  — muitos pixels de alfa parcial quase brancos: é o fundo claro recortado por
-    //            alfa, e vê-se como rebarba à volta do desenho;
-    //  · PLACA — a moldura exterior toda opaca: o ícone traz o quadrado de fundo da app em vez
-    //            do logótipo com transparência.
+    //  · HALO  — many near-white partial-alpha pixels: it is the light background cut out by
+    //            alpha, and it reads as a burr around the artwork;
+    //  · PLATE — a fully opaque outer border: the icon carries the app's background square
+    //            instead of the logo with transparency.
     //
-    // Devolve { pixelsDeArestaParcial, dessesQuaseBrancos, pixelsDeMolduraOpacos, molduraTotal }.
+    // Returns { partialEdgePixels, ofThoseNearWhite, opaqueBorderPixels, borderTotal }.
     public static int[] Analyze(Bitmap source) {
         Bitmap scan = source;
         bool dispose = false;
@@ -269,14 +269,14 @@ function ConvertTo-NormalizedIconBitmap {
     $destX  = [int][Math]::Round(($CanvasSize - $drawW) / 2)
     $destY  = [int][Math]::Round(($CanvasSize - $drawH) / 2)
 
-    # Redimensionar em ALFA PRÉ-MULTIPLICADO.
+    # Resize in PREMULTIPLIED ALPHA.
     #
-    # Em `Format32bppArgb` (alfa direto) o GDI+ interpola R, G, B e A em separado. Nas arestas
-    # de um ícone há pixels totalmente transparentes que, mesmo invisíveis, guardam uma cor —
-    # e em muitos assets essa cor é branca. Ao interpolar, esse branco entra na média dos
-    # vizinhos e aparece como franja à volta do desenho: é exatamente o "recortado do fundo"
-    # com rebarba branca. Pré-multiplicado, a cor de um pixel transparente vale zero e não
-    # contamina ninguém.
+    # In `Format32bppArgb` (straight alpha) GDI+ interpolates R, G, B and A separately. At the
+    # edges of an icon there are fully transparent pixels that, invisible as they are, still
+    # hold a colour — and in many assets that colour is white. On interpolation that white
+    # enters the average of its neighbours and shows as a fringe around the artwork: exactly
+    # the "cut out of the background" with a white burr. Premultiplied, the colour of a
+    # transparent pixel is worth zero and contaminates nobody.
     $canvas = New-Object System.Drawing.Bitmap($CanvasSize, $CanvasSize, [System.Drawing.Imaging.PixelFormat]::Format32bppPArgb)
     $g = [System.Drawing.Graphics]::FromImage($canvas)
     $g.Clear([System.Drawing.Color]::Transparent)
@@ -290,8 +290,8 @@ function ConvertTo-NormalizedIconBitmap {
     $attrs = New-Object System.Drawing.Imaging.ImageAttributes
     $attrs.SetWrapMode([System.Drawing.Drawing2D.WrapMode]::TileFlipXY)
 
-    # A origem também tem de estar pré-multiplicada, senão a conversão acontece depois da
-    # interpolação e o problema mantém-se.
+    # The source has to be premultiplied too, otherwise the conversion happens after the
+    # interpolation and the problem stays.
     $srcRect = New-Object System.Drawing.Rectangle($minX, $minY, $contentW, $contentH)
     $sourceP = $Source.Clone($srcRect, [System.Drawing.Imaging.PixelFormat]::Format32bppPArgb)
     $dstRect = New-Object System.Drawing.Rectangle($destX, $destY, $drawW, $drawH)
@@ -301,7 +301,7 @@ function ConvertTo-NormalizedIconBitmap {
     $attrs.Dispose()
     $g.Dispose()
 
-    # De volta a alfa direto para o PNG: `Clone` faz a des-multiplicação correta.
+    # Back to straight alpha for the PNG: `Clone` does the un-multiply correctly.
     $full = New-Object System.Drawing.Rectangle(0, 0, $CanvasSize, $CanvasSize)
     $out = $canvas.Clone($full, [System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
     $canvas.Dispose()
@@ -337,19 +337,19 @@ function Get-ShellIcon {
 }
 
 
-# Melhor asset dentro do pacote MSIX/UWP — pelo MANIFESTO, não por adivinhação.
+# Best asset inside the MSIX/UWP package — from the MANIFEST, not from guesswork.
 #
-# A versão anterior procurava ficheiros com "Logo" no nome e preferia os que tivessem
-# transparência. Duas suposições, ambas erradas:
+# The previous version looked for files with "Logo" in the name and preferred the ones that
+# had transparency. Two assumptions, both wrong:
 #
-#  · o nome do ficheiro não é normalizado — o WhatsApp declara `Assets\AppList.png` e
-#    `Assets\MedTile.png`, portanto a procura por "*Logo*" nem sequer lhe tocava; apanhava um
-#    `logo.scale-200.png` avulso, azul, que não é o ícone da app. Era esse que estavas a ver;
-#  · transparência não significa "melhor". O ícone real do WhatsApp É um quadrado verde opaco,
-#    e a variante transparente que existe tem 24px.
+#  · the file name is not normalized — WhatsApp declares `Assets\AppList.png` and
+#    `Assets\MedTile.png`, so the search for "*Logo*" never even touched it; it picked up a
+#    stray blue `logo.scale-200.png` that is not the app's icon. That was the one you saw;
+#  · transparency does not mean "better". WhatsApp's real icon IS an opaque green square,
+#    and the transparent variant that exists is 24px.
 #
-# O manifesto diz exatamente quais os assets visuais da app. Lê-se de lá, expandem-se as
-# variantes (`.targetsize-256`, `.scale-400`, …) e fica a de maior resolução.
+# The manifest says exactly which visual assets the app has. Read from there, expand the
+# variants (`.targetsize-256`, `.scale-400`, …) and keep the highest resolution one.
 function Get-PackageLogoAsset {
     param ([string]$InstallPath)
     if (-not $InstallPath -or -not (Test-Path $InstallPath)) { return $null }
@@ -359,12 +359,12 @@ function Get-PackageLogoAsset {
 
     try { [xml]$xml = Get-Content $manifestPath -ErrorAction Stop } catch { return $null }
 
-    # Ordem das FAMÍLIAS, e não "o maior de todos". Foi essa a lição do Spotify: o maior asset
-    # dele é o `Square150x150Logo.scale-400` (600px) — o MOSAICO do menu Iniciar, um quadrado
-    # verde com o wordmark. O que o Windows mostra como ícone da app é o `Square44x44Logo`, cuja
-    # variante `targetsize-256_altform-unplated` é o círculo que toda a gente reconhece.
+    # Order of FAMILIES, not "the biggest of them all". That was Spotify's lesson: its biggest
+    # asset is `Square150x150Logo.scale-400` (600px) — the Start Menu TILE, a green square with
+    # the wordmark. What Windows shows as the app icon is `Square44x44Logo`, whose
+    # `targetsize-256_altform-unplated` variant is the circle everyone recognizes.
     #
-    # Logo, primeiro a família do ícone; o mosaico só entra se ela não der nada utilizável.
+    # So the icon family first; the tile only comes in if that one yields nothing usable.
     $families = @()
     foreach ($appEntry in @($xml.Package.Applications.Application)) {
         if (-not $appEntry.VisualElements) { continue }
@@ -389,15 +389,15 @@ function Get-PackageLogoAsset {
             if (Test-Path $full) { $variants = @(Get-Item $full) + $variants }
 
             foreach ($variant in $variants) {
-                # `contrast-white` / `contrast-black` são as versões monocromáticas para os temas
-                # de alto contraste do Windows — nunca o ícone a mostrar.
+                # `contrast-white` / `contrast-black` are the monochrome versions for Windows'
+                # high-contrast themes — never the icon to show.
                 if ($variant.Name -match 'contrast-(white|black)') { continue }
                 try {
                     $bmp = [System.Drawing.Bitmap]::FromFile($variant.FullName)
                     $area = $bmp.Width * $bmp.Height
                     $bmp.Dispose()
-                    # `altform-unplated` é o desenho sem a placa de fundo. Vale um bónus, não uma
-                    # vitória automática: o do WhatsApp só existe a 24px e perde para o de 256.
+                    # `altform-unplated` is the artwork without the background plate. Worth a
+                    # bonus, not an automatic win: WhatsApp's only exists at 24px and loses to 256.
                     $score = if ($variant.Name -match 'unplated') { $area * 1.25 } else { $area }
                     if (-not $familyBest -or $score -gt $familyBest.Score) {
                         $familyBest = [PSCustomObject]@{ Path = $variant.FullName; Score = $score; Area = $area }
@@ -405,7 +405,7 @@ function Get-PackageLogoAsset {
                 } catch { }
             }
         }
-        # Família resolvida com tamanho utilizável: parar aqui, sem descer para o mosaico.
+        # Family resolved at a usable size: stop here, without dropping down to the tile.
         if ($familyBest -and $familyBest.Area -ge 4096) { $best = $familyBest; break }
         if ($familyBest -and (-not $best -or $familyBest.Area -gt $best.Area)) { $best = $familyBest }
     }
@@ -433,14 +433,14 @@ function Get-PackagedAppIcon {
 }
 
 
-# ── Escolha por qualidade, para QUALQUER app ──────────────────────────────────
+# ── Choice by quality, for ANY app ────────────────────────────────────────────
 #
-# A extração deixou de ser "o primeiro que responder ganha". Cada fonte (asset do pacote, shell,
-# lista jumbo, atalho do menu Iniciar) produz um candidato; o candidato é medido e só é aceite se
-# estiver limpo. Se nenhum estiver, fica o menos mau — sempre melhor do que devolver às cegas o
-# primeiro. É isto que torna a correção global em vez de específica das apps da Store.
-$Script:HaloLimit  = 0.25   # fração de arestas quase brancas tolerada
-$Script:PlateLimit = 0.60   # fração da moldura exterior que pode estar opaca
+# Extraction is no longer "the first one to answer wins". Every source (package asset, shell,
+# jumbo list, Start Menu shortcut) produces a candidate; the candidate is measured and only
+# accepted if it is clean. If none is, the least bad one stays — always better than blindly
+# returning the first. This is what makes the fix global instead of specific to Store apps.
+$Script:HaloLimit  = 0.25   # fraction of near-white edges tolerated
+$Script:PlateLimit = 0.60   # fraction of the outer border allowed to be opaque
 
 function Measure-IconCandidate {
     param ([System.Drawing.Bitmap]$Bitmap)
@@ -453,8 +453,8 @@ function Measure-IconCandidate {
             Halo  = $halo
             Plate = $plate
             Area  = $Bitmap.Width * $Bitmap.Height
-            # Só o halo reprova. "Moldura opaca" não é defeito: muitos ícones legítimos são
-            # quadrados cheios (WhatsApp, Spotify). Fica medido apenas para desempate.
+            # Only the halo fails a candidate. "Opaque border" is not a defect: many legitimate
+            # icons are full squares (WhatsApp, Spotify). It is measured only to break ties.
             Clean = ($halo -lt $Script:HaloLimit)
         }
     } catch {
@@ -462,7 +462,7 @@ function Measure-IconCandidate {
     }
 }
 
-# Recebe blocos que devolvem um Bitmap. Avalia por ordem e devolve o data URL do melhor.
+# Takes blocks that return a Bitmap. Evaluates them in order and returns the best one's data URL.
 function Select-BestIcon {
     param ([System.Collections.IEnumerable]$Producers)
 
@@ -477,7 +477,7 @@ function Select-BestIcon {
         if (-not $score) { $bitmap.Dispose(); continue }
 
         if ($score.Clean) {
-            # Limpo: aceitar já — não vale a pena pagar as fontes seguintes.
+            # Clean: accept it now — no point paying for the sources that follow.
             $result = Out-Base64Png -Bitmap $bitmap
             $bitmap.Dispose()
             if ($best) { $best.Dispose() }
@@ -485,7 +485,7 @@ function Select-BestIcon {
             continue
         }
 
-        # Sujo: guardar como rede se for melhor que o anterior (menos halo, depois maior).
+        # Dirty: keep it as a net if it beats the previous one (less halo, then larger).
         $better = (-not $best) -or ($score.Halo -lt $bestScore.Halo) -or
                   ($score.Halo -eq $bestScore.Halo -and $score.Area -gt $bestScore.Area)
         if ($better) {
@@ -505,7 +505,7 @@ function Select-BestIcon {
     return $null
 }
 
-# ── Produtores de candidatos (devolvem Bitmap, não data URL) ──────────────────
+# ── Candidate producers (they return a Bitmap, not a data URL) ────────────────
 
 function New-PackageAssetBitmap {
     param ([string]$AppId)
@@ -694,7 +694,7 @@ function Get-ShortcutIcon {
 
 # ── Main logic ────────────────────────────────────────────────────────────────
 
-# 1. App empacotada (AUMID): asset do pacote e imagem do shell competem, ganha o mais limpo.
+# 1. Packaged app (AUMID): package asset and shell image compete, the cleanest one wins.
 if ($Target -match '!') {
     $res = Select-BestIcon -Producers @(
         { New-PackageAssetBitmap -AppId $Target },
@@ -703,8 +703,8 @@ if ($Target -match '!') {
     if ($res) { Write-Output $res; exit }
 }
 
-# 2. Ficheiro ou pasta em disco: shell e lista jumbo competem pelo mesmo critério. Um ícone
-#    entregue com placa por qualquer uma delas é rejeitado a favor da outra.
+# 2. File or folder on disk: shell and jumbo list compete on the same criterion. An icon
+#    delivered with a plate by either of them is rejected in favour of the other.
 if ($Target -and (Test-Path $Target)) {
     if ($Target -match '\.(png|jpg|jpeg|bmp|ico)$') {
         $res = Select-BestIcon -Producers @({ [System.Drawing.Bitmap]::FromFile($Target) })
@@ -728,17 +728,17 @@ if ($Target -ieq "Explorer" -or $Target -ieq "File Explorer") {
 }
 
 # 4. Resolve a display name through the Start menu index.
-# Correspondência no Menu Iniciar: ESTRITA e por ordem de confiança.
+# Start Menu matching: STRICT and in order of confidence.
 #
-# O código anterior aceitava `$_.AppID -like "*$Target*"` e, em último caso, `$_.Name -match
-# $Target` — uma correspondência por EXPRESSÃO REGULAR sobre texto que vem da config. Duas
-# consequências: "WhatsApp" apanhava também "WhatsApp Beta" e ficava com o primeiro que
-# aparecesse, e qualquer alvo com pontos ou parênteses (um AUMID, por exemplo) passava a padrão
-# e podia casar com uma app qualquer. Era daqui que vinham os ícones trocados.
+# The previous code accepted `$_.AppID -like "*$Target*"` and, as a last resort, `$_.Name -match
+# $Target` — a REGULAR EXPRESSION match over text that comes from the config. Two consequences:
+# "WhatsApp" also caught "WhatsApp Beta" and kept whichever one showed up first, and any target
+# with dots or parentheses (an AUMID, for instance) became a pattern and could match any app at
+# all. This is where the swapped icons came from.
 #
-# Agora: igualdade exata primeiro; depois prefixo, escolhendo sempre o nome MAIS CURTO — entre
-# "WhatsApp" e "WhatsApp Beta", o pedido "WhatsApp" fica com o primeiro. Nada disto encontrado,
-# desiste-se: um ícone genérico é melhor do que o ícone errado.
+# Now: exact equality first; then prefix, always picking the SHORTEST name — between "WhatsApp"
+# and "WhatsApp Beta", the request "WhatsApp" gets the first. None of this found, we give up:
+# a generic icon is better than the wrong icon.
 $startAppsAll = @(Get-StartApps -ErrorAction SilentlyContinue)
 $targetLower = $Target.ToLowerInvariant()
 
@@ -747,13 +747,13 @@ if (-not $startApp) {
     $startApp = $startAppsAll | Where-Object { $_.Name -and $_.Name.ToLowerInvariant() -eq $targetLower } | Select-Object -First 1
 }
 if (-not $startApp -and $targetLower.Length -ge 3) {
-    # Mínimo de 3 caracteres: com "X" o prefixo apanhava "XBOX".
+    # Minimum of 3 characters: with "X" the prefix caught "XBOX".
     $startApp = $startAppsAll |
         Where-Object { $_.Name -and $_.Name.ToLowerInvariant().StartsWith($targetLower) } |
         Sort-Object { $_.Name.Length } | Select-Object -First 1
 }
 if (-not $startApp -and $targetLower.Length -ge 4) {
-    # Último recurso: o alvo como segmento do AppID (antes do "!" ou do "_"), nunca como regex.
+    # Last resort: the target as an AppID segment (before the "!" or the "_"), never as a regex.
     $startApp = $startAppsAll |
         Where-Object {
             $_.AppID -and (($_.AppID.ToLowerInvariant() -split '[!_.]') -contains $targetLower)

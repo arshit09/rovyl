@@ -68,7 +68,7 @@ function getHudLayout(region: ClockHudRegion) {
   return { region, isBottom, align, shellClass, innerClass };
 }
 
-/** Ghost pill — sem backdrop-blur (HWND transparente no Windows). */
+/** Ghost pill — no backdrop-blur (transparent HWND on Windows). */
 const hudPillClass =
   'inline-flex items-center gap-2 rounded-full border border-white/[0.1] bg-[rgba(8,8,10,0.72)] px-3 py-1.5 shadow-[0_4px_20px_rgba(0,0,0,0.35)]';
 
@@ -140,8 +140,8 @@ const HudStatusStrip: React.FC<HudStatusStripProps> = ({
 };
 
 /**
- * Sobreposição do radial: só bateria/clima (desligados por defeito). Relógio, data e chip do workspace
- * foram removidos — a janela do radial mostra apenas a roda, e nada é desenhado fora dela.
+ * Radial overlay: battery/weather only (off by default). Clock, date and workspace chip
+ * were removed — the radial window shows only the wheel, and nothing is painted outside it.
  */
 export interface RadialHudProps {
   isOpen: boolean;

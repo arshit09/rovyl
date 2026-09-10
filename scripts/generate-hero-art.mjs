@@ -1,12 +1,12 @@
 /**
- * Super hero art (16:9, 1920x1080) para o topo da listagem da Microsoft Store.
+ * Super hero art (16:9, 1920x1080) for the top of the Microsoft Store listing.
  *
- * Regras que a documentação impõe e que estas variantes respeitam: sem texto nem título, sem
- * mostrar a interface da app, o essencial ao centro, nada importante no terço inferior (a Store
- * aplica lá um gradiente), e espaço vazio minimizado.
+ * Rules the documentation imposes and these variants respect: no text and no title, no showing
+ * the app's UI, the essentials at the center, nothing important in the bottom third (the Store
+ * lays a gradient over it), and empty space minimized.
  *
- * A primeira versão era o ícone ampliado sobre um gradiente — cumpria as regras e não dizia nada.
- * Estas evocam o gesto: um alvo ao centro e destinos em órbita.
+ * The first version was the icon blown up over a gradient — it met the rules and said nothing.
+ * These evoke the gesture: a target at the center and destinations in orbit.
  */
 import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -20,7 +20,7 @@ mkdirSync(outDir, { recursive: true });
 
 const W = 1920;
 const H = 1080;
-/** Centro ligeiramente acima do meio: o terço inferior é coberto por um gradiente da Store. */
+/** Center slightly above the middle: the bottom third is covered by a Store gradient. */
 const CX = W / 2;
 const CY = H * 0.45;
 
@@ -33,7 +33,7 @@ const warmBackdrop = `
     <stop offset="100%" stop-color="#050506"/>
   </radialGradient>`;
 
-/** A — órbita: anéis concêntricos e destinos distribuídos, com um deles em destaque. */
+/** A — orbit: concentric rings and destinations spread around, one of them highlighted. */
 function orbit() {
   const slots = 8;
   const R = 300;
@@ -55,7 +55,7 @@ function orbit() {
     ${aim}${dots}</svg>`;
 }
 
-/** B — setores: a roda lida como fatias, com uma acesa, sem desenhar um único ícone. */
+/** B — sectors: the wheel reads as slices, one of them lit, without drawing a single icon. */
 function sectors() {
   const slots = 10;
   const inner = 150;
@@ -75,7 +75,7 @@ function sectors() {
     ${Array.from({ length: slots }, (_, i) => wedge(i)).join("")}</svg>`;
 }
 
-/** C — sóbria: fundo escuro, um só anel de luz e a marca contida. Menos ruído, mais produto. */
+/** C — sober: dark backdrop, one ring of light and the mark held in. Less noise, more product. */
 function halo() {
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}"><defs>
       <radialGradient id="dark" cx="50%" cy="45%" r="80%">
@@ -107,7 +107,7 @@ for (const [name, svg, markSize] of variants) {
     .composite([{ input: mark, left: Math.round(CX - markSize / 2), top: Math.round(CY - markSize / 2) }])
     .png()
     .toFile(join(outDir, name));
-  console.log(`  ${name}  ${W}x${H}  (marca ${markSize}px)`);
+  console.log(`  ${name}  ${W}x${H}  (mark ${markSize}px)`);
 }
 
 console.log(`\ngenerate-hero-art: wrote ${outDir}`);

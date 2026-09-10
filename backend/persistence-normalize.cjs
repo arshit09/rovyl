@@ -2,8 +2,8 @@
 
 /**
  * Top-level keys of the full persistence blob (v2). Everything else in a flat legacy file is treated as UIConfig.
- * `notes` / `alarms` / `noteWorkspaces` / `activeNoteWorkspaceId` são de widgets removidos: continuam listados
- * para que um ficheiro antigo e plano não os despeje dentro do UIConfig — mas já não são devolvidos ao renderer.
+ * `notes` / `alarms` / `noteWorkspaces` / `activeNoteWorkspaceId` are from removed widgets: they stay listed
+ * so an old flat file does not dump them into UIConfig — but they are no longer returned to the renderer.
  */
 const PERSISTENCE_TOP_KEYS = new Set([
   "user",

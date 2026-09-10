@@ -1,31 +1,31 @@
 /**
- * Limites da mira sustentada, partilhados pela roda e pelas definições.
+ * Sustained-aim limits, shared by the wheel and by the settings.
  *
- * Vivem fora de `RadialMenu.tsx` porque o painel de definições é carregado em separado (lazy) e
- * importar a roda inteira só para ler três números arrastava-a para dentro desse pedaço. Terem uma
- * casa só também impede o deslize clássico: o slider a oferecer um intervalo que o motor recorta.
+ * They live outside `RadialMenu.tsx` because the settings panel is loaded separately (lazy) and
+ * importing the whole wheel just to read three numbers dragged it into that chunk. Having a single
+ * home also prevents the classic drift: the slider offering a range the engine clamps.
  */
 export const DWELL_MS_DEFAULT = 400;
 /**
- * Zero é um valor legítimo, não um piso acidental: a espera é opcional. A zero, a direção executa
- * no instante em que se compromete — o gesto passa a ser um empurrão e o tempo de mira sai do
- * caminho. Quem quer uma rede de segurança sobe o número; o topo dá dois segundos inteiros de
- * "aponta e pensa" antes de a roda fazer o que quer que seja.
+ * Zero is a legitimate value, not an accidental floor: the wait is optional. At zero, the direction
+ * fires the instant it commits — the gesture becomes a shove and the aim time gets out of the
+ * way. Anyone who wants a safety net raises the number; the top end gives two whole seconds of
+ * "point and think" before the wheel does anything at all.
  */
 export const DWELL_MS_MIN = 0;
 export const DWELL_MS_MAX = 2000;
 export const DWELL_MS_STEP = 50;
 
 /**
- * Um `config-v2.json` editado à mão (a app manda lá o utilizador na mensagem de erro da
- * hidratação) ou um backup de outra origem pode entregar aqui qualquer coisa.
+ * A hand-edited `config-v2.json` (the app points the user there in the hydration error message)
+ * or a backup from another source can hand anything to this.
  *
- * NÃO usar `Number(value)` para o decidir. Baixar o mínimo para zero mudou o que a coerção
- * significa: `Number(null)`, `Number('')`, `Number(false)` e `Number([])` são todos `0`, que
- * deixou de ser "fora do intervalo, sobe para o mínimo" e passou a ser a escolha mais agressiva
- * que a roda tem — lançar ao primeiro empurrão. Um ficheiro estragado não pode armar sozinho o
- * gatilho mais rápido do produto; só um número (ou uma string que seja mesmo um número) conta,
- * e tudo o resto volta ao meio-termo do `DWELL_MS_DEFAULT`.
+ * Do NOT use `Number(value)` to decide it. Lowering the minimum to zero changed what coercion
+ * means: `Number(null)`, `Number('')`, `Number(false)` and `Number([])` are all `0`, which
+ * stopped being "out of range, raise to the minimum" and became the most aggressive choice
+ * the wheel has — launch on the first shove. A broken file must not arm the product's fastest
+ * trigger on its own; only a number (or a string that really is a number) counts,
+ * and everything else falls back to the middle ground of `DWELL_MS_DEFAULT`.
  */
 export function clampDwellMs(value: unknown): number {
   const numeric =
@@ -39,15 +39,15 @@ export function clampDwellMs(value: unknown): number {
 }
 
 /**
- * Sensibilidade da mira por direção.
+ * Aim sensitivity per direction.
  *
- * Com a execução sem clique ligada, o ponteiro é escondido e estacionado no centro da roda: o
- * gesto deixa de ser "onde está o cursor" e passa a ser "para onde a mão foi". Estes números são
- * o deslocamento acumulado a partir do centro que uma direção precisa para deixar de ser tremor e
- * passar a ser escolha — nada acende abaixo deles, e é isso que dá o arranque neutro.
+ * With click-free execution on, the pointer is hidden and parked at the centre of the wheel: the
+ * gesture stops being "where the cursor is" and becomes "where the hand went". These numbers are
+ * the travel accumulated from the centre that a direction needs to stop being tremor and
+ * become a choice — nothing lights up below them, and that is what gives the neutral start.
  *
- * Vivem ao lado dos tempos de mira porque são a outra metade do mesmo gesto, e o painel de
- * definições (chunk separado) já importa este ficheiro sem arrastar a roda atrás.
+ * They live next to the aim times because they are the other half of the same gesture, and the
+ * settings panel (separate chunk) already imports this file without dragging the wheel along.
  */
 export const DIRECTION_SENSITIVITIES = ['low', 'medium', 'high'] as const;
 
@@ -56,8 +56,8 @@ export type DirectionSensitivity = (typeof DIRECTION_SENSITIVITIES)[number];
 export const DIRECTION_SENSITIVITY_DEFAULT: DirectionSensitivity = 'medium';
 
 /**
- * Alta é curta de propósito — mas não abaixo de ~16px: um rato de gaming a 1600 DPI produz uma
- * dezena de píxeis só a pousar a mão, e uma roda que escolhe com isso escolhe sozinha.
+ * High is short on purpose — but not below ~16px: a gaming mouse at 1600 DPI produces a dozen
+ * pixels just from the hand settling, and a wheel that chooses on that chooses by itself.
  */
 const DIRECTION_COMMIT_PX: Record<DirectionSensitivity, number> = {
   high: 18,
@@ -71,7 +71,7 @@ export function clampDirectionSensitivity(value: unknown): DirectionSensitivity 
     : DIRECTION_SENSITIVITY_DEFAULT;
 }
 
-/** Píxeis de deslocamento que a direção atual precisa para acender uma fatia. */
+/** Pixels of travel the current direction needs to light up a slice. */
 export function directionCommitPx(value: unknown): number {
   return DIRECTION_COMMIT_PX[clampDirectionSensitivity(value)];
 }

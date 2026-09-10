@@ -33,7 +33,7 @@ export const SmartIcon: React.FC<SmartIconProps> = ({
       alt={alt}
       className={className}
       onError={onError}
-      /** Ícone é conteúdo de um controlo, não uma imagem para levar dali. */
+      /** The icon is a control's content, not an image to drag away. */
       draggable={false}
       style={{
         width: pct,

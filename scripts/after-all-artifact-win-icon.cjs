@@ -1,6 +1,6 @@
 /**
- * O target `portable` gera um .exe à parte do win-unpacked — esse wrapper também precisa de rcedit,
- * senão mantém o ícone do Electron na pesquisa/atalhos quando o utilizador usa só o portable.
+ * The `portable` target emits an .exe separate from win-unpacked — that wrapper needs rcedit too,
+ * or it keeps the Electron icon in search/shortcuts when the user only runs the portable.
  */
 const fs = require("fs");
 const path = require("path");
@@ -43,10 +43,10 @@ module.exports = async function afterAllArtifactWinIcon(buildResult) {
     const base = path.basename(artifactPath).toLowerCase();
     if (base.includes("setup") || base.includes("installer")) continue;
     /**
-     * O target portable do electron-builder é um stub PE seguido por um arquivo 7z no overlay.
-     * `rcedit` regrava apenas o PE e descarta esse overlay, reduzindo ~86 MB a ~320 KB. O ícone
-     * configurado no próprio builder já é aplicado durante a criação; nunca pós-processar esse
-     * artefato grande.
+     * electron-builder's portable target is a PE stub followed by a 7z archive in the overlay.
+     * `rcedit` rewrites only the PE and drops that overlay, shrinking ~86 MB to ~320 KB. The icon
+     * configured in the builder itself is already applied at creation time; never post-process that
+     * large artifact.
      */
     try {
       if (fs.statSync(artifactPath).size > 10 * 1024 * 1024) {

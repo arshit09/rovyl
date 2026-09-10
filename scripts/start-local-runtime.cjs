@@ -46,21 +46,21 @@ for (const directory of ['src', 'backend', 'public', 'resources', 'scripts']) {
 const installedVite = path.join(runtimeRoot, 'node_modules', 'vite', 'bin', 'vite.js');
 const installedHash = fs.existsSync(stampPath) ? fs.readFileSync(stampPath, 'utf8').trim() : '';
 if (!fs.existsSync(installedVite) || installedHash !== lockHash) {
-  console.log('[Zenith] Instalando dependências fora do OneDrive...');
+  console.log('[Zenith] Installing dependencies outside OneDrive...');
   const install = spawnSync(npmCommand, [...npmPrefixArgs, 'ci'], {
     cwd: runtimeRoot,
     stdio: 'inherit',
     shell: false,
   });
   if (install.error) {
-    console.error('[Zenith] Falha ao iniciar npm:', install.error.message);
+    console.error('[Zenith] Failed to start npm:', install.error.message);
     process.exit(1);
   }
   if (install.status !== 0) process.exit(install.status || 1);
   fs.writeFileSync(stampPath, lockHash);
 }
 
-console.log(`[Zenith] Runtime local: ${runtimeRoot}`);
+console.log(`[Zenith] Local runtime: ${runtimeRoot}`);
 
 // Keep frontend edits flowing to the local runtime so Vite HMR still works while the repository
 // itself remains inside OneDrive. Backend/config changes continue to require the usual restart.
@@ -81,7 +81,7 @@ for (const directory of ['src', 'public']) {
         fs.copyFileSync(source, destination);
       }
     } catch (error) {
-      console.warn(`[Zenith] Não foi possível sincronizar ${relativePath}: ${error.message}`);
+      console.warn(`[Zenith] Could not sync ${relativePath}: ${error.message}`);
     }
   }));
 }
@@ -97,7 +97,7 @@ watchers.push(fs.watch(projectRoot, (_event, relativeName) => {
   if (!LIVE_SYNCED_FILES.has(name)) {
     if (RUNTIME_FILES.includes(name) && !warnedDependencyDrift.has(name)) {
       warnedDependencyDrift.add(name);
-      console.warn(`[Zenith] ${name} mudou — reinicie \`npm start\` para reinstalar as dependências.`);
+      console.warn(`[Zenith] ${name} changed — restart \`npm start\` to reinstall the dependencies.`);
     }
     return;
   }
@@ -108,9 +108,9 @@ watchers.push(fs.watch(projectRoot, (_event, relativeName) => {
     if (!fs.existsSync(path.join(projectRoot, name))) return;
     try {
       copyFile(name);
-      console.log(`[Zenith] ${name} sincronizado.`);
+      console.log(`[Zenith] ${name} synced.`);
     } catch (error) {
-      console.warn(`[Zenith] Não foi possível sincronizar ${name}: ${error.message}`);
+      console.warn(`[Zenith] Could not sync ${name}: ${error.message}`);
     }
   }, 100));
 }));

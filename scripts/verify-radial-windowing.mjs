@@ -1,6 +1,6 @@
 /**
- * Falha se o contrato radial ↔ main (prep antes de open-menu / covers) for removido por engano.
- * Atualiza os arrays abaixo se refatorares de propósito — mantém em sync com .cursor/rules/zenith-radial-windowing.mdc
+ * Fails if the radial ↔ main contract (prep before open-menu / covers) is removed by accident.
+ * Update the arrays below if you refactor on purpose — keep in sync with .cursor/rules/zenith-radial-windowing.mdc
  */
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -18,7 +18,7 @@ const checks = [
       "open-menu",
       "radial-open-paint-done",
       "radial-native-revealed",
-      "Repouso estável: superfície radial transparente",
+      "Stable idle: transparent radial surface",
     ],
     mustNotInclude: [
       "mainWindow.setOpacity(0.01)",

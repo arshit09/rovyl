@@ -1,5 +1,5 @@
 import { LucideIcon } from "lucide-react";
-/** `import type` é apagado na compilação: `launchFailure.ts` fica só no chunk tardio do cartão. */
+/** `import type` is erased at compile time: `launchFailure.ts` stays in the card's late chunk only. */
 import type { ExecutionErrorDetails } from "./launchFailure";
 
 export type SubscriptionTier = "free" | "plus" | "pro";
@@ -12,7 +12,7 @@ export interface UserProfile {
   /** Paid tier when billing supports Plus vs Pro; optional until checkout is wired. */
   planTier?: SubscriptionTier;
   isAdmin?: boolean;
-  /** Quantos dispositivos a licenca cobre; vem do servidor na ativacao. */
+  /** How many devices the licence covers; comes from the server on activation. */
   deviceLimit?: number;
   trialEndsAt?: string; // ISO Date string
   avatarUrl?: string;
@@ -39,14 +39,14 @@ export interface AppItem {
   openTerminalForRecents?: boolean;
   openTerminal?: boolean; // New: indicates if opening this item should also open a terminal
   terminalCommands?: string[]; // New: list of commands to run automatically in the terminal
-  /** Diretório explícito para terminal/comandos; evita inferir cwd da linha de lançamento da IDE. */
+  /** Explicit directory for terminal/commands; avoids inferring cwd from the IDE's launch line. */
   workingDirectory?: string;
-  /** Estratégia de abertura: normal, reutilizar processo existente ou aquecer ficheiros no cache do Windows. */
+  /** Open strategy: normal, reuse the existing process, or warm files in the Windows cache. */
   launchMode?: "normal" | "reuse" | "prewarm";
 }
 
 export interface CenterButtonConfig {
-  /** `widget` mantido só para ler configs antigos — os widgets internos foram removidos. */
+  /** `widget` kept only to read old configs — the built-in widgets were removed. */
   type: "app" | "widget" | "command" | "none" | "cancel";
   target: string;
   label: string;
@@ -61,9 +61,9 @@ export interface Coordinates {
 
 export interface GameModeConfig {
   enabled: boolean;
-  mode: "all" | "list"; // 'all' = qualquer app fullscreen; 'list' = só apps da lista em fullscreen
+  mode: "all" | "list"; // 'all' = any fullscreen app; 'list' = only apps from the list in fullscreen
   blockedApps: string;
-  /** Detecta automaticamente jogos fullscreen por pasta, launcher e marcadores de engine. */
+  /** Auto-detects fullscreen games by folder, launcher and engine markers. */
   autoDetectGames: boolean;
 }
 
@@ -75,7 +75,7 @@ export interface Workspace {
   hotkey: number; // 0 or 1-9
   enabled: boolean;
   color?: string; // Optional project/workspace color
-  /** Ícone Lucide na roda inicial quando `workspaceSwitchMode === 'picker'`. Omite → Layers. */
+  /** Lucide icon on the first wheel when `workspaceSwitchMode === 'picker'`. Omitted → Layers. */
   pickerIconName?: string;
 }
 
@@ -92,13 +92,13 @@ export type ClockHudPosition = (typeof CLOCK_HUD_POSITIONS)[number];
 
 export interface UIConfig {
   accentColor: string;
-  /** Cor aplicada ao item apontado no menu radial. Opcional para compatibilidade com configs antigas. */
+  /** Color applied to the item pointed at in the radial menu. Optional for compatibility with old configs. */
   radialHoverColor?: string;
   menuRadius: number;
   iconSize: number;
   /**
-   * @deprecated Deixou de ser configurável — a roda nasce sempre no centro. Mantido só para ler
-   * configs antigos (normalizado para `true` na hidratação). Não voltar a expor nas definições.
+   * @deprecated No longer configurable — the wheel is always born at the center. Kept only to read
+   * old configs (normalized to `true` on hydration). Do not expose it in settings again.
    */
   fixedPosition: boolean;
   backdropOpacity: number;
@@ -123,60 +123,60 @@ export interface UIConfig {
   workspaces: Workspace[]; // New: Workspace configurations
   activeWorkspaceIndex: number; // New: Currently active workspace (0-indexed)
   /**
-   * hotkeys: teclas 1–9 (e roda do rato) mudam de workspace com o menu aberto.
-   * picker: ao abrir o radial vê-se primeiro a roda de espaços; ao escolher, os apps desse espaço; o centro volta atrás (como pastas).
+   * hotkeys: keys 1–9 (and the mouse wheel) switch workspace while the menu is open.
+   * picker: opening the radial shows the workspace wheel first; picking one shows that space's apps; the center goes back (like folders).
    */
   workspaceSwitchMode?: 'hotkeys' | 'picker';
   /**
-   * Tema das superfícies opacas (titlebar + Settings). O radial permanece sempre
-   * escuro: é um overlay sobre o ambiente de trabalho, não uma superfície do produto.
+   * Theme for the opaque surfaces (titlebar + Settings). The radial always stays
+   * dark: it is an overlay on the desktop, not a surface of the product.
    */
   appearanceTheme?: 'black' | 'white';
   /**
-   * Como a roda decide o alvo.
-   * 'angle'  — direcao a partir do centro; a fatia acende mesmo com o cursor longe (por omissao).
-   * 'cursor' — so acende quando o ponteiro esta mesmo sobre o icone.
+   * How the wheel decides the target.
+   * 'angle'  — direction from the center; the slice lights up even with the cursor far away (default).
+   * 'cursor' — only lights up when the pointer is right over the icon.
    */
   radialSelectionMode?: 'angle' | 'cursor';
   /**
-   * Executar sem clique: manter a mira num alvo durante `radialInstantDwellMs` lança-o.
+   * Launch without a click: holding the aim on a target for `radialInstantDwellMs` launches it.
    *
-   * Ligar isto muda também COMO se mira. O ponteiro é escondido e estacionado no centro da roda
-   * (o main trata disso), e a fatia passa a sair da direção em que a mão foi desde aí — não da
-   * posição em que o cursor já estava. Sem isso, abrir a roda com o rato em baixo acendia o item
-   * de baixo ao primeiro tremor e o tempo de mira lançava-o sozinho.
+   * Turning this on also changes HOW you aim. The pointer is hidden and parked at the center of the
+   * wheel (the main handles that), and the slice now comes from the direction the hand went since
+   * then — not from the position the cursor already sat at. Without that, opening the wheel with
+   * the mouse low lit the bottom item on the first tremor and the dwell launched it by itself.
    *
-   * 'swipe' está RESERVADO e é lido como 'off' em todo o lado — é o mesmo gesto sem a espera, e
-   * fica declarado para que uma implementação futura não precise de migrar configs.
+   * 'swipe' is RESERVED and is read as 'off' everywhere — it is the same gesture without the wait,
+   * and it is declared so a future implementation does not have to migrate configs.
    */
   radialInstantActivate?: 'off' | 'swipe' | 'dwell';
   /**
-   * Milissegundos de mira contínua no mesmo alvo antes de executar. Preso a [0, 2000], e o
-   * zero é uma escolha e não um piso: a espera é opcional, e a essa marca a direção executa
-   * assim que se compromete.
+   * Milliseconds of continuous aim at the same target before it runs. Clamped to [0, 2000], and
+   * zero is a choice and not a floor: the wait is optional, and at that mark the direction runs
+   * as soon as it commits.
    */
   radialInstantDwellMs?: number;
   /**
-   * Quanto deslocamento uma direção precisa para acender a fatia desse lado, com a execução sem
-   * clique ligada. Só conta nesse modo: é ele que esconde o ponteiro e o estaciona no centro, e
-   * sem ponteiro visível o gesto é uma direção — não uma posição que já valia alguma coisa antes
-   * de a mão se mexer.
+   * How much travel a direction needs to light the slice on that side, with click-free launching
+   * on. It only counts in that mode: that is the one that hides the pointer and parks it at the
+   * center, and with no visible pointer the gesture is a direction — not a position that already
+   * meant something before the hand moved.
    */
   radialInstantSensitivity?: 'low' | 'medium' | 'high';
   openAtLogin?: boolean; // New: Start app at login
   enableMouseTrigger: boolean;
-  /** click: clique MMB abre e deixa o radial aberto; hold: segurar abre e soltar executa a seleção. */
+  /** click: an MMB click opens and leaves the radial open; hold: holding opens, releasing runs the selection. */
   mouseTriggerMode?: 'click' | 'hold';
   /**
-   * Botão físico que abre a roda. Esquerdo e direito estão fora de propósito: vigiá-los
-   * globalmente colidiria com o clique primário e o menu de contexto do sistema.
+   * Physical button that opens the wheel. Left and right are off the table: watching them
+   * globally would collide with the primary click and the system context menu.
    */
   mouseTriggerButton?: 'middle' | 'x1' | 'x2';
   language: "pt" | "en" | "es" | "fr" | "de" | "it" | "ja" | "zh" | "ko" | "ru";
   performanceMode: boolean; // New: Strict performance mode for zero-lag
   /**
-   * Start Menu discovery já correu ou o Main foi guardado com apps à medida — não voltar a importar atalhos no arranque.
-   * Persistido em config-v2.json (localStorage pode ser limpo após reboot).
+   * Start Menu discovery already ran or Main was saved with custom apps — do not import shortcuts again at startup.
+   * Persisted in config-v2.json (localStorage can be cleared after a reboot).
    */
   mainStartMenuDiscoveryDone?: boolean;
   persistenceMeta?: {
@@ -193,29 +193,29 @@ export interface RadialState {
 }
 
 /**
- * O que `execute-command` devolve. Nunca rejeita: uma falha é um `ok: false`, porque quem chama
- * quer saber SE arrancou, e um `throw` obrigava cada ponto de lançamento a ter o seu `try`.
+ * What `execute-command` returns. Never rejects: a failure is an `ok: false`, because the caller
+ * wants to know IF it started, and a `throw` would force every launch site to carry its own `try`.
  */
 export type LaunchResult =
   | { ok: true; method: string | null }
   | { ok: false; error: string; details?: ExecutionErrorDetails };
 
 
-/** Onde a app vai buscar atualizações — e se sequer vai. */
+/** Where the app fetches updates from — and whether it does at all. */
 export type UpdateChannel = 'store' | 'direct' | 'unsupported';
 
 /**
- * Onde a atualização está. Uma linha da UI, um estado: o painel nunca mostra "Check for updates"
- * ao lado de uma atualização já descarregada.
+ * Where the update is. One UI row, one state: the panel never shows "Check for updates"
+ * next to an update that is already downloaded.
  */
 export type UpdatePhase = 'idle' | 'checking' | 'current' | 'downloading' | 'ready' | 'error' | 'unsupported';
 
 export interface UpdateState {
   state: UpdatePhase;
   version?: string | null;
-  /** Percentagem da transferência, quando o servidor anuncia tamanho. */
+  /** Download percentage, when the server announces a size. */
   percent?: number;
-  /** Momento da última verificação concluída. */
+  /** When the last completed check happened. */
   checkedAt?: number;
   error?: string;
 }
@@ -231,8 +231,8 @@ export interface ElectronAPI {
   requestKeyboardFocus?: () => void;
   getAppVersion?: () => Promise<string>;
   /**
-   * Canal de distribuição, do ponto de vista de quem atualiza: 'store' (MSIX) e 'unsupported'
-   * (build por empacotar) não têm atualização própria — a linha sai do painel.
+   * Distribution channel, from the updater's point of view: 'store' (MSIX) and 'unsupported'
+   * (unpackaged build) have no update of their own — the row leaves the panel.
    */
   getBuildChannel?: () => Promise<UpdateChannel>;
   onUpdateState?: (callback: (payload: UpdateState) => void) => () => void;
@@ -247,46 +247,46 @@ export interface ElectronAPI {
   }>;
   installUpdateNow?: () => void;
   wasOpenedAtLogin?: () => Promise<boolean>;
-  /** O main confirma se a app tem mesmo um perfil de IDE com MRU (não adivinhar por nome). */
+  /** The main confirms the app really has an IDE profile with an MRU (do not guess by name). */
   appSupportsRecents?: (appName: string, appCommand: string) => Promise<boolean>;
   onOpenMenu: (
     callback: (data: {
       x: number;
       y: number;
       source?: "mmb" | "mmb-click" | "shortcut";
-      /** True quando o main já aplicou fullscreen — evita segundo `applyWindowSize` no renderer. */
+      /** True when the main already applied fullscreen — avoids a second `applyWindowSize` in the renderer. */
       preSizedByMain?: boolean;
-      /** O painel continua no ecrã por baixo do radial — o renderer não o pode fechar. */
+      /** The panel stays on screen under the radial — the renderer cannot close it. */
       keepPanel?: boolean;
-      /** Rect de ecrã do painel; só quando a janela foi alargada e ele precisa de ser reposicionado. */
+      /** Screen rect of the panel; only when the window was widened and it needs repositioning. */
       panelRect?: { x: number; y: number; width: number; height: number } | null;
-      /** Centro já convertido para coordenadas do novo HWND; evita métricas antigas após Settings. */
+      /** Center already converted to the new HWND's coordinates; avoids stale metrics after Settings. */
       clientPosition?: { x: number; y: number } | null;
-      /** Origem nativa correspondente ao clientPosition/panelRect durante o handshake. */
+      /** Native origin matching the clientPosition/panelRect during the handshake. */
       windowOrigin?: { x: number; y: number } | null;
-      /** Viewport autoritativo após o resize; o renderer pode ainda reportar o tamanho do Settings. */
+      /** Authoritative viewport after the resize; the renderer may still report the Settings size. */
       clientSize?: { width: number; height: number } | null;
-      /** Handshake do primeiro frame: o main só revela uma janela oculta após este token ser confirmado. */
+      /** First-frame handshake: the main only reveals a hidden window once this token is acknowledged. */
       paintToken?: number;
     }) => void,
   ) => () => void;
-  /** Antes de abrir o radial a partir do main — cobrir frame antigo (ex.: dashboard ao restaurar). */
+  /** Before opening the radial from the main — cover the old frame (e.g. the dashboard on restore). */
   onPrepareRadialShow?: (callback: () => void) => () => void;
   notifyRadialPrepPaintDone?: () => void;
   notifyRadialOpenPaintDone?: (paintToken: number) => void;
-  /** A janela nativa já está visível; libera a animação do radial preparado em alfa zero. */
+  /** The native window is already visible; releases the animation of the radial prepped at zero alpha. */
   onRadialNativeRevealed?: (callback: (paintToken: number) => void) => () => void;
   onOpenDashboard: (callback: () => void) => () => void;
   onMouseUp: (callback: () => void) => () => void;
   onMmbRelease: (callback: () => void) => () => void;
-  /** Cursor sondado pelo main enquanto o botão do meio está premido (coordenadas de ecrã). */
+  /** Cursor polled by the main while the middle button is held down (screen coordinates). */
   onMmbCursor?: (
     callback: (point: { x: number; y: number }) => void,
   ) => (() => void) | void;
   onOpenSettings: (callback: () => void) => () => void;
   /** Fired when the OS hid the window to tray (not a real quit). */
   onWindowHidToTray: (callback: () => void) => () => void;
-  /** Minimize/restore da janela principal — painel pode ficar em estado React mas ilha deve voltar ao minimizar. */
+  /** Main window minimize/restore — the panel can stay in React state but the island must come back on minimize. */
   onMainWindowMinimized?: (
     callback: (payload: { minimized: boolean }) => void,
   ) => () => void;
@@ -305,27 +305,27 @@ export interface ElectronAPI {
     mode: "small" | "fullscreen" | "windowed",
     anchorScreenPoint?: { x: number; y: number },
   ) => Promise<boolean>;
-  /** Pré-aquece small↔fullscreen uma vez após arranque (HWND da ilha encolhido). */
+  /** Pre-warms small↔fullscreen once after startup (island HWND shrunk). */
   warmRadialTransition?: () => Promise<boolean>;
   /** Re-applies desktop passthrough overlay after closing a fullscreen widget (fixes flaky clicks on Windows). */
   reapplySmallOverlay?: () => Promise<boolean>;
-  /** Repouso: encolhe o HWND ao canto (sem camada transparente a ecrã inteiro). */
+  /** Idle: shrinks the HWND into the corner (no fullscreen transparent layer). */
   collapseIdleOverlay?: () => Promise<boolean>;
-  /** Lado da caixa do radial (px) + se a posição é fixa — o main dimensiona a janela do menu com isto. */
+  /** Side of the radial's box (px) + whether the position is fixed — the main sizes the menu window with this. */
   setRadialViewport?: (payload: { size: number; fixed: boolean }) => void;
   /**
-   * Execução sem clique ligada: ao abrir o radial, o main guarda onde o cursor estava, põe-no no
-   * centro da roda e devolve-o ao sítio ao fechar. É isto que torna o ponteiro escondível (só é
-   * invisível por cima da nossa janela) e o gesto neutro no arranque.
+   * Click-free launching on: when the radial opens, the main stores where the cursor was, puts it
+   * at the center of the wheel and returns it on close. This is what makes the pointer hideable (it
+   * is only invisible over our own window) and the gesture neutral at startup.
    */
   setRadialCursorCapture?: (enabled: boolean) => void;
-  /** Reencosta o cursor ao centro sem terminar o gesto — usado quando ele se afasta da janela. */
+  /** Pulls the cursor back to the center without ending the gesture — used when it drifts off the window. */
   parkRadialCursor?: () => void;
-  /** Painel (Settings/Welcome) realmente à vista — decide se o radial abre por cima dele. */
+  /** Panel (Settings/Welcome) actually in view — decides whether the radial opens on top of it. */
   setPanelSurfaceVisible?: (visible: boolean) => void;
   /** Clears island passthrough / hit-shape so widgets and panels receive clicks immediately. */
   ensureWindowInteractive?: () => Promise<boolean>;
-  /** Windows/Linux: ilha — `coordinateSpace: "screen"` encolhe o HWND; sem isso, coords de cliente + setShape. */
+  /** Windows/Linux: island — `coordinateSpace: "screen"` shrinks the HWND; without it, client coords + setShape. */
   setWindowHitShape?: (
     rects: Array<{ x: number; y: number; width: number; height: number }>,
     opts?: { coordinateSpace?: "screen" | "client" },
@@ -334,7 +334,7 @@ export interface ElectronAPI {
   setWindowOpacity: (opacity: number) => void;
   /** Schedules a full Chromium repaint — helps transparent frameless windows on Windows after show/resize. */
   invalidatePaint?: () => Promise<boolean>;
-  /** Área do webview em ecrã — preferir a `screenX`/`screenY` ao calcular hit-shape após resize. */
+  /** Webview area on screen — prefer it over `screenX`/`screenY` when computing hit-shape after a resize. */
   getMainWindowContentBounds?: () => Promise<{
     x: number;
     y: number;
@@ -351,7 +351,7 @@ export interface ElectronAPI {
   toggleWifi: (enabled: boolean) => Promise<boolean>;
   toggleBluetooth: (enabled: boolean) => Promise<boolean>;
   getFileIcon: (path: string) => Promise<string | null>;
-  /** Favicon obtido no main (data URL) — o renderer costuma falhar com <img https://…>. */
+  /** Favicon fetched in the main (data URL) — the renderer usually fails with <img https://…>. */
   getWebsiteFaviconDataUrl?: (pageUrl: string) => Promise<string | null>;
   minimizeWindow: () => void;
   toggleMaximize: () => void;

@@ -65,7 +65,7 @@ function gridNameForSelection(
 export interface IconPickerProps {
   selectedIcon: string;
   onSelect: (iconName: string) => void;
-  /** `compact`: grid mais densa, busca menor — para painéis estreitos (ex.: ícone do workspace). */
+  /** `compact`: denser grid, smaller search — for narrow panels (e.g. the workspace icon). */
   variant?: 'default' | 'compact';
   className?: string;
 }
@@ -169,16 +169,16 @@ export const IconPicker: React.FC<IconPickerProps> = ({
 
   const iconBtnSize = compact ? 16 : 19;
   /**
-   * `grid-cols-N` + `aspect-square` amarra o TAMANHO da célula à largura do painel: num painel
-   * largo, 9 colunas davam quadrados de ~50px com um ícone de 18px no meio — muito ar, poucos
-   * ícones à vista. Com `auto-fill` a célula tem tamanho fixo e é o NÚMERO de colunas que
-   * responde à largura, que é o que uma grelha de ícones quer.
+   * `grid-cols-N` + `aspect-square` ties the cell SIZE to the panel width: in a wide panel, 9
+   * columns gave ~50px squares with an 18px icon in the middle — too much air, few icons in
+   * view. With `auto-fill` the cell has a fixed size and it is the NUMBER of columns that
+   * responds to the width, which is what an icon grid wants.
    */
   /**
-   * As duas variantes passam a responder à largura pelo NÚMERO de colunas, e não pelo tamanho da
-   * célula. `grid-cols-6` amarrava seis colunas fixas: num modal largo davam quadrados de ~85px
-   * com um glifo perdido no meio — o mesmo defeito que o comentário acima já descrevia para a
-   * variante compacta, e que só tinha sido corrigido de um lado.
+   * Both variants now respond to the width by the NUMBER of columns, not by the cell size.
+   * `grid-cols-6` tied six fixed columns: in a wide modal they gave ~85px squares with a glyph
+   * lost in the middle — the same defect the comment above already described for the compact
+   * variant, and that had only been fixed on one side.
    */
   const gridClass = compact ? 'grid gap-1' : 'grid gap-1.5';
   const gridStyle = compact

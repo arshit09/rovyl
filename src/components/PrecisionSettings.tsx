@@ -59,9 +59,9 @@ interface PrecisionSettingsProps {
   onReset: () => void;
   onOpenDashboard: () => void;
   /**
-   * Onde o utilizador ia. Vive no `App` porque este componente não sobrevive a usar a app:
-   * a roda por cima do painel, o recolher para a ilha e o atalho com as Definições arrumadas
-   * desmontam-no, e tudo o que fosse estado local voltava a `general` sem ninguém ter pedido.
+   * Where the user was. Lives in `App` because this component does not survive using the app:
+   * the wheel over the panel, the collapse to the island and the shortcut with Settings tucked
+   * away all unmount it, and anything held as local state went back to `general` unasked.
    */
   nav: SettingsNav;
   setNav: React.Dispatch<React.SetStateAction<SettingsNav>>;
@@ -71,20 +71,20 @@ interface PrecisionSettingsProps {
    * that is already on its way.
    */
   discoveryPhase?: 'idle' | 'waiting' | 'scanning';
-  /** Estado da licença ativa nesta máquina — a linha das definições espelha-o. */
-  /** Verdadeiro enquanto houver um pedido pendente para abrir o cartão da licença. */
-  /** Chamado assim que o pedido é atendido, para o App o limpar. */
+  /** State of the license active on this machine — the settings row mirrors it. */
+  /** True while a request to open the license card is pending. */
+  /** Called as soon as the request is honoured, so App can clear it. */
   isPage?: boolean;
 }
 
 export type SectionId = 'general' | 'trigger' | 'appearance' | 'spaces' | 'advanced';
 
 /**
- * A navegação que tem de durar mais do que a árvore: secção aberta e barra lateral.
+ * The navigation that has to outlive the tree: open section and sidebar.
  *
- * Só o TIPO atravessa a fronteira para o `App` — `import type` é apagado na compilação e este
- * módulo continua a ser carregado só por `React.lazy`. Exportar aqui o valor inicial punha as
- * Definições inteiras no chunk que a roda espera para pintar.
+ * Only the TYPE crosses the boundary into `App` — `import type` is erased at compile time and this
+ * module goes on being loaded by `React.lazy` alone. Exporting the initial value here put the
+ * whole of Settings in the chunk the wheel waits on to paint.
  */
 export interface SettingsNav {
   sectionId: SectionId;
@@ -108,7 +108,7 @@ export type WorkspaceUpdater = (
   patch: Partial<Workspace> | ((workspace: Workspace) => Partial<Workspace>),
 ) => void;
 
-/** O modal fica reservado ao que não cabe numa linha: listas longas, gravação e edição. */
+/** The modal is reserved for what does not fit in a row: long lists, recording and editing. */
 type Editor =
   | { kind: 'shortcut' }
   | { kind: 'blocked' }
@@ -117,7 +117,7 @@ type Editor =
 
 interface SettingItem {
   key: string;
-  /** Título do grupo em que a linha entra. Linhas seguidas com o mesmo grupo ficam juntas. */
+  /** Title of the group the row joins. Consecutive rows with the same group stay together. */
   group: string;
   title: string;
   description?: string;
@@ -137,7 +137,7 @@ interface SettingItem {
   onRun?: () => void;
   actionLabel?: string;
   actionIcon?: LucideIcon;
-  /** Ação que existe mas ainda não se pode pedir — a transferência que já vai a meio. */
+  /** An action that exists but cannot be asked for yet — the download already under way. */
   actionDisabled?: boolean;
   /**
    * A second press, in the row, for an action nothing can take back.
@@ -164,16 +164,16 @@ interface SettingItem {
    * recorder's own card.
    */
   configKey?: keyof UIConfig;
-  /** Posicao na lista reordenavel. So as linhas que a definem aceitam arrasto. */
+  /** Position in the reorderable list. Only the rows that define it accept a drag. */
   reorderIndex?: number;
-  /** `insertBefore` e o indice na lista ORIGINAL antes do qual o item deve ficar. */
+  /** `insertBefore` is the index in the ORIGINAL list the item has to end up before. */
   onReorder?: (from: number, insertBefore: number) => void;
 }
 
 /**
- * Glifos no vocabulário do System Settings do macOS: objeto reconhecível e simples (engrenagem,
- * rato, paleta, pilha de janelas, escudo) em vez do ícone abstrato de painel Windows/web.
- * Monocromáticos — a cor fica reservada ao que é ação ou estado, nunca à navegação.
+ * Glyphs in the vocabulary of macOS System Settings: a simple, recognisable object (gear, mouse,
+ * palette, stack of windows, shield) instead of the abstract Windows/web panel icon.
+ * Monochrome — color stays reserved for action or state, never for navigation.
  */
 const SECTIONS: Array<{ id: SectionId; label: string; caption: string; icon: LucideIcon }> = [
   { id: 'general', label: 'General', caption: 'Core Rovyl behavior.', icon: Settings },
@@ -195,8 +195,8 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
   discoveryPhase = 'idle',
 }) => {
   /**
-   * Os dois valores continuam a ler-se e a escrever-se como estado local — mudou só onde moram.
-   * Os `setNav` funcionais garantem que duas escritas no mesmo commit não se apagam uma à outra.
+   * Both values are still read and written like local state — only where they live changed.
+   * The functional `setNav` calls keep two writes in the same commit from erasing each other.
    */
   const { sectionId, isSidebarCollapsed } = nav;
   const setSectionId = useCallback(
@@ -265,27 +265,27 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
    */
   const [toast, setToast] = useState<{ seq: number; message: string; undo?: () => void } | null>(null);
   const toastSeq = useRef(0);
-  /** Versão do executável (não existe fora do Electron — o rodapé fica só com o nome). */
+  /** Executable version (absent outside Electron — the foot is then left with the name). */
   const [appVersion, setAppVersion] = useState<string | null>(null);
-  /** Ativou a licença: o conteúdo sai em fade antes de a janela fechar. */
+  /** License activated: the content fades out before the window closes. */
   const [isDismissing, setIsDismissing] = useState(false);
   /**
-   * Atualização: o painel é agora o único sítio com a AÇÃO — a caixa nativa do Windows foi
-   * removida. O selo no hub do radial avisa; aqui decide-se o quê e o quando.
+   * Updates: the panel is now the only place with the ACTION — the native Windows box was
+   * removed. The badge on the radial hub warns; what and when are decided here.
    *
-   * UM estado, UMA linha. Havia duas: "Version X is ready / Restart now" e, logo por baixo, um
-   * "Check for updates" que continuava lá com o instalador já em disco. Carregar nele voltava a
-   * transferir o mesmo ficheiro e punha a linha de novo em "downloading" — a UI andava para trás,
-   * e a pergunta "então afinal está pronta ou não?" era justa. O estado vem do main; a linha é a
-   * sua projeção.
+   * ONE state, ONE row. There were two: "Version X is ready / Restart now" and, right below it, a
+   * "Check for updates" that stayed there with the installer already on disk. Pressing it
+   * downloaded the same file again and put the row back into "downloading" — the UI went
+   * backwards, and "so is it ready or not?" was a fair question. The state comes from main; the
+   * row is its projection.
    */
   const [updateInfo, setUpdateInfo] = useState<UpdateState>({ state: 'idle' });
   /**
-   * Canal: só o `direct` (instalador NSIS) tem updater. Na Store atualiza a loja, e numa build por
-   * empacotar não há nada para chamar — um botão que só sabe devolver erro é pior do que nenhum.
+   * Channel: only `direct` (the NSIS installer) has an updater. On the Store the store updates it,
+   * and an unpackaged build has nothing to call — a button that only ever errors is worse than none.
    */
   const [updateChannel, setUpdateChannel] = useState<UpdateChannel>(
-    /** Até o main responder não sabemos: mais vale a linha aparecer tarde do que aparecer morta. */
+    /** Until main answers we do not know: better the row appears late than appears dead. */
     'unsupported',
   );
   const canUpdate = updateChannel === 'direct';
@@ -313,9 +313,9 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
   }, []);
 
   /**
-   * O botão não decide nada: pede, e o main responde com o estado em que ficou. Uma verificação
-   * já a decorrer junta-se à que existe, e com algo descarregado o main recusa — por isso o
-   * `checking` local existe só para a janela entre o clique e a primeira resposta.
+   * The button decides nothing: it asks, and main answers with the state it ended up in. A check
+   * already under way joins the one that exists, and with something downloaded main refuses — so
+   * the local `checking` exists only for the window between the click and the first answer.
    */
   const [updateChecking, setUpdateChecking] = useState(false);
   const runUpdateCheck = useCallback(async () => {
@@ -324,10 +324,10 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
     try {
       const result = await window.electron.checkForUpdates();
       if (result && !result.ok && result.code !== 'CHECK_FAILED') {
-        /** Sem updater neste build: esconder a linha em vez de a deixar a explicar um erro. */
+        /** No updater in this build: hide the row rather than leave it explaining an error. */
         setUpdateChannel(result.code === 'STORE_BUILD' ? 'store' : 'unsupported');
       } else if (result?.ok && result.state) {
-        /** Eco do main; o evento `update-state` costuma chegar primeiro, e diz o mesmo. */
+        /** Echo from main; the `update-state` event usually arrives first, and says the same. */
         setUpdateInfo((current) =>
           current.state === result.state ? current : { ...current, state: result.state!, version: result.version ?? current.version },
         );
@@ -342,14 +342,14 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
   }, []);
 
   /**
-   * A linha de atualização, derivada do estado — não uma linha por cada coisa que pode acontecer.
+   * The update row, derived from the state — not one row per thing that can happen.
    *
-   * A regra que faltava: enquanto algo está a decorrer (`checking`, `downloading`) a linha é
-   * informação, não botão. E depois de `ready` deixa de haver o que verificar — o instalador já
-   * está em disco, e a única ação que resta é escolher o momento de reiniciar.
+   * The rule that was missing: while something is under way (`checking`, `downloading`) the row is
+   * information, not a button. And after `ready` there is nothing left to check — the installer is
+   * already on disk, and the only action left is choosing when to restart.
    */
   const updateRow = useMemo(() => {
-    /** O updater sabe quase sempre a versão, mas "Version  is ready" não pode chegar ao ecrã. */
+    /** The updater usually knows the version, but "Version  is ready" must not reach the screen. */
     const version = updateInfo.version || null;
 
     if (updateInfo.state === 'ready') {
@@ -403,8 +403,8 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
   const reduceMotion = useReducedMotion();
 
   /**
-   * Fecho com saída visível. Ativar a licença fechava o painel a seco no mesmo frame; aqui o
-   * conteúdo desvanece primeiro e a janela só desaparece depois. Ver `.zs-shell.is-dismissing`.
+   * Close with a visible exit. Activating the license shut the panel dead in the same frame; here
+   * the content fades first and the window only goes afterwards. See `.zs-shell.is-dismissing`.
    */
   const dismissWithFade = useCallback(() => {
     setIsDismissing(true);
@@ -527,12 +527,12 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
     if (!isOpen) return;
     const onKey = (event: KeyboardEvent) => {
       /**
-       * O Escape que fecha a roda não é nosso.
+       * The Escape that closes the wheel is not ours.
        *
-       * `RadialMenu` ouve em CAPTURA e faz `preventDefault` antes de este ouvinte de bolha correr,
-       * mas não `stopPropagation` — por isso a mesma tecla chegava aqui e fechava também o painel:
-       * um Escape com a roda por cima das Definições desligava as duas coisas em vez de só a roda.
-       * Quem já reclamou a tecla marca-a; nós respeitamos a marca.
+       * `RadialMenu` listens in CAPTURE and calls `preventDefault` before this bubble listener runs,
+       * but not `stopPropagation` — so the same key reached here and closed the panel as well: an
+       * Escape with the wheel over Settings dismissed both instead of only the wheel.
+       * Whoever has claimed the key marks it; we respect the mark.
        */
       if (event.defaultPrevented) return;
       if (event.key === 'Escape') {
@@ -592,14 +592,14 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
   }, [isOpen]);
 
   /**
-   * A tecla pertence a POSICAO, nao ao workspace.
+   * The key belongs to the POSITION, not to the workspace.
    *
-   * Antes cada workspace guardava a sua tecla para sempre: reordenar deixava o segundo cartao com
-   * a tecla 2 em primeiro lugar, e apagar um do meio abria buracos permanentes — o "1, 2, 4". A
-   * ordem visivel e a ordem das teclas passam a ser a mesma coisa, calculada num sitio so.
+   * Each workspace used to keep its key forever: reordering left the second card holding key 2 in
+   * first place, and deleting one from the middle opened permanent holes — the "1, 2, 4". The
+   * visible order and the key order are now the same thing, computed in one place.
    *
-   * Alem da nona posicao nao ha tecla: `hotkey: 0` significa acessivel apenas pelo seletor e pela
-   * roda do rato, que ja era o contrato do tipo.
+   * Past the ninth position there is no key: `hotkey: 0` means reachable only through the picker
+   * and the mouse wheel, which was already the contract of the type.
    */
   const withPositionalHotkeys = (list: Workspace[]): Workspace[] =>
     list.map((workspace, index) => {
@@ -688,10 +688,10 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
   }, [config.workspaces, config.activeWorkspaceIndex, setConfig]);
 
   /**
-   * Reordenar workspaces por arrasto.
+   * Reorder workspaces by dragging.
    *
-   * `insertBefore` refere-se a lista ORIGINAL: depois de remover a origem, tudo o que estava
-   * a frente dela desloca-se um lugar, por isso o alvo desce um quando se arrasta para baixo.
+   * `insertBefore` refers to the ORIGINAL list: once the source is removed, everything that sat
+   * ahead of it shifts one place, so the target drops by one when dragging downwards.
    */
   const reorderWorkspaces = useCallback((from: number, insertBefore: number) => {
     setConfig((current) => {
@@ -706,8 +706,8 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
       workspaces.splice(target, 0, moved);
       const renumbered = withPositionalHotkeys(workspaces);
       /**
-       * `activeWorkspaceIndex` e uma POSICAO, nao um id. Reordenar sem o remapear trocava
-       * silenciosamente o workspace atual por outro — o mesmo cuidado que deleteWorkspace tem.
+       * `activeWorkspaceIndex` is a POSITION, not an id. Reordering without remapping it silently
+       * swapped the current workspace for another — the same care `deleteWorkspace` takes.
        */
       const activeId = current.workspaces[current.activeWorkspaceIndex]?.id;
       const remapped = renumbered.findIndex((workspace) => workspace.id === activeId);
@@ -806,17 +806,17 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
           description:
             'Hides the pointer and picks by direction — move toward a target and it opens by itself. Escape closes the wheel without opening anything.',
           /**
-           * Interruptor, não segmentado. Todo o binário deste painel é `bool`; um segmentado é
-           * sempre uma escolha entre pares com nome (Picker/Keys, Click/Hold, Direction/Pointer) e
-           * nenhum deles tem um "Off". Aqui os dois lados não são pares: com isto ligado o clique
-           * continua a funcionar exatamente como antes, portanto o que existe é a ausência de uma
-           * funcionalidade — que é precisamente o que o interruptor diz.
+           * A switch, not a segmented control. Everything binary in this panel is `bool`; a
+           * segmented control is always a choice between named pairs (Picker/Keys, Click/Hold,
+           * Direction/Pointer) and none of them has an "Off". Here the two sides are not a pair:
+           * with this on, clicking goes on working exactly as before, so what exists is the absence
+           * of a feature — which is precisely what the switch says.
            *
-           * Vive na Ativação e não na Aparência: isto decide COMO a roda é conduzida e executada —
-           * esconde o ponteiro e troca a mira por posição por uma mira por direção. Nada disto é
-           * aspeto, e ao lado do gatilho é onde alguém o procura.
+           * It lives in Activation and not in Appearance: this decides HOW the wheel is driven and
+           * run — it hides the pointer and trades aiming by position for aiming by direction. None
+           * of that is looks, and beside the trigger is where someone goes looking for it.
            *
-           * A comparação com `'dwell'` coage também `'swipe'`, reservado no tipo e não implementado.
+           * Comparing against `'dwell'` also coerces `'swipe'`, reserved in the type and not implemented.
            */
           kind: 'bool',
           enabled: config.radialInstantActivate === 'dwell',
@@ -827,9 +827,9 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
             ),
         },
         /**
-         * As duas afinações só existem enquanto o gesto existe. Deixá-las visíveis com ele
-         * desligado é oferecer controlos que não controlam nada — e a sensibilidade, sozinha na
-         * lista, não diz de que é que é sensibilidade.
+         * The two tunings only exist while the gesture does. Leaving them visible with it off is
+         * offering controls that control nothing — and sensitivity, alone in the list, does not
+         * say what it is sensitivity to.
          */
         ...(config.radialInstantActivate === 'dwell'
           ? [
@@ -855,9 +855,9 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
                 clampDwellMs(config.radialInstantDwellMs), DWELL_MS_MIN, DWELL_MS_MAX,
                 (value) => update('radialInstantDwellMs', value),
                 /**
-                 * "0 ms" leria-se como um número entre outros — e o que zero faz não é esperar
-                 * menos, é não haver espera nenhuma. A palavra diz o comportamento; o resto da
-                 * escala continua a dizer o tempo.
+                 * "0 ms" would read as one number among others — and what zero does is not wait
+                 * less, it is to have no wait at all. The word says the behavior; the rest of the
+                 * scale goes on saying the time.
                  */
                 (value) => (Math.round(value) === 0 ? 'Instant' : `${Math.round(value)} ms`),
                 DWELL_MS_STEP, 'radialInstantDwellMs'),
@@ -890,10 +890,10 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
         {
           key: 'aim', configKey: 'radialSelectionMode', group: 'Wheel', title: 'Targeting',
           /**
-           * Com a execução sem clique ligada não há ponteiro no ecrã, portanto "mirar com o
-           * ponteiro" não é uma opção que possa existir — a roda passa sempre a setores por
-           * direção. Dizê-lo aqui é o mínimo: um segmentado que continua a mexer e não muda nada
-           * é pior que um desativado.
+           * With launch without clicking on there is no pointer on screen, so "aim with the
+           * pointer" is not an option that can exist — the wheel always falls back to sectors by
+           * direction. Saying so here is the minimum: a segmented control that still moves and
+           * changes nothing is worse than a disabled one.
            */
           description:
             config.radialInstantActivate === 'dwell'
@@ -926,7 +926,7 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
           title: workspace.name,
           description: workspace.hotkey ? `Key ${workspace.hotkey}` : 'Picker / mouse wheel',
           kind: 'open' as const,
-          /** Mesmo vocabulário do editor: atual / disponível / pausado. */
+          /** Same vocabulary as the editor: current / available / paused. */
           value: config.activeWorkspaceIndex === index ? 'Current' : workspace.enabled ? 'Available' : 'Paused',
           onOpen: () => setEditor({ kind: 'workspace' as const, index }),
           onDelete: config.workspaces.length > 1 ? () => deleteWorkspace(index) : undefined,
@@ -1001,23 +1001,23 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
   const activeMeta = SECTIONS.find((section) => section.id === sectionId)!;
 
   /**
-   * Onde a lista estava, depois de mexer numa definicao.
+   * Where the list was, after touching a setting.
    *
-   * Alternar uma opcao a meio da pagina devolvia a lista ao topo, e a linha que se acabara de
-   * tocar ficava fora do ecra — sem forma de confirmar o que se tinha feito. A pagina nao se
-   * desmonta nesse commit, portanto nao ha nada no React a repor a posicao: e o proprio scroll do
-   * Chromium que se perde, e perde-se por mais do que uma via (a subarvore do painel passa por
-   * `display:none` no gesto da roda, e uma opcao que esconde as linhas abaixo dela encolhe o
-   * conteudo por baixo do `scrollTop` atual). Guardar a posicao e reescreve-la depois de cada
-   * commit cobre-as a todas, sem depender de saber qual delas correu.
+   * Toggling an option halfway down the page sent the list back to the top, and the row that had
+   * just been touched ended up off screen — with no way to confirm what had been done. The page
+   * does not unmount in that commit, so there is nothing in React putting the position back: it is
+   * Chromium's own scroll that is lost, and it is lost by more than one route (the panel's subtree
+   * passes through `display:none` on the wheel gesture, and an option that hides the rows below it
+   * shrinks the content under the current `scrollTop`). Saving the position and writing it back
+   * after every commit covers them all, without depending on knowing which one ran.
    *
-   * `useLayoutEffect` sem lista de dependencias: corre depois de a DOM estar escrita e ANTES da
-   * pintura, portanto a reposicao nunca chega a ver-se. E um ref, nao estado: escrever a cada
-   * evento de scroll nao pode custar um render.
+   * `useLayoutEffect` with no dependency list: it runs once the DOM is written and BEFORE paint, so
+   * the restore is never seen. And a ref, not state: writing on every scroll event cannot cost a
+   * render.
    */
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const scrollTopRef = useRef(0);
-  /** Mudar de seccao (ou entrar/sair da pesquisa) e outra pagina: essa DEVE comecar no topo. */
+  /** Changing section (or entering/leaving search) is another page: that MUST start at the top. */
   const scrollKey = trimmedQuery ? 'search' : sectionId;
   const scrollKeyRef = useRef(scrollKey);
   useLayoutEffect(() => {
@@ -1029,11 +1029,11 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
       element.scrollTop = 0;
       return;
     }
-    /** Escreve so quando divergiu: um `scrollTop` igual ainda assim cancelaria um scroll suave. */
+    /** Write only when it has drifted: an equal `scrollTop` would still cancel a smooth scroll. */
     if (element.scrollTop !== scrollTopRef.current) element.scrollTop = scrollTopRef.current;
   });
 
-  /** Buscar percorre todas as categorias — procurar só na categoria aberta obrigava a adivinhar onde a opção vive. */
+  /** Search walks every category — searching only the open one forced a guess about where a setting lives. */
   const results = useMemo(() => {
     const matches = (item: SettingItem) =>
       !trimmedQuery || `${item.title} ${item.description ?? ''} ${item.group}`.toLowerCase().includes(trimmedQuery);
@@ -1042,7 +1042,7 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
       ? SECTIONS.flatMap((section) => sections[section.id].filter(matches))
       : sections[sectionId];
 
-    /** Agrupa mantendo a ordem de declaração: o grupo é um rótulo, não um card. */
+    /** Groups while keeping declaration order: the group is a label, not a card. */
     const groups: Array<{ name: string; items: SettingItem[] }> = [];
     for (const item of source) {
       const last = groups[groups.length - 1];
@@ -1158,9 +1158,9 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
             ref={scrollRef}
             onScroll={(event) => {
               /**
-               * So o que alguem rolou. Uma caixa sem altura e o painel a voltar de `display:none`
-               * com o `scrollTop` ja perdido — gravar esse zero seria gravar exatamente o que
-               * este par de refs existe para desfazer.
+               * Only what someone actually scrolled. A box with no height is the panel coming back
+               * from `display:none` with `scrollTop` already lost — recording that zero would be
+               * recording exactly what this pair of refs exists to undo.
                */
               if (event.currentTarget.clientHeight === 0) return;
               scrollTopRef.current = event.currentTarget.scrollTop;
@@ -1199,7 +1199,7 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
                     <section className="zs-group" key={group.name}>
                       <h2 className="zs-group-title">{group.name}</h2>
                       {group.name === 'Your workspaces' && !trimmedQuery ? (
-                        /** Fora da pesquisa a grelha manda; a procurar, as linhas continuam a dar resultados. */
+                        /** Outside search the grid rules; while searching, the rows go on giving results. */
                         <WorkspaceCards
                           workspaces={config.workspaces}
                           activeIndex={config.activeWorkspaceIndex ?? 0}
@@ -1304,7 +1304,7 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
   );
 };
 
-/** Uma linha, uma estrutura: cópia à esquerda, controlo alinhado à direita. */
+/** One row, one structure: copy on the left, control aligned right. */
 function SettingRow({
   item,
   onResetToDefault,
@@ -1316,10 +1316,10 @@ function SettingRow({
   const ActionIcon = item.actionIcon;
   const describedBy = item.description ? `${item.key}-desc` : undefined;
   const reorderable = typeof item.reorderIndex === 'number' && Boolean(item.onReorder);
-  /** Aresta sob o cursor: decide se o item largado fica antes ou depois desta linha. */
+  /** Edge under the cursor: decides whether the dropped item lands before or after this row. */
   const [dropEdge, setDropEdge] = useState<'above' | 'below' | null>(null);
   const [isDragging, setIsDragging] = useState(false);
-  /** So arrasta quem pega no manipulo: a linha inteira arrastavel roubava o clique de abrir. */
+  /** Only a grab on the handle drags: a whole draggable row stole the click that opens it. */
   const [armed, setArmed] = useState(false);
   /**
    * Armed only while the user is looking at it. A row left holding "Erase everything" is a mine
@@ -1729,7 +1729,7 @@ function SettingsEditor({
   apps: AppItem[];
   gameMode: UIConfig['gameMode'];
   updateGameMode: (patch: Partial<UIConfig['gameMode']>) => void;
-  /** Ativar a licença fecha o painel: o utilizador veio destrancar a roda, não configurar. */
+  /** Activating the license closes the panel: the user came to unlock the wheel, not to configure. */
   onCloseSettings?: () => void;
   reduceMotion: boolean;
   /** A shortcut a launch failure asked to have open. Consumed once, then reported back. */
@@ -1837,9 +1837,10 @@ function itemTypeLabel(item: AppItem) {
 }
 
 /**
- * Palpite barato, usado só enquanto o main não responde e fora do Electron. Não decide sozinho:
- * `electron.app.Antigravity` (o agente, sem projetos recentes) contém "antigravity" e passaria
- * por IDE. Quem decide é `useIdeRecentsSupport`, que pergunta ao main se existe mesmo um perfil.
+ * Cheap guess, used only while main has not answered and outside Electron. It does not decide on
+ * its own: `electron.app.Antigravity` (the agent, with no recent projects) contains "antigravity"
+ * and would pass for an IDE. `useIdeRecentsSupport` decides, by asking main whether a profile
+ * really exists.
  */
 function isIdeApp(item: Pick<AppItem, 'label' | 'command' | 'commandType'>): boolean {
   if (item.commandType !== 'app') return false;
@@ -1854,15 +1855,15 @@ function isIdeApp(item: Pick<AppItem, 'label' | 'command' | 'commandType'>): boo
 }
 
 
-/** Chave estável por item: o perfil depende do par rótulo + comando. */
+/** Stable key per item: the profile depends on the label + command pair. */
 function ideProbeKey(item: Pick<AppItem, 'label' | 'command'>): string {
   return `${item.label || ''}||${item.command || ''}`;
 }
 
 /**
- * Pergunta ao main, para cada item candidato, se existe mesmo um perfil de IDE com MRU. O
- * resultado é `undefined` enquanto a resposta não chega — nessa janela vale o palpite local, para
- * a secção não piscar ao abrir as definições.
+ * Asks main, for each candidate item, whether an IDE profile with an MRU really exists. The result
+ * is `undefined` until the answer arrives — in that window the local guess stands, so the section
+ * does not flicker when settings open.
  */
 function useIdeRecentsSupport(items: AppItem[]): Map<string, boolean> {
   const [support, setSupport] = useState<Map<string, boolean>>(new Map());
@@ -1900,9 +1901,9 @@ function useIdeRecentsSupport(items: AppItem[]): Map<string, boolean> {
 
 
 /**
- * Riscos reais de cada modo de arranque. `Normal` não tem nota: um aviso em todos os estados
- * deixa de ser aviso. Os outros dois mudam o comportamento do Windows e podem surpreender —
- * dizer isto antes vale mais do que explicar depois.
+ * The real risks of each launch mode. `Normal` has no note: a warning in every state stops being
+ * a warning. The other two change how Windows behaves and can surprise — saying so beforehand is
+ * worth more than explaining afterwards.
  */
 function launchModeRisk(commandType: AppItem['commandType'], mode: 'normal' | 'reuse' | 'prewarm'): string | null {
   if (mode === 'normal') return null;
@@ -1994,11 +1995,11 @@ function WorkspaceItemIcon({ item }: { item: AppItem }) {
 
 
 /**
- * Antevisao de um workspace: a roda em miniatura, com os icones reais nas posicoes reais.
+ * A workspace preview: the wheel in miniature, with the real icons in the real positions.
  *
- * A lista era um inventario — "Main · 5 shortcuts · key 1" — a descrever uma coisa espacial.
- * Nao dizia o que o workspace e, nem como vai aparecer, e tornava invisivel a ordem dos atalhos,
- * que era precisamente o que dava sentido a poder reordena-los.
+ * The list was an inventory — "Main · 5 shortcuts · key 1" — describing something spatial. It did
+ * not say what the workspace is, nor how it will look, and it made the order of the shortcuts
+ * invisible, which was precisely what made being able to reorder them mean anything.
  */
 function WorkspaceWheelPreview({ workspace, accent }: { workspace: Workspace; accent: string }) {
   const items = workspace.apps.slice(0, 8);
@@ -2048,11 +2049,11 @@ function WorkspaceCards({
   onDelete: (index: number) => void;
 }) {
   /**
-   * Numa grelha o cartao INTEIRO e o objeto que se pega — nao ha manipulo.
+   * In a grid the WHOLE card is the thing you pick up — there is no handle.
    *
-   * Na lista o manipulo era necessario porque a linha tem outros alvos ao longo da largura e
-   * arrastar sobre eles roubava-lhes o clique. Um cartao e um objeto so, como um icone num ecra
-   * inicial: pega-se onde quer que se toque nele.
+   * In the list the handle was needed because the row has other targets along its width and
+   * dragging over them stole their click. A card is a single object, like an icon on a home
+   * screen: it is picked up wherever it is touched.
    */
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [dropEdge, setDropEdge] = useState<{ index: number; edge: 'before' | 'after' } | null>(null);
@@ -2092,7 +2093,7 @@ function WorkspaceCards({
             onDragOver={(event) => {
               event.preventDefault();
               event.dataTransfer.dropEffect = 'move';
-              /** Grelha: os cartoes fluem na horizontal, logo a aresta decide-se pelo eixo X. */
+              /** Grid: the cards flow horizontally, so the edge is decided on the X axis. */
               const rect = event.currentTarget.getBoundingClientRect();
               setDropEdge({
                 index,
@@ -2127,7 +2128,7 @@ function WorkspaceCards({
                 aria-label={`Delete ${workspace.name}`}
                 title={`Delete ${workspace.name}`}
                 onClick={(event) => {
-                  /** O cartao inteiro abre o editor; este botao nao pode disparar isso tambem. */
+                  /** The whole card opens the editor; this button must not fire that as well. */
                   event.stopPropagation();
                   onDelete(index);
                 }}
@@ -2207,12 +2208,12 @@ function WorkspaceManager({
     onFocusApplied?.();
   }, [focusAppId, workspace.apps, onFocusApplied]);
 
-  /** Um modal que só fecha com o rato é um modal que prende quem usa o teclado. */
+  /** A modal that only closes with the mouse is a modal that traps whoever uses the keyboard. */
   useEffect(() => {
     if (!isIconPickerOpen) return;
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
-      /** Não deixar o Escape subir e fechar o editor do workspace por baixo. */
+      /** Do not let Escape bubble up and close the workspace editor underneath. */
       event.stopPropagation();
       setIsIconPickerOpen(false);
     };
@@ -2244,13 +2245,13 @@ function WorkspaceManager({
       iconName: 'AppWindow', iconSource: customIconUrl ? 'native' : 'lucide', customIconUrl,
       command: cleanPath, commandType: 'app', description: 'Application',
     };
-    /** O main confirma antes de a bandeira ser gravada; o palpite local só serve fora do Electron. */
+    /** Main confirms before the flag is saved; the local guess only serves outside Electron. */
     let isIde = isIdeApp(nextItem);
     if (window.electron?.appSupportsRecents) {
       try {
         isIde = await window.electron.appSupportsRecents(nextItem.label, nextItem.command);
       } catch (e) {
-        /* mantém o palpite local */
+        /* keep the local guess */
       }
     }
     addItem(isIde ? { ...nextItem, hasRecents: true, terminalCommands: [] } : nextItem, isIde);
@@ -2271,7 +2272,7 @@ function WorkspaceManager({
     addItem({
       id: crypto.randomUUID(), type: 'app', label: urlLabel.trim() || fallbackLabel,
       iconName: 'Globe', iconSource: icon?.iconSource || 'lucide', customIconUrl: icon?.customIconUrl,
-      command: normalized, commandType: 'url', description: 'Link da web',
+      command: normalized, commandType: 'url', description: 'Web link',
     });
   };
 
@@ -2292,17 +2293,17 @@ function WorkspaceManager({
   };
 
   /**
-   * Arrasto na lista de atalhos.
+   * Dragging in the shortcut list.
    *
-   * As setas para cima/baixo obrigavam a mover item a item; com uma roda de dez atalhos, pôr o
-   * último em primeiro eram nove cliques. `insertBefore` refere-se a lista ORIGINAL: depois de
-   * remover a origem, tudo o que estava a frente dela desloca-se um lugar.
+   * The up/down arrows forced a move one item at a time; on a wheel of ten shortcuts, putting the
+   * last one first was nine clicks. `insertBefore` refers to the ORIGINAL list: once the source is
+   * removed, everything that sat ahead of it shifts one place.
    */
   /**
-   * O arrasto so arma quando o gesto comeca NO MANIPULO.
+   * The drag only arms when the gesture starts ON THE HANDLE.
    *
-   * Com `draggable` fixo na linha inteira, qualquer arrasto sobre o nome ou os botoes virava
-   * reordenacao, e o fantasma que o Windows desenha levava junto o formulario de edicao aberto.
+   * With `draggable` fixed on the whole row, any drag over the name or the buttons turned into a
+   * reorder, and the ghost Windows draws took the open edit form along with it.
    */
   const [itemDragArmed, setItemDragArmed] = useState<number | null>(null);
   const [itemDragIndex, setItemDragIndex] = useState<number | null>(null);
@@ -2316,7 +2317,7 @@ function WorkspaceManager({
     if (target === from) return;
     apps.splice(target, 0, moved);
     updateWorkspace(workspaceIndex, { apps });
-    /** O editor aberto segue o item, senao passava a editar o vizinho. */
+    /** The open editor follows the item, or it would end up editing the neighbour. */
     if (editingIndex === from) setEditingIndex(target);
     else if (editingIndex !== null) {
       const shifted = editingIndex > from ? editingIndex - 1 : editingIndex;
@@ -2333,7 +2334,7 @@ function WorkspaceManager({
     if (editingIndex === from) setEditingIndex(to);
   };
 
-  /** Confirmação vinda do main: só um perfil real de IDE habilita a secção de recentes. */
+  /** Confirmation from main: only a real IDE profile enables the recents section. */
   const ideSupport = useIdeRecentsSupport(workspace.apps);
 
   /** The wheel divides 360° by this list; past a point that is a geometry problem, not a taste one. */
@@ -2381,9 +2382,9 @@ function WorkspaceManager({
   };
 
   /**
-   * Auto-correção: itens gravados como IDE antes desta verificação (o agente do Antigravity, por
-   * exemplo) ficariam para sempre a pedir recentes que não existem. Assim que o main confirma que
-   * não há perfil, a bandeira sai da config.
+   * Self-correction: items saved as IDEs before this check existed (the Antigravity agent, for
+   * example) would go on forever asking for recents that are not there. As soon as main confirms
+   * there is no profile, the flag leaves the config.
    */
   useEffect(() => {
     const stale = workspace.apps
@@ -2422,10 +2423,10 @@ function WorkspaceManager({
     <div className="zs-workspace-manager">
       <section className="zs-workspace-overview">
         {/**
-         * O ícone é a âncora da coluna, não um botão perdido ao lado do campo: quadrado, do
-         * tamanho do bloco de nome, alinhado pela base com o input. A linha de meta em baixo
-         * fecha a coluna à mesma altura do bloco de estado, para nenhuma das duas ficar a
-         * flutuar com vazio por baixo.
+         * The icon is the column's anchor, not a button stranded beside the field: square, the
+         * size of the name block, aligned along the baseline with the input. The meta line below
+         * closes the column at the same height as the status block, so neither is left
+         * floating with empty space under it.
          */}
         <div className="zs-workspace-identity">
           <button
@@ -2447,15 +2448,15 @@ function WorkspaceManager({
             />
           </label>
           {/**
-           * Os dois estados vivem na MESMA linha da identidade.
+           * The two states live on the SAME identity row.
            *
-           * Estavam num bloco proprio, e como `.zs-workspace-overview` e uma coluna flex, dois
-           * icones de 32px reservavam uma faixa inteira da largura do painel para si.
+           * They sat in a block of their own, and since `.zs-workspace-overview` is a flex column,
+           * two 32px icons reserved an entire band of the panel's width for themselves.
            *
-           * E nao levam `disabled`: o Chromium nao entrega eventos de rato a elementos
-           * desativados, portanto a dica nunca aparecia justamente nos casos em que era precisa —
-           * quando o botao esta inerte e o utilizador quer saber porque. Ficam ativos, com
-           * `aria-disabled`, e o clique nao faz nada.
+           * And they carry no `disabled`: Chromium does not deliver mouse events to disabled
+           * elements, so the tip never appeared in exactly the cases where it was needed —
+           * when the button is inert and the user wants to know why. They stay active, with
+           * `aria-disabled`, and the click does nothing.
            */}
           <div className="zs-workspace-flags">
             <button
@@ -2488,7 +2489,7 @@ function WorkspaceManager({
               data-tip={isActive ? 'This is the current workspace' : 'Make this the current workspace'}
               onClick={() => {
                 if (isActive) return;
-                /** Tornar atual implica estar disponivel — senao o resultado seria um estado impossivel. */
+                /** Making it current implies being available — otherwise the result is an impossible state. */
                 if (!workspace.enabled) updateWorkspace(workspaceIndex, { enabled: true });
                 makeActive();
               }}
@@ -2502,25 +2503,25 @@ function WorkspaceManager({
           ) : null}
         </div>
 {/**
-         * Dois estados, dois icones, dois tooltips.
+         * Two states, two icons, two tooltips.
          *
-         * Eram duas linhas com titulo e paragrafo cada — quatro linhas de texto a explicar dois
-         * interruptores, no topo de um ecra cujo assunto sao os atalhos. O texto passa para o
-         * `title`, que so aparece a quem hesita; quem ja sabe ve dois icones e seguem.
+         * They were two rows with a title and a paragraph each — four lines of text explaining two
+         * switches, at the top of a screen whose subject is the shortcuts. The text moves into
+         * `title`, which only appears to whoever hesitates; whoever knows sees two icons and moves on.
          *
-         * Continuam a ser controlos distintos: um estado (disponivel) e uma acao (tornar atual).
-         * O espaco atual nao pode ser escondido, senao a roda abria num espaco que o seletor
-         * nao mostra — dai o `disabled`.
+         * They are still distinct controls: a state (available) and an action (make current).
+         * The current space cannot be hidden, or the wheel would open in a space the picker
+         * does not show — hence the `disabled`.
          */}
 
       </section>
 
       {/**
-       * O seletor deixou de crescer no meio da página.
+       * The picker stopped growing in the middle of the page.
        *
-       * Expandido em linha, empurrava a lista de atalhos para baixo e disputava o mesmo espaço
-       * com ela — escolher um ícone parecia estar a editar os atalhos. Como modal, ocupa o ecrã
-       * enquanto dura, tem título próprio, e devolve a página intacta ao fechar.
+       * Expanded inline, it pushed the shortcut list down and fought it for the same space —
+       * choosing an icon looked like editing the shortcuts. As a modal it owns the screen while
+       * it lasts, has a title of its own, and gives the page back intact when it closes.
        */}
       <AnimatePresence>
         {isIconPickerOpen && (
@@ -2542,7 +2543,7 @@ function WorkspaceManager({
               animate={{ opacity: 1, scale: 1, y: 0 }}
               exit={{ opacity: 0, scale: 0.98, y: 4 }}
               transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}
-              /** O clique dentro não pode fechar o que o clique fora fecha. */
+              /** A click inside must not close what a click outside closes. */
               onClick={(event) => event.stopPropagation()}
             >
               <header>
@@ -2651,7 +2652,7 @@ function WorkspaceManager({
 
         <div className="zs-workspace-items">
           {workspace.apps.map((item, index) => {
-            /** Resposta do main manda; o palpite local só cobre a espera e o modo web. */
+            /** Main's answer rules; the local guess only covers the wait and the web mode. */
             const confirmed = ideSupport.get(ideProbeKey(item));
             const isIde = confirmed ?? isIdeApp(item);
             return (
@@ -2669,7 +2670,7 @@ function WorkspaceManager({
               onDragStart={(event) => {
                 event.dataTransfer.setData('text/plain', String(index));
                 event.dataTransfer.effectAllowed = 'move';
-                /** O fantasma e so o cabecalho da linha, nunca o editor expandido por baixo. */
+                /** The ghost is the row header alone, never the editor expanded beneath it. */
                 const header = event.currentTarget.querySelector('.zs-workspace-item-main');
                 if (header instanceof HTMLElement) {
                   const rect = header.getBoundingClientRect();
@@ -2723,10 +2724,10 @@ function WorkspaceManager({
                 <div className="zs-workspace-item-editor">
                   <label className="zs-field"><span>Name</span><input value={item.label} onChange={(event) => updateItem(index, { label: event.target.value })} /></label>
                   {/*
-                    Aplicações não mostram o comando: quem adicionou o atalho já escolheu a app, e
-                    o valor é um AUMID (`Microsoft.WindowsTerminal_…!App`) que não diz nada a
-                    ninguém e só serve para ocupar meia linha. URL e pasta continuam editáveis —
-                    aí o valor é legível e é a única forma de corrigir o destino.
+                    Applications do not show the command: whoever added the shortcut already chose
+                    the app, and the value is an AUMID (`Microsoft.WindowsTerminal_…!App`) that
+                    tells nobody anything and only fills half a line. URL and folder stay editable
+                    — there the value is readable and is the only way to fix the target.
                   */}
                   {item.type !== 'folder' && item.commandType !== 'app' && (
                     <label className="zs-field">

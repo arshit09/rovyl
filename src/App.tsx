@@ -79,21 +79,22 @@ function* iterateConfigIconNames(config: UIConfig, apps: AppItem[]): Generator<s
 const LS_ZENITH_INITIALIZED_LEGACY = 'zenith_initialized';
 
 /**
- * Adiamento da varredura do Menu Iniciar.
+ * Start Menu scan deferral.
  *
- * Arrancar com o Windows: 20 s. Competir com o login satura disco e CPU, e uma sondagem em
- * PowerShell nesse momento deixa o sistema todo lento.
+ * Started with Windows: 20 s. Competing with login saturates disk and CPU, and a PowerShell
+ * probe at that moment leaves the whole system sluggish.
  *
- * Abertura manual: quase imediato. O mesmo adiamento aplicava-se aos dois casos, e o resultado
- * era o utilizador a instalar, abrir, e encontrar a roda vazia durante vinte segundos — sem nada
- * a acontecer nem nada a explicá-lo. Aberta à mão, a máquina está ociosa e não há o que evitar.
+ * Opened by hand: almost immediate. The same deferral applied to both cases, and the result
+ * was the user installing, opening, and finding an empty wheel for twenty seconds — with nothing
+ * happening and nothing to explain it. Opened by hand, the machine is idle and there is nothing
+ * to avoid.
  */
 const START_MENU_DISCOVERY_DEFER_LOGIN_MS = 20_000;
 const START_MENU_DISCOVERY_DEFER_MANUAL_MS = 600;
 
 type StartMenuDiscoveryRow = { Name?: string; Path?: string; Command?: string };
 
-/** Caixa em coordenadas de ecrã (ou de cliente, depois de remapeada) — usada pelo painel sob o radial. */
+/** Box in screen coordinates (or client, once remapped) — used by the panel under the radial. */
 type ScreenRect = { x: number; y: number; width: number; height: number };
 
 /** Builds Main workspace apps from `get-startup-apps` and appends internal Zenith shortcuts from defaults. */
@@ -126,7 +127,7 @@ async function buildMainAppsFromStartMenuDiscovery(
           customIconUrl: iconUrl,
           command: cmd,
           commandType: 'app' as const,
-          description: cmd ? `Menu Iniciar: ${cmd}` : '',
+          description: cmd ? `Start Menu: ${cmd}` : '',
           direction: directions[idx % 8],
         };
       }),
@@ -136,7 +137,7 @@ async function buildMainAppsFromStartMenuDiscovery(
   return [...built, ...MINIMAL_MAIN_WORKSPACE_APPS];
 }
 
-/** Main já tem atalhos reais ou apps fora do conjunto mínimo de widgets — não reimportar Menu Iniciar após reboot. */
+/** Main already has real shortcuts or apps outside the minimal widget set — do not re-import the Start Menu after a reboot. */
 function mainWorkspaceAlreadyCustomized(mainWs: Workspace | undefined): boolean {
   if (!mainWs?.apps?.length) return false;
   const minimalIds = new Set(
@@ -175,9 +176,9 @@ const findRootAncestorId = (items: AppItem[], id: string): string | undefined =>
 };
 
 /**
- * Preferir ao cursor como âncora em `setWindowSize('fullscreen'|'small')`: o processo principal usa
- * `getDisplayNearestPoint` — com vários monitores o cursor pode estar noutro ecrã enquanto o HWND
- * (radial / ilha) já cobre o monitor certo.
+ * Preferred over the cursor as the anchor in `setWindowSize('fullscreen'|'small')`: the main process
+ * uses `getDisplayNearestPoint` — with several monitors the cursor can be on another screen while the
+ * HWND (radial / island) already covers the right one.
  */
 function windowCenterScreenPoint(): { x: number; y: number } {
   const w = window.outerWidth || window.innerWidth || 1;
@@ -188,7 +189,7 @@ function windowCenterScreenPoint(): { x: number; y: number } {
   };
 }
 
-/** JSON-clone + garante `config.workspaces` não vazio — ficheiro tem de passar `normalizeFullPersistenceBlob` no próximo arranque. */
+/** JSON-clone + guarantees `config.workspaces` is not empty — the file has to pass `normalizeFullPersistenceBlob` on the next startup. */
 function sanitizeFullPersistenceForDisk(d: {
   user: UserProfile | null;
   apps: AppItem[];
@@ -197,7 +198,7 @@ function sanitizeFullPersistenceForDisk(d: {
   user: UserProfile | null;
   apps: AppItem[];
   config: UIConfig;
-  /** Espelho na raiz do JSON — `normalizeFullPersistenceBlob` funde isto se `config.workspaces` vier vazio no disco. */
+  /** Mirror at the JSON root — `normalizeFullPersistenceBlob` merges this in if `config.workspaces` comes back empty from disk. */
   workspaces: Workspace[];
 } | null {
   try {
@@ -227,17 +228,17 @@ function sanitizeFullPersistenceForDisk(d: {
 }
 
 export default function App() {
-  /* zenith-verify:radial-handshake-renderer — overlays/handshake radial; ver scripts/verify-radial-windowing.mjs */
+  /* zenith-verify:radial-handshake-renderer — radial overlays/handshake; see scripts/verify-radial-windowing.mjs */
   const [isMenuOpen, setIsMenuOpen] = useState(false);
-  /** Atualização descarregada e à espera de reinício — assinalada com um selo no hub do radial. */
+  /** Update downloaded and waiting for a restart — flagged with a badge on the radial hub. */
   const [updateReady, setUpdateReady] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     /**
-     * Perguntar, e não só esperar pelo evento: o `update-downloaded` dispara uma vez, e um
-     * renderer que recarregue depois dele nunca mais via o selo — a atualização continuava lá,
-     * pronta, sem nada no hub a dizê-lo.
+     * Ask, do not just wait for the event: `update-downloaded` fires once, and a renderer that
+     * reloaded after it never saw the badge again — the update was still there, ready, with
+     * nothing on the hub to say so.
      */
     void window.electron?.getUpdateState?.().then((state) => {
       if (!cancelled) setUpdateReady(state?.state === 'ready');
@@ -248,39 +249,40 @@ export default function App() {
     return () => { cancelled = true; off?.(); };
   }, []);
 
-  /** Esconde dashboard/definições antes do `await applyWindowSize('fullscreen')` — sem isto, ao restaurar da bandeja aparece um frame da última UI. */
+  /** Hides dashboard/settings before `await applyWindowSize('fullscreen')` — without it, restoring from the tray shows a frame of the last UI. */
   const [radialOpenAwaitingFullscreen, setRadialOpenAwaitingFullscreen] = useState(false);
   /**
-   * A cobertura da espera só pode ser opaca se havia painel opaco no ecrã para mascarar.
-   * Vinda da bandeja/ilha não há textura antiga, e o preto pintava os bounds antigos da
-   * janela — um retângulo preto a piscar no sítio do radial.
+   * The waiting cover can only be opaque if there was an opaque panel on screen to mask.
+   * Coming from the tray/island there is no old texture, and the black painted the window's
+   * old bounds — a black rectangle flashing where the radial should be.
    */
   const [radialAwaitCoverOpaque, setRadialAwaitCoverOpaque] = useState(false);
   /**
-   * Painel (Settings/Welcome) que continua no ecrã por baixo do radial.
-   * `…ScreenRect` é a verdade (coordenadas de ecrã, imunes ao resize da janela);
-   * `…ClientRect` é a mesma caixa nas coordenadas da janela já alargada, recalculada
-   * sempre que a geometria muda — tal como a âncora do radial.
+   * Panel (Settings/Welcome) that stays on screen under the radial.
+   * `…ScreenRect` is the truth (screen coordinates, immune to the window resize);
+   * `…ClientRect` is the same box in the coordinates of the already widened window, recomputed
+   * whenever the geometry changes — just like the radial's anchor.
    */
   const [panelOverlayScreenRect, setPanelOverlayScreenRect] = useState<ScreenRect | null>(null);
-  /** O painel fica no ecrã por baixo do radial (com ou sem reposicionamento). */
+  /** The panel stays on screen under the radial (with or without repositioning). */
   const [panelKeptUnderRadial, setPanelKeptUnderRadial] = useState(false);
   const [panelOverlayClientRect, setPanelOverlayClientRect] = useState<ScreenRect | null>(null);
   const panelOverlayScreenRectRef = useRef<ScreenRect | null>(null);
   panelOverlayScreenRectRef.current = panelOverlayScreenRect;
-  /** Um frame sólido antes de minimizar — evita o Windows guardar bitmap do dashboard e flash ao reabrir o radial. */
+  /** One solid frame before minimizing — stops Windows caching a dashboard bitmap and flashing when the radial reopens. */
   const [minimizeNeutralCoverActive, setMinimizeNeutralCoverActive] = useState(false);
-  /** Main: `prepare-radial-show` — pintar antes de `show()` para não expor textura antiga (minimizado/dashboard). */
+  /** Main: `prepare-radial-show` — paint before `show()` so no old texture is exposed (minimized/dashboard). */
   const [radialPreShowSolidCover, setRadialPreShowSolidCover] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(true);
   /**
-   * Onde as Definições estavam abertas. Aqui em cima porque o painel não sobrevive a usar a app.
+   * Where Settings was open. Up here because the panel does not survive using the app.
    *
-   * A superfície é desmontada por três caminhos independentes — a roda por cima dela (o commit em
-   * que `panelOverlayClientRect` ainda não existe), o recolher para a ilha, e o atalho com o painel
-   * já arrumado — e o React leva o estado do componente com ela. Enquanto a secção aberta vivia lá
-   * dentro, qualquer um destes gestos devolvia o utilizador a General a meio do que estava a fazer.
-   * Guardada aqui, atravessa a desmontagem e não toca em nada do que decide o que se pinta.
+   * The surface is unmounted by three independent paths — the wheel over it (the commit in which
+   * `panelOverlayClientRect` does not exist yet), the collapse into the island, and the shortcut
+   * with the panel already put away — and React takes the component state with it. While the open
+   * section lived in there, any of these gestures returned the user to General in the middle of
+   * what they were doing. Kept here, it crosses the unmount and touches nothing that decides what
+   * gets painted.
    */
   const [settingsNav, setSettingsNav] = useState<SettingsNav>({
     sectionId: 'general',
@@ -297,8 +299,9 @@ export default function App() {
   // Dashboard/Welcome Screen State
   const [isDashboardOpen, setIsDashboardOpen] = useState(false);
   /**
-   * Após minimizar com Welcome/definições, o SO repõe o HWND ao aplicar `small` e o evento `restore` faria o painel
-   * voltar a parecer “aberto” em loop. Este flag mantém o chrome do painel recolhido até reabrir / fechar painel.
+   * After minimizing with Welcome/settings, the OS restores the HWND when `small` is applied and the `restore` event
+   * would make the panel look “open” again in a loop. This flag keeps the panel chrome collapsed until the panel is
+   * reopened / closed.
    */
   const [panelChromeDismissedForIsland, setPanelChromeDismissedForIsland] = useState(false);
   const panelSurfaceOpen = useMemo(
@@ -321,21 +324,21 @@ export default function App() {
   const [isLoaded, setIsLoaded] = useState(false);
   /** Only ever non-idle on a profile whose Main workspace has not been filled yet. */
   const [discoveryPhase, setDiscoveryPhase] = useState<DiscoveryPhase>('idle');
-  /** True quando hidratámos a partir de config-v2.json / migração — localStorage pode estar vazio após reboot. */
+  /** True when we hydrated from config-v2.json / migration — localStorage can be empty after a reboot. */
   const hydratedFromPersistenceRef = useRef(false);
-  /** Desktop welcome / primeira sessão: corre só depois `isLoaded` (IPC não pode correr antes da hidratação). */
+  /** Desktop welcome / first session: runs only after `isLoaded` (IPC cannot run before hydration). */
   const welcomeBootstrapDoneRef = useRef(false);
   /**
-   * A varredura do Menu Iniciar corre em silêncio.
+   * The Start Menu scan runs silently.
    *
-   * Havia aqui um ecrã de espera a ocupar a janela inteira na primeira abertura. Uma app que
-   * vive na bandeja e se invoca por gesto não deve começar por prender o utilizador num aviso
-   * de progresso — sobretudo um que ele não pediu e do qual não pode sair. Os atalhos aparecem
-   * quando aparecerem; a roda já mostra o seu próprio indicador por ícone.
+   * There used to be a waiting screen here filling the whole window on the first open. An app
+   * that lives in the tray and is summoned by a gesture should not start by trapping the user
+   * in a progress notice — least of all one they did not ask for and cannot leave. The shortcuts
+   * appear when they appear; the wheel already shows its own per-icon indicator.
    */
   /**
-   * Após a descoberta do Menu Iniciar numa sessão sem dados anteriores (reset / primeiro arranque),
-   * abrir o dashboard automaticamente para que o utilizador veja os seus apps.
+   * After the Start Menu discovery in a session with no previous data (reset / first startup),
+   * open the dashboard automatically so the user sees their apps.
    */
   const openDashboardAfterDiscoveryRef = useRef(false);
 
@@ -345,12 +348,12 @@ export default function App() {
   userRef.current = user;
 
   /**
-   * Canal da Store. A Microsoft cobra antes de deixar instalar o pacote e so entrega o MSIX a
-   * quem comprou, portanto pedir chave de licenca a seguir seria cobrar duas vezes.
+   * Store channel. Microsoft charges before letting the package install and only hands the MSIX to
+   * whoever bought it, so asking for a licence key afterwards would be charging twice.
    *
-   * Isto e deliberadamente um sinalizador DERIVADO e nao um `user` sintetico: o `user` vai para
-   * disco em `sanitizeFullPersistenceForDisk`, e gravar `isPremium: true` la dentro faria com que
-   * copiar o ficheiro de persistencia para uma instalacao do canal direto a desbloqueasse.
+   * This is deliberately a DERIVED flag and not a synthetic `user`: the `user` goes to disk in
+   * `sanitizeFullPersistenceForDisk`, and writing `isPremium: true` in there would mean copying the
+   * persistence file to a direct-channel install unlocked it.
    */
   const [isStoreChannel, setIsStoreChannel] = useState(false);
   const isStoreChannelRef = useRef(false);
@@ -365,18 +368,18 @@ export default function App() {
   }, []);
 
   const [menuPosition, setMenuPosition] = useState<Coordinates>({ x: 0, y: 0 });
-  /** Remonta a árvore visual a cada abertura; nenhuma geometria/transition da sessão anterior sobrevive. */
+  /** Remounts the visual tree on every open; no geometry/transition from the previous session survives. */
   const [radialMountKey, setRadialMountKey] = useState(0);
-  /** Token preparado ainda oculto e token cuja janela nativa já foi revelada. */
+  /** Token prepared while still hidden, and token whose native window has already been revealed. */
   const [radialPendingPaintToken, setRadialPendingPaintToken] = useState<number | null>(null);
   const [radialNativeRevealToken, setRadialNativeRevealToken] = useState<number | null>(null);
   const [radialClientSize, setRadialClientSize] = useState(() => ({
     width: window.innerWidth,
     height: window.innerHeight,
   }));
-  /** Centro absoluto escolhido pelo main; é centro do monitor, nunca posição do cursor. */
+  /** Absolute centre chosen by main; it is the monitor's centre, never the cursor position. */
   const radialCenterScreenRef = useRef<Coordinates | null>(null);
-  /** Bounds enviados pelo main são autoritativos enquanto window.screenX/Y ainda refletem Settings. */
+  /** Bounds sent by main are authoritative while window.screenX/Y still reflect Settings. */
   const radialClientPositionHintRef = useRef<Coordinates | null>(null);
   const radialWindowOriginHintRef = useRef<Coordinates | null>(null);
   const [triggerSource, setTriggerSource] = useState<'mmb' | 'mmb-click' | 'shortcut'>('shortcut');
@@ -395,12 +398,12 @@ export default function App() {
     if (launchFault || configNotice) setErrorOverlaysNeeded(true);
   }, [launchFault, configNotice]);
   const [isDesktopMode, setIsDesktopMode] = useState(false);
-  /** Só montar a ilha depois de `setWindowSize('small')` com bounds do monitor — senão o hit-shape usa coords com a janela ainda em 1280×800 (dev). */
+  /** Only mount the island after `setWindowSize('small')` with monitor bounds — otherwise the hit-shape uses coords with the window still at 1280×800 (dev). */
   const [electronSmallOverlayReady, setElectronSmallOverlayReady] = useState(false);
   const isDesktopModeRef = useRef(false);
   isDesktopModeRef.current = isDesktopMode;
 
-  /** Após minimizar o painel, o primeiro `setWindowHitShape` pode usar `screenX/screenY` ainda do modo janela — o HWND encolhe ao sítio errado. Reforça overlay `small` no tick seguinte. (Deve ficar abaixo de `isDesktopMode` — senão ReferenceError quebra o render.) */
+  /** After minimizing the panel, the first `setWindowHitShape` can still use `screenX/screenY` from windowed mode — the HWND shrinks to the wrong place. Reapplies the `small` overlay on the next tick. (Must stay below `isDesktopMode` — otherwise a ReferenceError breaks the render.) */
   const prevPanelChromeDismissedRef = useRef(false);
   useEffect(() => {
     const edge =
@@ -417,12 +420,12 @@ export default function App() {
   /** Declared before handlers that resize the window — keeps IPC + React in sync. */
   const lastWindowState = useRef<'fullscreen' | 'windowed' | 'small' | null>(null);
   /**
-   * Cobertura opaca durante small→windowed: mascara artefactos do DWM se o main pintar antes de `applyWindowSize`.
-   * Liga no mesmo commit que o painel fica visível; desliga no microtask após resize + invalidate.
+   * Opaque cover during small→windowed: masks DWM artefacts if main paints before `applyWindowSize`.
+   * Turns on in the same commit the panel becomes visible; turns off in the microtask after resize + invalidate.
    */
   const [panelResizeSolidCover, setPanelResizeSolidCover] = useState(false);
 
-  /** No edge `panelSurfaceOpen` false→true, cobrir antes de `setWindowSize('windowed')` (frame errado do DWM). */
+  /** On the `panelSurfaceOpen` false→true edge, cover before `setWindowSize('windowed')` (wrong DWM frame). */
   const prevPanelSurfaceOpenRef = useRef(panelSurfaceOpen);
   useLayoutEffect(() => {
     const prev = prevPanelSurfaceOpenRef.current;
@@ -432,18 +435,18 @@ export default function App() {
     }
   }, [panelSurfaceOpen, isDesktopMode]);
 
-  /** Garante HWND em `windowed` quando o painel/definições estão visíveis (não minimizados). */
+  /** Guarantees the HWND is `windowed` while the panel/settings are visible (not minimized). */
   useLayoutEffect(() => {
     if (!isDesktopMode) return;
     if (!window.electron?.setWindowSize && !window.electron?.applyWindowSize) return;
     if (!panelSurfaceOpen) return;
     if (radialOpenAwaitingFullscreen) return;
-    /** Radial aberto por cima do painel: a janela é o overlay — repor `windowed` agora colapsava-o. */
+    /** Radial open over the panel: the window is the overlay — restoring `windowed` now would collapse it. */
     if (isMenuOpen) return;
 
     let cancelled = false;
 
-    /** Microtask corre após o commit React e antes do paint — `invoke` expande o HWND depois da ilha já ir ao DOM. */
+    /** The microtask runs after the React commit and before the paint — `invoke` expands the HWND once the island is already in the DOM. */
     queueMicrotask(async () => {
       if (cancelled) return;
       try {
@@ -460,7 +463,7 @@ export default function App() {
         /* ignore */
       } finally {
         if (cancelled) return;
-        /** Dois rAF — DWM costuma completar o resize antes de voltar a mostrar a ilha ao fechar painel. */
+        /** Two rAF — the DWM usually finishes the resize before the island is shown again when the panel closes. */
         requestAnimationFrame(() => {
           requestAnimationFrame(() => {
             if (!cancelled) {
@@ -488,14 +491,14 @@ export default function App() {
       return;
     }
     /**
-     * Com o radial aberto, `panelSurfaceOpen` fica falso (dashboard fechado no mesmo commit).
-     * Sem este guard, aplicávamos `small` aqui e anulávamos o `fullscreen` do `openMenu` — o menu ficava no rect windowed.
+     * With the radial open, `panelSurfaceOpen` is false (dashboard closed in the same commit).
+     * Without this guard we applied `small` here and cancelled `openMenu`'s `fullscreen` — the menu stayed in the windowed rect.
      */
     if (isMenuOpen || radialOpenAwaitingFullscreen) {
       setElectronSmallOverlayReady(true);
       return;
     }
-    /** Painel / definições visíveis em `windowed` — não forçar `small` aqui (evita sobrescrever o primeiro arranque). */
+    /** Panel / settings visible in `windowed` — do not force `small` here (avoids overwriting the first startup). */
     if (panelSurfaceOpen) {
       setElectronSmallOverlayReady(true);
       return;
@@ -586,9 +589,9 @@ export default function App() {
   }, [config, apps]);
 
   /**
-   * Sem radial nem painel não há nada para desenhar: o HWND é encolhido ao canto. Deixá-lo em `small`
-   * a ecrã inteiro mantinha uma janela layered topmost composta pelo DWM a receber todo o hit-testing
-   * do rato — cursor e sistema ficavam lentos. O `updateWindowSize` reexpande ao abrir o radial / painel.
+   * With no radial and no panel there is nothing to draw: the HWND is shrunk into the corner. Leaving it
+   * `small` at full screen kept a topmost layered window composed by the DWM taking all the mouse
+   * hit-testing — cursor and system went slow. `updateWindowSize` re-expands when the radial / panel opens.
    */
   const overlayIdle =
     isDesktopMode &&
@@ -597,9 +600,9 @@ export default function App() {
     !radialOpenAwaitingFullscreen;
 
   /**
-   * Dimensão da janela do radial. Rótulos ficam para fora dos ícones; a margem de gesto é o que garante
-   * que arrastar para escolher a direção (e o clique que confirma) continua dentro da janela — os eventos
-   * de rato vêm da janela, fora dela o ângulo congela e a seleção não confirma. Aumentar se ficar curto.
+   * Size of the radial window. Labels sit outside the icons; the gesture margin is what guarantees that
+   * dragging to pick the direction (and the click that confirms it) stays inside the window — mouse events
+   * come from the window, outside it the angle freezes and the selection never confirms. Raise it if short.
    */
   useEffect(() => {
     if (!window.electron?.setRadialViewport) return;
@@ -617,18 +620,18 @@ export default function App() {
   }, [config.menuRadius, config.iconSize]);
 
   /**
-   * Execução sem clique: quem sabe que está ligada é o renderer, mas quem tem de estacionar o
-   * ponteiro no centro da roda é o main — o warp acontece antes do `open-menu`, e portanto antes
-   * de o radial existir aqui. Só o sim/não atravessa, e só quando a definição muda.
+   * Click-free execution: the renderer is the one that knows it is on, but the one that has to park
+   * the pointer at the centre of the wheel is main — the warp happens before `open-menu`, and so
+   * before the radial exists here. Only the yes/no crosses, and only when the setting changes.
    */
   useEffect(() => {
     window.electron?.setRadialCursorCapture?.(config.radialInstantActivate === 'dwell');
   }, [config.radialInstantActivate]);
 
   /**
-   * O main não consegue inferir isto: `hide-window` esconde a janela sem mudar de modo, por isso
-   * `windowed` sobrevive a ela e o radial seguinte abria "por cima de um painel" que não estava
-   * no ecrã — trazendo as definições atrás. Quem sabe é o renderer, e diz.
+   * Main cannot infer this: `hide-window` hides the window without changing mode, so `windowed`
+   * survives it and the next radial opened "over a panel" that was not on screen — dragging the
+   * settings back with it. The renderer is the one that knows, so it says.
    */
   useLayoutEffect(() => {
     window.electron?.setPanelSurfaceVisible?.(
@@ -638,7 +641,7 @@ export default function App() {
 
   useLayoutEffect(() => {
     if (!overlayIdle || !window.electron?.collapseIdleOverlay) return;
-    /** Um tick depois: o main pode estar a aplicar `small`/`windowed` no mesmo ciclo (evita corrida de bounds). */
+    /** A tick later: main may be applying `small`/`windowed` in the same cycle (avoids a bounds race). */
     const t = window.setTimeout(() => {
       void window.electron?.collapseIdleOverlay?.();
     }, 60);
@@ -646,8 +649,8 @@ export default function App() {
   }, [overlayIdle]);
 
   /**
-   * Pré-aquece small↔fullscreen enquanto a janela está em repouso — a 1.ª abertura do radial
-   * (HWND encolhido) deixa de pagar o custo frio do DWM.
+   * Warms small↔fullscreen while the window is idle — the 1st radial open (with the HWND
+   * shrunk) stops paying the DWM's cold cost.
    */
   useEffect(() => {
     if (!isDesktopMode || !electronSmallOverlayReady || !window.electron?.warmRadialTransition) {
@@ -691,16 +694,16 @@ export default function App() {
   /** When load failed but disk still has a non-trivial config file — never overwrite with empty defaults. */
   const persistenceSaveBlockedRef = useRef(false);
   /**
-   * Scan do Menu Iniciar foi agendado (defer longo) após strip do Main — bloqueia o auto-save aos 150ms que
-   * gravava um Main vazio no disco antes do scan terminar (reinício mostrava Main vazio).
+   * The Start Menu scan was scheduled (long defer) after stripping Main — blocks the 150ms auto-save that
+   * wrote an empty Main to disk before the scan finished (a restart then showed an empty Main).
    */
   const startMenuScanPersistenceHoldRef = useRef(false);
   /**
-   * `hide-window` no main só baixa a opacidade — o documento pode continuar "visible", logo `visibilitychange`/`pagehide`
-   * não gravam. Guardamos o flush síncrono aqui e chamamo-lo sempre antes de `hideWindow()`.
+   * `hide-window` in main only lowers the opacity — the document can stay "visible", so `visibilitychange`/`pagehide`
+   * never save. We keep the synchronous flush here and always call it before `hideWindow()`.
    */
   const flushPersistenceToDiskRef = useRef<(() => void) | null>(null);
-  /** Layout: garantir ref alinhada ao state antes dos `useEffect` que gravam disco (evita flush com snapshot velho). */
+  /** Layout: keep the ref aligned with state before the `useEffect`s that write to disk (avoids a flush with a stale snapshot). */
   useLayoutEffect(() => {
     persistenceRef.current = { user, apps, config };
   });
@@ -835,28 +838,28 @@ export default function App() {
 
       if (finalData) {
         if (finalData.config) {
-          /** Configs antigos trazem atalhos `internal:*` dos widgets removidos — descartar na leitura. */
+          /** Old configs carry `internal:*` shortcuts from the removed widgets — discard them on read. */
           nextConfig = stripInternalWidgetsFromConfig({
             /**
-             * Base nos defaults ANTES do que veio do disco.
+             * The defaults as the base, BEFORE whatever came off disk.
              *
-             * Sem esta base, toda a definição acrescentada numa versão posterior à do ficheiro
-             * gravado chegava ao renderer como `undefined` em vez do seu valor por omissão. O
-             * sintoma engana: parece que o backup não guardou as definições, quando na verdade
-             * elas nunca chegaram a estar no ficheiro e ninguém as repunha na leitura.
+             * Without this base, every setting added in a version later than the saved file
+             * reached the renderer as `undefined` instead of its default value. The symptom
+             * misleads: it looks like the backup did not keep the settings, when in truth they
+             * were never in the file and nobody restored them on read.
              */
             ...DEFAULT_UI_CONFIG,
             ...finalData.config,
             /**
-             * O ponto de abertura deixou de ser configurável: a roda nasce sempre no centro.
-             * Configs antigos podem trazer `false` — normalizar na leitura, senão sobrevivia
-             * um estado que a interface já não sabe mostrar nem desfazer.
+             * The opening point is no longer configurable: the wheel is always born at the centre.
+             * Old configs can carry `false` — normalize on read, otherwise a state the interface
+             * can no longer show or undo would survive.
              */
             fixedPosition: true,
             gameMode: {
               ...DEFAULT_UI_CONFIG.gameMode,
               ...(finalData.config.gameMode || {}),
-              /** Remove a lista demonstrativa antiga: agora a seleção é visual, por aplicativo. */
+              /** Drops the old demo list: the selection is visual now, per application. */
               blockedApps:
                 (finalData.config.gameMode?.blockedApps || '').trim().toLowerCase() ===
                 'csgo.exe, valorant.exe, dota2.exe, overwatch.exe'
@@ -865,11 +868,11 @@ export default function App() {
             },
           });
           /**
-           * Teclas contiguas por posicao, tambem na leitura.
+           * Contiguous hotkeys by position, on read too.
            *
-           * Renumerar so nas mutacoes deixaria de fora os ficheiros ja gravados com buracos
-           * — o "1, 2, 4" que sobra de um workspace apagado a meio numa versao anterior.
-           * A operacao e idempotente: quem ja esta certo nao e tocado.
+           * Renumbering only on mutations would leave out the files already saved with gaps
+           * — the "1, 2, 4" left over from a workspace deleted in the middle on an earlier version.
+           * The operation is idempotent: whatever is already right is not touched.
            */
           nextConfig = {
             ...nextConfig,
@@ -903,7 +906,7 @@ export default function App() {
         };
       }
 
-      /** Perfil do disco / migração LS — não forçar `mainStartMenuDiscoveryDone=true` só por haver blob (quebrava scan do Menu Iniciar e misturava LS obsoleto com o disco). */
+      /** Profile from disk / LS migration — do not force `mainStartMenuDiscoveryDone=true` just because a blob exists (that broke the Start Menu scan and mixed stale LS with the disk). */
       const loadedPersistedBlob = !!(finalData || loadedFromLocalStorageMigration);
 
       /**
@@ -941,16 +944,16 @@ export default function App() {
           nextConfig = { ...nextConfig, mainStartMenuDiscoveryDone: true };
         }
         /**
-         * Estado inconsistente: `mainStartMenuDiscoveryDone: true` foi salvo mas o workspace Main
-         * ficou vazio. Isso ocorre quando a descoberta do Menu
-         * Iniciar marca-se como concluída antes de gravar os apps no disco (race condition ou
-         * restart durante a janela de 20 s), ou quando a migração de dados legados restaura um
-         * arquivo de configuração obsoleto.
-         * Solução: resetar a flag para que a descoberta rode novamente.
+         * Inconsistent state: `mainStartMenuDiscoveryDone: true` was saved but the Main workspace
+         * ended up empty. That happens when the Start
+         * Menu discovery marks itself done before writing the apps to disk (race condition or a
+         * restart during the 20 s window), or when the legacy data migration restores an
+         * obsolete configuration file.
+         * Fix: reset the flag so discovery runs again.
          *
-         * Condição adicional de segurança: só resetar se o config NÃO tem workspaces customizados
-         * (nenhum workspace além dos padrões Main+Streaming). Se o utilizador tem um workspace
-         * personalizado mas deixou o Main vazio, a descoberta NÃO deve sobrescrever.
+         * Extra safety condition: only reset if the config does NOT have custom workspaces
+         * (no workspace beyond the default Main+Streaming). If the user has a custom
+         * workspace but left Main empty, discovery must NOT overwrite it.
          */
         const hasCustomWorkspaces =
           nextConfig.workspaces.length > DEFAULT_UI_CONFIG.workspaces.length;
@@ -970,14 +973,14 @@ export default function App() {
         }
       }
 
-      /** Com disco hidratado, o LS `zenith_main_discovery_done` já não manda sozinho — evita bloquear scan quando o ficheiro diz que ainda falta. */
+      /** With the disk hydrated, LS `zenith_main_discovery_done` no longer decides on its own — avoids blocking the scan when the file says it is still pending. */
       let discoveryDoneEffective =
         mainCustom || nextConfig.mainStartMenuDiscoveryDone === true;
       if (!loadedPersistedBlob) {
         discoveryDoneEffective = discoveryDoneEffective || lsDiscoveryDone;
       }
 
-      /** Main ainda não passou pelo scan do Menu Iniciar — não usa IDs do demo embutido. */
+      /** Main has not been through the Start Menu scan yet — it does not use bundled demo IDs. */
       const mainAwaitingStartMenuBootstrap =
         !mainCustom &&
         nextConfig.mainStartMenuDiscoveryDone !== true;
@@ -1019,17 +1022,17 @@ export default function App() {
         nextConfig = { ...nextConfig, language: 'en' };
 
         /**
-         * Arranque sem dados anteriores (reset / primeira instalação): mostrar overlay imediatamente
-         * — o temporizador de 20 s ainda aguarda antes do IPC PowerShell, mas visualmente
-         * o utilizador vê a ecrã de espera desde o início.
+         * Startup with no previous data (reset / first install): show the overlay immediately
+         * — the 20 s timer still waits before the PowerShell IPC, but visually
+         * the user sees the waiting screen from the start.
          */
         /**
-         * Primeira instalacao a serio, e nao uma leitura falhada.
+         * A real first install, and not a failed read.
          *
-         * Sem a terceira condicao, um `getFullConfig` que devolvesse nulo por um instante fazia a
-         * app concluir que era arranque limpo: corria a descoberta do Menu Iniciar outra vez e
-         * abria as Definicoes sozinha. Era o "as vezes abre nas definicoes". O disco ja tinha sido
-         * inspecionado acima para bloquear gravacoes nesse mesmo caso — faltava usar o resultado.
+         * Without the third condition, a `getFullConfig` that returned null for an instant made the
+         * app conclude it was a clean start: it ran the Start Menu discovery again and opened
+         * Settings on its own. That was the "sometimes it opens in settings". The disk had already
+         * been inspected above to block writes in that same case — the result just went unused.
          */
         const isFreshStart =
           !finalData && !loadedFromLocalStorageMigration && !diskLooksSubstantial;
@@ -1037,7 +1040,7 @@ export default function App() {
           openDashboardAfterDiscoveryRef.current = true;
         }
 
-        /** Só quem arranca com o Windows espera; quem abriu a app quer os atalhos agora. */
+        /** Only a start with Windows waits; whoever opened the app wants the shortcuts now. */
         let openedAtLogin = false;
         try {
           openedAtLogin = (await window.electron?.wasOpenedAtLogin?.()) === true;
@@ -1048,7 +1051,7 @@ export default function App() {
           ? START_MENU_DISCOVERY_DEFER_LOGIN_MS
           : START_MENU_DISCOVERY_DEFER_MANUAL_MS;
         window.electron?.savePersistenceLog?.(
-          `[StartMenu] varredura agendada em ${discoveryDeferMs}ms (arranque com o Windows: ${openedAtLogin})`,
+          `[StartMenu] scan scheduled in ${discoveryDeferMs}ms (started with Windows: ${openedAtLogin})`,
         );
         /** From here until the merge lands, an empty Main is a wait rather than a loss. */
         setDiscoveryPhase('waiting');
@@ -1063,7 +1066,7 @@ export default function App() {
             const mainIdx = configRef.current.workspaces.findIndex(
               (ws) => ws.id === 'workspace-1' || ws.name === 'Main',
             );
-            /** Rastreia se a descoberta realmente adicionou apps — só marca como concluída quando sim. */
+            /** Tracks whether discovery actually added apps — it is only marked done when it did. */
             let discoveryAddedApps = false;
             setDiscoveryPhase('scanning');
             try {
@@ -1104,9 +1107,9 @@ export default function App() {
               }
             } finally {
               /**
-               * Só marcar como concluída e gravar no LS quando apps foram realmente adicionados.
-               * Se a descoberta falhou ou retornou 0 apps, manter `mainStartMenuDiscoveryDone: false`
-               * para que o próximo arranque tente novamente.
+               * Only mark it done and write to LS when apps were actually added.
+               * If discovery failed or returned 0 apps, keep `mainStartMenuDiscoveryDone: false`
+               * so the next startup tries again.
                */
               if (discoveryAddedApps) {
                 localStorage.setItem(LS_MAIN_DISCOVERY_DONE, 'true');
@@ -1126,8 +1129,8 @@ export default function App() {
                 flushPersistenceToDiskRef.current?.();
               });
               /**
-               * Primeiro arranque / reset: abrir o dashboard automaticamente após a descoberta
-               * para que o utilizador veja os apps importados sem precisar de abri-lo manualmente.
+               * First startup / reset: open the dashboard automatically after discovery
+               * so the user sees the imported apps without having to open it by hand.
                */
               if (discoveryAddedApps && openDashboardAfterDiscoveryRef.current) {
                 openDashboardAfterDiscoveryRef.current = false;
@@ -1179,7 +1182,7 @@ export default function App() {
     };
   }, []);
 
-  /** Desktop + welcome: só após hidratar — evita depender só do localStorage (cleared em algumas sessões Electron). */
+  /** Desktop + welcome: only after hydrating — avoids depending on localStorage alone (cleared in some Electron sessions). */
   useEffect(() => {
     if (!isLoaded || welcomeBootstrapDoneRef.current) return;
     welcomeBootstrapDoneRef.current = true;
@@ -1198,13 +1201,13 @@ export default function App() {
 
     if (!hasRunBefore) {
       /**
-       * Primeira execução: abrir as Definições já.
+       * First run: open Settings right away.
        *
-       * Isto esperava pela descoberta do Menu Iniciar, porque nessa altura existia um ecrã de
-       * espera a cobrir tudo. Com o ecrã de espera removido, esperar deixou de fazer sentido:
-       * a janela ficava visível sem superfície nenhuma por baixo, ou seja, um retângulo preto
-       * vazio até a varredura terminar. As Definições abrem de imediato e os atalhos aparecem
-       * lá dentro quando a varredura os trouxer.
+       * This used to wait for the Start Menu discovery, because back then a waiting screen
+       * covered everything. With the waiting screen removed, waiting stopped making sense:
+       * the window was visible with no surface at all underneath, that is, an empty black
+       * rectangle until the scan finished. Settings opens immediately and the shortcuts appear
+       * inside it when the scan brings them.
        */
       flushSync(() => {
         setPanelResizeSolidCover(true);
@@ -1237,7 +1240,7 @@ export default function App() {
     }
   }, [isLoaded]);
 
-  /** Modo jogo vive no main (`shouldOpenMenu`); antes só mandávamos IPC na montagem — antes do config carregar do disco. */
+  /** Game mode lives in main (`shouldOpenMenu`); before, we only sent the IPC on mount — before the config loaded from disk. */
   useEffect(() => {
     if (!window.electron?.setGameMode || !isLoaded) return;
     window.electron.setGameMode(config.gameMode ?? DEFAULT_UI_CONFIG.gameMode);
@@ -1249,7 +1252,7 @@ export default function App() {
     config.gameMode?.autoDetectGames,
   ]);
 
-  /** Pré-carrega apenas os executáveis marcados; não inicia apps nem abre janelas escondidas. */
+  /** Preloads only the flagged executables; it does not start apps or open hidden windows. */
   useEffect(() => {
     if (!isLoaded || !window.electron?.prewarmApps) return;
     const commands: string[] = [];
@@ -1272,11 +1275,11 @@ export default function App() {
     const timer = setTimeout(() => {
       if (startMenuScanPersistenceHoldRef.current) {
         /**
-         * Hold ativo (aguardando descoberta do Menu Iniciar).
-         * Permitir save se o utilizador já tem conteúdo customizado além do estado padrão:
-         * - workspaces extra além do Main e Streaming padrões
-         * - Main workspace com apps reais (não só widgets internos)
-         * Desta forma, alterações feitas pelo utilizador durante os 20 s de hold não se perdem.
+         * Hold active (waiting on the Start Menu discovery).
+         * Allow the save if the user already has custom content beyond the default state:
+         * - extra workspaces beyond the default Main and Streaming
+         * - Main workspace with real apps (not just internal widgets)
+         * This way, changes made by the user during the 20 s hold are not lost.
          */
         const mainWs = config.workspaces?.find(
           (ws) => ws.id === 'workspace-1' || ws.name === 'Main',
@@ -1285,9 +1288,9 @@ export default function App() {
           mainWorkspaceAlreadyCustomized(mainWs) ||
           config.workspaces.length > DEFAULT_UI_CONFIG.workspaces.length;
         if (!hasCustomContent) {
-          return; // Ainda em estado padrão — aguardar a descoberta
+          return; // Still in the default state — wait for discovery
         }
-        // conteúdo customizado: salvar mesmo com hold ativo
+        // custom content: save even with the hold active
       }
       const fullData = sanitizeFullPersistenceForDisk({ user, apps, config });
       if (!fullData) return;
@@ -1460,7 +1463,7 @@ export default function App() {
 
   useEffect(() => {
     if (window.electron && isDesktopMode) {
-      /** Inclui dashboard/definições “lógicos” mesmo minimizados — evita `hideWindow` a achar que não há UI ativa. */
+      /** Includes “logical” dashboard/settings even when minimized — stops `hideWindow` thinking there is no active UI. */
       const isAnyInteractive =
         isMenuOpen ||
         radialOpenAwaitingFullscreen ||
@@ -1471,8 +1474,8 @@ export default function App() {
       const visibilityChanged = lastVisibility.current !== isAnyInteractive;
 
       /**
-       * Com o radial aberto, não aplicar `windowed`/`small` aqui (ordem com fecho do dashboard deixava
-       * `lastWindowState` ou o HWND desalinhados — o menu aparecia no tamanho do painel).
+       * With the radial open, do not apply `windowed`/`small` here (the ordering against the dashboard close left
+       * `lastWindowState` or the HWND misaligned — the menu appeared at the panel's size).
        */
       if (isMenuOpen || radialOpenAwaitingFullscreen) {
         if (lastWindowState.current !== 'fullscreen') {
@@ -1497,7 +1500,7 @@ export default function App() {
         return;
       }
 
-      /** Overlay passivo `small` (HWND encolhido); painel/definições usam `windowed`. */
+      /** Passive `small` overlay (shrunken HWND); panel/settings use `windowed`. */
       const targetMode: 'fullscreen' | 'windowed' | 'small' = panelSurfaceOpen
         ? 'windowed'
         : 'small';
@@ -1570,17 +1573,17 @@ export default function App() {
   ) => {
     const triggerGeneration = ++radialTriggerGenerationRef.current;
     /**
-     * Radial por cima do painel: a janela é uma só, por isso abrir o radial encolhia-a à caixa da
-     * roda e as definições desapareciam num flash. Guardamos o rect de ECRÃ do painel — o main já
-     * alargou a janela para o cobrir — e continuamos a desenhá-lo exatamente no mesmo sítio.
-     * Quando é o renderer que redimensiona, o rect tem de ser lido ANTES do resize.
+     * Radial over the panel: there is only one window, so opening the radial shrank it to the
+     * wheel's box and the settings vanished in a flash. We keep the panel's SCREEN rect — main has
+     * already widened the window to cover it — and keep drawing it in exactly the same place.
+     * When it is the renderer that resizes, the rect has to be read BEFORE the resize.
      */
     const keepPanel =
       opts?.keepPanel ?? (panelSurfaceOpen && isDesktopModeRef.current);
     /**
-     * Com posição fixa o main não toca nos bounds: o painel continua a ser a janela inteira e
-     * não há nada para reposicionar — é esse o caminho sem flash. Só quando a janela é alargada
-     * (posição livre) é que o painel precisa de ser fixado no rect de ecrã que ocupava.
+     * With a fixed position main does not touch the bounds: the panel is still the whole window and
+     * there is nothing to reposition — that is the flash-free path. Only when the window is widened
+     * (free position) does the panel need pinning to the screen rect it occupied.
      */
     const panelWindowStays = keepPanel && !opts?.panelRect;
     const panelRect: ScreenRect | null =
@@ -1594,7 +1597,7 @@ export default function App() {
           }
         : null);
 
-    /** Posição livre foi removida: o resize usa sempre uma âncora central. */
+    /** Free position was removed: the resize always uses a centre anchor. */
     const anchorForFullscreen: { x: number; y: number } =
       coordSpace === 'screen'
         ? { x, y }
@@ -1610,10 +1613,10 @@ export default function App() {
 
     if (needsRendererFullscreenResize) {
       flushSync(() => {
-        /** Antes do resize: a partir daqui o painel nunca é escondido. */
+        /** Before the resize: from here on the panel is never hidden. */
         setPanelKeptUnderRadial(keepPanel);
         setPanelOverlayScreenRect(panelRect);
-        /** Com o painel a permanecer visível não há textura antiga para mascarar — a cobertura opaca só piscaria por cima dele. */
+        /** With the panel staying visible there is no old texture to mask — the opaque cover would only flash over it. */
         setRadialAwaitCoverOpaque(
           !panelRect && electronShrinkGateRef.current.panelSurfaceOpen,
         );
@@ -1628,8 +1631,8 @@ export default function App() {
 
     try {
     /**
-     * Atalho/MMB via main já chamou `updateWindowSize('fullscreen')` — repetir `applyWindowSize` aqui
-     * duplicava round-trip IPC + setBounds e atrasava o primeiro paint do radial.
+     * A shortcut/MMB via main already called `updateWindowSize('fullscreen')` — repeating `applyWindowSize` here
+     * doubled the IPC round-trip + setBounds and delayed the radial's first paint.
      */
     if (needsRendererFullscreenResize) {
       try {
@@ -1651,8 +1654,8 @@ export default function App() {
     }
 
     /**
-     * Um segundo MMB/atalho pode fechar o radial enquanto o resize assíncrono acima ainda termina.
-     * Nesse caso, não deixar esta abertura antiga voltar a montar o menu depois do fechamento.
+     * A second MMB/shortcut can close the radial while the async resize above is still finishing.
+     * In that case, do not let this stale open remount the menu after the close.
      */
     if (triggerGeneration !== radialTriggerGenerationRef.current) return;
 
@@ -1667,10 +1670,10 @@ export default function App() {
     radialWindowOriginHintRef.current = opts?.windowOrigin ?? null;
 
     /**
-     * Nunca consultar `window.screenX/Y` para o primeiro frame. Logo após fechar Settings essas
-     * métricas ainda descrevem o rect windowed (880×600), cujo centro é exatamente o ponto errado
-     * visto no vídeo: (440,300) cliente → aproximadamente (906,345) no ecrã. Toda a informação
-     * necessária já veio no mesmo IPC do main e pertence à geração atual.
+     * Never consult `window.screenX/Y` for the first frame. Right after closing Settings those
+     * metrics still describe the windowed rect (880×600), whose centre is exactly the wrong point
+     * seen in the video: (440,300) client → roughly (906,345) on screen. Everything needed already
+     * came in the same IPC from main and belongs to the current generation.
      */
     const authoritativeClientPosition =
       opts?.clientPosition ??
@@ -1686,7 +1689,7 @@ export default function App() {
       setRadialPreShowSolidCover(false);
       setPanelKeptUnderRadial(keepPanel);
       setPanelOverlayScreenRect(panelRect);
-      /** Só fechamos o painel quando ele não vai sobreviver por baixo do radial. */
+      /** We only close the panel when it is not going to survive under the radial. */
       if (!keepPanel) {
         setIsSettingsOpen(false);
         setIsDashboardOpen(false);
@@ -1704,8 +1707,8 @@ export default function App() {
     });
 
     /**
-     * A janela nativa ainda está escondida. Um rAF seguido de uma tarefa confirma o paint do
-     * frame alfa zero; dois rAF completos tornavam a abertura perceptivelmente lenta.
+     * The native window is still hidden. One rAF followed by a task confirms the paint of the
+     * zero-alpha frame; two full rAFs made the open noticeably slow.
      */
     if (typeof opts?.paintToken === 'number') {
       const paintToken = opts.paintToken;
@@ -1724,9 +1727,9 @@ export default function App() {
         hideTimeout.current = null;
       }
       /**
-       * Com o painel no ecrã e sem resize a janela já está visível e no sítio: um `show()` extra
-       * só recompõe o HWND. Pela mesma razão não há `invalidatePaint` ao abrir — no Windows
-       * costuma causar um flash (textura antiga) logo a seguir ao radial aparecer.
+       * With the panel on screen and no resize the window is already visible and in place: an extra
+       * `show()` only recomposes the HWND. For the same reason there is no `invalidatePaint` on
+       * open — on Windows it usually causes a flash (old texture) right after the radial appears.
        */
       if (!panelWindowStays && typeof opts?.paintToken !== 'number') {
         window.electron.showWindow();
@@ -1754,7 +1757,7 @@ export default function App() {
     }
   };
 
-  /** Pinta um frame neutro antes de `minimize()` para o snapshot do Windows não ser o dashboard (flash ao abrir radial depois). */
+  /** Paints a neutral frame before `minimize()` so the Windows snapshot is not the dashboard (a flash when the radial opens later). */
   const flushNeutralFrameThenMinimize = useCallback(() => {
     if (!window.electron?.minimizeWindow) return;
     flushSync(() => setMinimizeNeutralCoverActive(true));
@@ -1769,25 +1772,25 @@ export default function App() {
   openMenuRef.current = openMenu;
 
   /**
-   * Alternância do gatilho (MMB / atalho global): o main não sabe se o radial está aberto,
-   * por isso a decisão vive aqui — segundo gatilho com o radial no ecrã fecha em vez de reabrir.
+   * Trigger toggle (MMB / global shortcut): main does not know whether the radial is open,
+   * so the decision lives here — a second trigger with the radial on screen closes instead of reopening.
    */
   const isMenuOpenRef = useRef(isMenuOpen);
   isMenuOpenRef.current = isMenuOpen;
   const radialOpenAwaitingFullscreenRef = useRef(radialOpenAwaitingFullscreen);
   radialOpenAwaitingFullscreenRef.current = radialOpenAwaitingFullscreen;
-  /** Impede o `click` gerado depois do `mouseup` que fechou o radial de atingir o painel. */
+  /** Stops the `click` generated after the `mouseup` that closed the radial from reaching the panel. */
   const radialClickShieldUntilRef = useRef(0);
-  /** Invalida uma abertura assíncrona quando o mesmo gatilho é usado para fechar. */
+  /** Invalidates an async open when the same trigger is used to close. */
   const radialTriggerGenerationRef = useRef(0);
   const handleMenuCloseRef = useRef<
     ((selectedId: string | null, selectedApp?: AppItem | null) => void) | null
   >(null);
-  /** Verdadeiro quando um novo gatilho deve fechar o radial em vez de o abrir. */
+  /** True when a new trigger should close the radial instead of opening it. */
   const closeMenuFromTrigger = useCallback(() => {
     if (!isMenuOpenRef.current && !radialOpenAwaitingFullscreenRef.current) return false;
     radialTriggerGenerationRef.current += 1;
-    /** RadialMenu consome qualquer mouseup pendente deste gesto sem confirmar a fatia ativa. */
+    /** RadialMenu swallows any pending mouseup from this gesture without confirming the active slice. */
     window.dispatchEvent(new CustomEvent('zenith-radial-toggle-close'));
     handleMenuCloseRef.current?.(null);
     return true;
@@ -1800,7 +1803,7 @@ export default function App() {
       const target = event.target instanceof Element ? event.target : null;
       const belongsToRadial = !!target?.closest('[data-zenith-radial-modal="true"]');
 
-      /** Ícones e hub continuam a receber o clique que executa a ação escolhida. */
+      /** Icons and hub still receive the click that runs the chosen action. */
       if (radialActive && belongsToRadial) return;
       if (!radialActive && Date.now() > radialClickShieldUntilRef.current) return;
 
@@ -1821,7 +1824,7 @@ export default function App() {
     const hintedOrigin = radialWindowOriginHintRef.current;
     const clientOriginX = hintedOrigin?.x ?? window.screenX;
     const clientOriginY = hintedOrigin?.y ?? window.screenY;
-    /** Mesmo remapeamento da âncora, aplicado ao painel que ficou por baixo do radial. */
+    /** The same anchor remapping, applied to the panel left under the radial. */
     const panelScreen = panelOverlayScreenRectRef.current;
     if (panelScreen) {
       const next = {
@@ -1840,9 +1843,9 @@ export default function App() {
     }
 
     /**
-     * A posição da roda é congelada no `clientPosition` recebido no open-menu. Recalculá-la aqui
-     * com métricas tardias de `window.screenX/Y` fazia a árvore já visível saltar para outra origem.
-     * Este sincronizador continua responsável apenas pelo painel preservado sob o radial.
+     * The wheel's position is frozen at the `clientPosition` received in open-menu. Recomputing it
+     * here with late `window.screenX/Y` metrics made the already visible tree jump to another origin.
+     * This synchronizer stays responsible only for the panel preserved under the radial.
      */
   }, []);
 
@@ -1882,16 +1885,16 @@ export default function App() {
   }, [isMenuOpen, radialOpenAwaitingFullscreen, isDesktopMode, syncMenuPositionFromAnchor]);
 
   /**
-   * O radial fecha por muitos caminhos (Escape, botão direito, duplo-MMB → definições, seleção).
-   * Em vez de limpar o rect do painel em cada um, limpamos aqui: enquanto não houver radial
-   * nem espera de resize, o painel volta a ser a própria janela.
+   * The radial closes through many paths (Escape, right button, double-MMB → settings, selection).
+   * Instead of clearing the panel rect in each one, we clear it here: while there is no radial
+   * and no pending resize, the panel is the window again.
    *
-   * Não limpar os hints de geometria aqui. Este é um efeito passivo da sessão FECHADA e pode ser
-   * drenado pelo `flushSync` da abertura seguinte depois de `openMenu` já ter gravado os novos
-   * hints. Isso apagava a origem autoritativa e o primeiro frame voltava a `window.screenX/Y`
-   * ainda pertencente ao Settings; o rAF seguinte corrigia e a roda parecia saltar até ao centro.
-   * Cada abertura sobrescreve ambos os refs antes do seu próprio commit, portanto mantê-los entre
-   * sessões é seguro e elimina a escrita atrasada entre gerações.
+   * Do not clear the geometry hints here. This is a passive effect of the CLOSED session and can be
+   * drained by the next open's `flushSync` after `openMenu` has already written the new hints. That
+   * erased the authoritative origin and the first frame fell back to a `window.screenX/Y` still
+   * belonging to Settings; the next rAF corrected it and the wheel seemed to jump to the centre.
+   * Every open overwrites both refs before its own commit, so keeping them between sessions is safe
+   * and removes the late write across generations.
    */
   useEffect(() => {
     if (isMenuOpen || radialOpenAwaitingFullscreen) return;
@@ -1900,7 +1903,7 @@ export default function App() {
     setPanelOverlayClientRect((prev) => (prev === null ? prev : null));
   }, [isMenuOpen, radialOpenAwaitingFullscreen]);
 
-  /** Repaint só ao fechar o radial — invalidate ao abrir piscava o frame (dashboard→fullscreen) no Windows. */
+  /** Repaint only when the radial closes — invalidating on open flashed the frame (dashboard→fullscreen) on Windows. */
   const prevIsMenuOpenForPaintRef = useRef(isMenuOpen);
   useEffect(() => {
     if (!window.electron?.invalidatePaint) return;
@@ -1920,7 +1923,7 @@ export default function App() {
       x: number;
       y: number;
       source?: 'mmb' | 'mmb-click' | 'shortcut';
-      /** O main já sabe que o radial está aberto: este evento nunca deve abrir nem confirmar uma seleção. */
+      /** Main already knows the radial is open: this event must never open nor confirm a selection. */
       closeOnly?: boolean;
       preSizedByMain?: boolean;
       keepPanel?: boolean;
@@ -1934,7 +1937,7 @@ export default function App() {
         closeMenuFromTrigger();
         return;
       }
-      /** Segundo MMB / atalho com o radial já aberto: alternar (fechar) em vez de reabrir. */
+      /** Second MMB / shortcut with the radial already open: toggle (close) instead of reopening. */
       if (closeMenuFromTrigger()) return;
       void openMenuRef.current(data.x, data.y, data.source ?? 'shortcut', 'screen', {
         preSizedByMain: data.preSizedByMain === true,
@@ -1960,16 +1963,16 @@ export default function App() {
 
     const cleanupDashboard = window.electron?.onOpenDashboard(() => {
       flushSync(() => {
-        // Não ligar panelResizeSolidCover aqui se o painel já estiver aberto (ex.: Settings→Dashboard):
-        // z-[96] ficava preso porque o layout que o desliga só corre em false→true de panelSurfaceOpen.
+        // Do not turn panelResizeSolidCover on here if the panel is already open (e.g. Settings→Dashboard):
+        // z-[96] got stuck because the layout that turns it off only runs on panelSurfaceOpen false→true.
         setPanelChromeDismissedForIsland(false);
         setMinimizeNeutralCoverActive(false);
         setRadialPreShowSolidCover(false);
         setIsDashboardOpen(false);
         setIsSettingsOpen(true);
       });
-      /** Não chamar `showWindow()` aqui: corre antes dos `useLayoutEffect` + microtask com `applyWindowSize('windowed')`
-       * e o DWM pinta o HWND grande com a textura da ilha (relógio “puxado”). O show fica no microtask após resize. */
+      /** Do not call `showWindow()` here: it runs before the `useLayoutEffect` + microtask with `applyWindowSize('windowed')`
+       * and the DWM paints the big HWND with the island's texture (a “stretched” clock). The show stays in the microtask after the resize. */
     });
 
     const cleanupSettings = window.electron?.onOpenSettings(() => {
@@ -2126,8 +2129,8 @@ export default function App() {
   const handleOpenSettings = () => {
     flushSync(() => {
       if (isMenuOpen) setIsMenuOpen(false);
-      // Cobertura z-[96]: só o useLayoutEffect (panelSurfaceOpen false→true) deve ligar ao sair da ilha.
-      // Se já estamos no dashboard, ligar aqui deixa a cobertura para sempre — o efeito de resize não re-corre.
+      // z-[96] cover: only the useLayoutEffect (panelSurfaceOpen false→true) should turn it on when leaving the island.
+      // If we are already in the dashboard, turning it on here leaves the cover up forever — the resize effect does not re-run.
       setPanelChromeDismissedForIsland(false);
       setIsSettingsOpen(true);
       setIsDashboardOpen(false);
@@ -2159,16 +2162,16 @@ export default function App() {
     handleOpenSettingsRef.current();
   }, []);
 
-  /** Fecha apenas a superfície de Settings; o processo, tray e atalhos continuam ativos. */
+  /** Closes only the Settings surface; the process, tray and shortcuts stay active. */
   const handleClosePanelToBackground = useCallback(() => {
     /**
-     * O main precisa saber no mesmo gesto que já não há painel. Esperar pelo effect
-     * deixava uma janela entre este clique e o próximo atalho em que o radial
-     * preservava/renderizava a textura antiga das definições.
+     * Main needs to know in the same gesture that there is no panel any more. Waiting for the
+     * effect left a window between this click and the next shortcut in which the radial
+     * preserved/rendered the settings' old texture.
      */
     window.electron?.setPanelSurfaceVisible?.(false);
     flushSync(() => {
-      /** Mantém o HWND windowed por dois paints, mas sem desenhar o painel. */
+      /** Keeps the HWND windowed for two paints, but without drawing the panel. */
       setPanelNeutralizingClose(true);
       setIsSettingsOpen(false);
       setIsDashboardOpen(false);
@@ -2181,12 +2184,12 @@ export default function App() {
   }, []);
 
   const handleMouseDown = (e: React.MouseEvent) => {
-    if (e.button === 1) { // Botão do meio
+    if (e.button === 1) { // Middle button
       e.preventDefault();
       /**
-       * No Electron, o mesmo MMB também chega pelo monitor global no main process. Se ambos os
-       * caminhos alternarem o estado, o React fecha primeiro e o hook global pode interpretar o
-       * mesmo gesto como uma nova abertura alguns ms depois. O main é o único dono do MMB no app.
+       * On Electron the same MMB also arrives through the global monitor in the main process. If
+       * both paths toggle the state, React closes first and the global hook can read the same
+       * gesture as a new open a few ms later. Main is the sole owner of MMB in the app.
        */
       if (isDesktopModeRef.current && window.electron) return;
       if (closeMenuFromTrigger()) return;
@@ -2194,7 +2197,7 @@ export default function App() {
     }
   };
 
-  // Double Click (Left) to Open Settings — não dispara com o radial aberto
+  // Double Click (Left) to Open Settings — does not fire with the radial open
   const handleDoubleClick = (e: React.MouseEvent) => {
     if (Date.now() - menuJustClosedAtRef.current < 650) {
       return;
@@ -2236,7 +2239,7 @@ export default function App() {
       return;
     }
 
-    /** Widgets internos (Notas / Alarme / Cronómetro / Pomodoro) foram removidos — ignorar restos de configs antigos. */
+    /** Internal widgets (Notes / Alarm / Stopwatch / Pomodoro) were removed — ignore leftovers from old configs. */
     if (command.startsWith('internal:')) {
       return;
     }
@@ -2284,7 +2287,7 @@ export default function App() {
     setRadialOpenAwaitingFullscreen(false);
     setRadialPreShowSolidCover(false);
     setRadialPendingPaintToken(null);
-    /** O painel volta a ser a própria janela: o efeito de modo repõe `windowed` com o rect guardado. */
+    /** The panel becomes the window again: the mode effect restores `windowed` with the saved rect. */
     setPanelKeptUnderRadial(false);
     setPanelOverlayScreenRect(null);
     setPanelOverlayClientRect(null);
@@ -2363,15 +2366,15 @@ export default function App() {
 
 
   /**
-   * nesta máquina volta a ocupar o mesmo lugar em vez de gastar um dispositivo novo.
+   * on this machine takes the same slot again instead of spending a new device.
    */
   /**
-   * A roda trancada não pede a chave: encaminha para o cartão da licença nas definições, que é
-   * onde o teclado já funciona sem depender do roubo de foreground para a janela do radial.
+   * The locked wheel does not ask for the key: it routes to the licence card in settings, which is
+   * where the keyboard already works without relying on foreground stealing for the radial window.
    */
 
 
-  /** Objeto estável: o memo das secções das definições depende dele. */
+  /** Stable object: the memo for the settings sections depends on it. */
 
 
   const handleLogout = () => {
@@ -2389,16 +2392,16 @@ export default function App() {
 
   /** Menu-only slice of config: stable when unrelated settings (e.g. widget opacities) change — keeps RadialMenu from re-rendering the full wheel. */
   /**
-   * A roda recebe o config inteiro; a memo existe so para estabilizar a referencia.
+   * The wheel gets the whole config; the memo exists only to stabilize the reference.
    *
-   * As dependencias eram uma LISTA DE CAMPOS escrita a mao. Como o callback devolve `config`
-   * tal e qual, qualquer definicao fora dessa lista mudava no estado e a roda continuava a
-   * receber o objeto ANTERIOR — a alteracao so passava quando, por acaso, um dos campos
-   * listados tambem mudasse. Foi o que aconteceu a mira por cursor: alternar a opcao nao
-   * produzia efeito nenhum. Cada campo novo era uma armadilha silenciosa.
+   * The dependencies were a HAND-WRITTEN FIELD LIST. Since the callback returns `config`
+   * exactly as it is, any setting outside that list changed in state and the wheel kept
+   * receiving the PREVIOUS object — the change only got through when, by chance, one of the
+   * listed fields changed too. That is what happened to aiming by cursor: toggling the option
+   * had no effect at all. Every new field was a silent trap.
    *
-   * Depender do objeto resolve a classe inteira de problemas: `config` so troca de identidade
-   * quando o `setConfig` corre, ou seja quando algo mudou mesmo.
+   * Depending on the object solves the whole class of problems: `config` only changes identity
+   * when `setConfig` runs, that is, when something really changed.
    */
   const radialMenuConfig = React.useMemo(() => config, [config]);
 
@@ -2417,9 +2420,9 @@ export default function App() {
     panelSurfaceOpen || isMenuOpen || radialOpenAwaitingFullscreen;
 
   /**
-   * O painel sobrevive ao radial (ver `panelOverlayScreenRect`). São duas fases:
-   * `…Staying` cobre já a espera do resize — é o que impede o `hidden` de piscar o painel;
-   * `…UnderRadial` é a fase em que ele já é posicionado pelo rect dentro da janela alargada.
+   * The panel survives the radial (see `panelOverlayScreenRect`). There are two phases:
+   * `…Staying` already covers the wait for the resize — it is what stops `hidden` flashing the panel;
+   * `…UnderRadial` is the phase in which it is positioned by the rect inside the widened window.
    */
   const panelStaysUnderRadial =
     (isMenuOpen || radialOpenAwaitingFullscreen) &&
@@ -2428,15 +2431,15 @@ export default function App() {
   const panelUnderRadial = panelStaysUnderRadial && !!panelOverlayClientRect;
   const radialBlocksPanelInteraction = isMenuOpen || radialOpenAwaitingFullscreen;
   /**
-   * O conteúdo do painel desenha-se: fora do radial como sempre, ou por baixo dele neste modo.
+   * The panel content draws itself: outside the radial as always, or under it in this mode.
    *
-   * Com uma exceção. Quando o main ALARGA a janela para o radial, manda o rect do painel para ele
-   * ser reposicionado lá dentro — e esse rect só existe em coordenadas do cliente depois de um
-   * `useLayoutEffect` o converter. Nesse intervalo o painel era desenhado sem posição nenhuma, ou
-   * seja `inset-0` de uma janela agora do tamanho do ecrã: as Definições saltavam para gigantes.
+   * With one exception. When main WIDENS the window for the radial, it sends the panel rect so it
+   * can be repositioned inside — and that rect only exists in client coordinates after a
+   * `useLayoutEffect` converts it. In that gap the panel was drawn with no position at all, that
+   * is, `inset-0` of a window now the size of the screen: Settings jumped to giant.
    *
-   * Havendo rect de ecrã, o painel só aparece depois de estar posicionado. Sem rect (o caminho em
-   * que a janela não é alargada), `inset-0` é a posição correta e não há nada a esperar.
+   * With a screen rect, the panel only appears once it is positioned. Without one (the path where
+   * the window is not widened), `inset-0` is the correct position and there is nothing to wait for.
    */
   const panelAwaitingOverlayPlacement =
     panelStaysUnderRadial && !!panelOverlayScreenRect && !panelOverlayClientRect;
@@ -2444,7 +2447,7 @@ export default function App() {
     (panelStaysUnderRadial && !panelAwaitingOverlayPlacement) ||
     (!isMenuOpen && !radialOpenAwaitingFullscreen);
 
-  /** Tema das superfícies opacas (titlebar + painéis). O radial nunca é temado: é overlay do ambiente de trabalho. */
+  /** Theme for the opaque surfaces (titlebar + panels). The radial is never themed: it is a desktop overlay. */
   const panelTheme = config.appearanceTheme === 'white' ? 'white' : 'black';
 
   return (
@@ -2461,7 +2464,7 @@ export default function App() {
         if (isMenuOpen) setIsMenuOpen(false);
       }}
     >
-      {/* Antes de minimizar: frame opaco de propósito, para o Windows guardar um bitmap neutro. */}
+      {/* Before minimizing: an opaque frame on purpose, so Windows caches a neutral bitmap. */}
       {isDesktopMode && minimizeNeutralCoverActive && (
         <div
           className="fixed inset-0 z-[99999] bg-[#0A0A0A] pointer-events-none"
@@ -2470,9 +2473,9 @@ export default function App() {
       )}
 
       {/**
-       * `prepare-radial-show`: main já fez `showInactive()` nos bounds antigos, por isso um frame
-       * preto aqui é visível como um retângulo a piscar. Só é preciso forçar um paint novo para
-       * não expor textura obsoleta — limpar para (quase) transparente serve, e não se vê.
+       * `prepare-radial-show`: main has already done `showInactive()` on the old bounds, so a black
+       * frame here is visible as a flashing rectangle. All that is needed is forcing a fresh paint
+       * so no stale texture is exposed — clearing to (almost) transparent does it, and is invisible.
        */}
       {isDesktopMode && radialPreShowSolidCover && (
         <div
@@ -2486,19 +2489,19 @@ export default function App() {
       {/* RadialMenu renders OUTSIDE this wrapper to stay truly transparent */}
       {/* When radial opens: hide this layer instantly (no opacity transition) — otherwise the 300ms fade shows a flash of the last settings/dashboard frame */}
       {/*
-        A janela é UMA superfície. Antes havia `border` + `rounded-xl` + `shadow-[0_0_50px]`
-        neste mesmo elemento `absolute inset-0`: como o pai é `fixed inset-0 overflow-hidden`,
-        a sombra externa era recortada e só sobravam os borrões nos entalhes dos cantos —
-        lia-se como uma segunda camada por trás de uma borda desenhada por cima.
-        `zenith-panel-surface` (index.css) substitui os três por um hairline interior
-        tokenizado + raio. `hasShadow:false` no main mantém-se: a separação do ambiente
-        de trabalho vem do raio e do contraste de superfície, não de um halo interno.
+        The window is ONE surface. There used to be `border` + `rounded-xl` + `shadow-[0_0_50px]`
+        on this same `absolute inset-0` element: since the parent is `fixed inset-0 overflow-hidden`,
+        the outer shadow was clipped and all that was left were the smudges in the corner notches —
+        it read as a second layer behind a border drawn on top.
+        `zenith-panel-surface` (index.css) replaces the three with a tokenized inner
+        hairline + radius. `hasShadow:false` in main stays: the separation from the
+        desktop comes from the radius and the surface contrast, not from an inner halo.
       */}
       {/**
-       * Radial por cima do painel: a janela foi alargada para cobrir os dois, por isso o painel
-       * deixa de poder ser `inset-0` — ficaria esticado ao tamanho do overlay. Passa a ser
-       * desenhado na caixa exata que ocupava no ecrã, e só o radial recebe rato: um clique
-       * perdido nas definições durante o gesto seria uma ação que o utilizador não pediu.
+       * Radial over the panel: the window was widened to cover both, so the panel can no longer
+       * be `inset-0` — it would stretch to the overlay's size. It is drawn instead in the exact
+       * box it occupied on screen, and only the radial takes the mouse: a stray click in the
+       * settings during the gesture would be an action the user did not ask for.
        */}
       <div
         data-zn-theme={panelTheme}
@@ -2507,12 +2510,12 @@ export default function App() {
         aria-hidden={radialBlocksPanelInteraction ? true : undefined}
         style={panelStaysUnderRadial ? {
           /**
-           * `z-index` explícito por duas razões: fica por baixo do radial (z-70) e, sobretudo,
-           * cria um contexto de empilhamento — sem ele o `z-index: 100` do `.zs-shell` competia
-           * no contexto da raiz e as definições desenhavam-se POR CIMA da roda.
+           * Explicit `z-index` for two reasons: it sits below the radial (z-70) and, above all,
+           * it creates a stacking context — without it the `z-index: 100` of `.zs-shell` competed
+           * in the root context and the settings drew ON TOP of the wheel.
            */
           zIndex: 5,
-          /** Posicionamento só existe no caminho com resize; sem ele o painel continua a ser a janela. */
+          /** Positioning only exists on the resize path; without it the panel is still the window. */
           ...(panelUnderRadial
             ? {
                 position: 'absolute' as const,
@@ -2540,9 +2543,9 @@ export default function App() {
         {/* CUSTOM TITLE BAR OVERLAY (for drag region + app name) */}
         {panelSurfaceOpen && panelContentVisible && (
           <div
-            /* `zenith-titlebar` — estilo em index.css, a par do painel radial. */
+            /* `zenith-titlebar` — styled in index.css, alongside the radial panel. */
             className="zenith-titlebar absolute top-0 left-0 right-0 h-[var(--zenith-title-bar-h)] z-[999] flex items-center justify-between pl-3 rounded-t-[12px] overflow-hidden"
-            /* Sob o radial a região de arrasto moveria a janela do overlay inteira, não o painel. */
+            /* Under the radial the drag region would move the whole overlay window, not the panel. */
             style={{ WebkitAppRegion: panelStaysUnderRadial ? 'no-drag' : 'drag' } as any}
           >
             {isSettingsOpen ? (
@@ -2580,10 +2583,10 @@ export default function App() {
             {/* Custom Window Controls */}
             <div className="flex items-stretch h-full pointer-events-auto" style={{ WebkitAppRegion: 'no-drag' } as any}>
               {/*
-                Controlos de janela como os do Windows: sem `title` (o tooltip nativo aparecia
-                sobre a barra e não existe em janela nenhuma do sistema) e sem transições — o
-                realce de fundo é instantâneo, como no Explorador. O `aria-label` fica, porque é
-                para leitores de ecrã e não desenha nada.
+                Window controls like the Windows ones: no `title` (the native tooltip appeared
+                over the bar and exists on no system window) and no transitions — the background
+                highlight is instant, as in Explorer. The `aria-label` stays, because it is for
+                screen readers and draws nothing.
               */}
               <button
                 className="zenith-titlebar-btn h-full w-[46px] flex items-center justify-center"
@@ -2616,22 +2619,22 @@ export default function App() {
         {/* BACKGROUND (Simulator Only OR First Run Dashboard) */}
         {/* DELETED: Removed redundant background to allow RadialMenu to handle it exclusively */}
 
-        {/* WELCOME SCREEN / DASHBOARD — AnimatePresence sync evita buraco só com fundo entre dashboard e definições (DWM). */}
+        {/* WELCOME SCREEN / DASHBOARD — AnimatePresence sync avoids a background-only gap between dashboard and settings (DWM). */}
         {/**
-         * Esconder, não desmontar.
+         * Hide, do not unmount.
          *
-         * `panelContentVisible` existe para o painel não se DESENHAR antes de ter posição (ver
-         * `panelAwaitingOverlayPlacement`), e conseguia-o retirando a subárvore do React. Como o
-         * main manda sempre `keepPanel` com rect, e esse rect só chega a coordenadas de cliente no
-         * `useLayoutEffect` seguinte, TODO o gesto da roda por cima das Definições passava por um
-         * commit sem árvore — e ao fechar a roda o painel voltava a montar-se, a repetir a entrada
-         * de 0,28 s e o fade da `.zs-shell`. O painel parecia recarregar de cada vez que se usava a
-         * app, quando nunca tinha saído.
+         * `panelContentVisible` exists so the panel does not DRAW before it has a position (see
+         * `panelAwaitingOverlayPlacement`), and it did that by pulling the subtree out of React.
+         * Since main always sends `keepPanel` with a rect, and that rect only reaches client
+         * coordinates in the next `useLayoutEffect`, EVERY wheel gesture over Settings went through
+         * a commit with no tree — and on closing the wheel the panel mounted again, repeating the
+         * 0.28 s entrance and the `.zs-shell` fade. The panel seemed to reload every time the app
+         * was used, when it had never left.
          *
-         * `display: none` suprime exatamente o mesmo: o Chromium não gera caixa nenhuma, portanto o
-         * frame entregue ao DWM é igual ao que era sem a subárvore. O FUNDO continua a ser pintado
-         * pelo contentor (`zenith-panel-surface`), que fica de fora deste `div` — a lacuna de
-         * posicionamento pinta o que sempre pintou. Muda só o que sobrevive ao gesto.
+         * `display: none` suppresses exactly the same: Chromium generates no box at all, so the
+         * frame handed to the DWM is the same as it was without the subtree. The BACKGROUND is
+         * still painted by the container (`zenith-panel-surface`), which sits outside this `div` —
+         * the positioning gap paints what it always painted. Only what survives the gesture changes.
          */}
         <div className={panelContentVisible ? undefined : 'hidden'}>
           <React.Suspense
@@ -2658,7 +2661,7 @@ export default function App() {
                       setIsSettingsOpen(false);
                       setIsAppReady(false);
                       setIsLoaded(false);
-                      /** Repor tudo e reabrir em Advanced, onde se carregou no botão, seria estranho. */
+                      /** Resetting everything and reopening on Advanced, where the button was pressed, would be odd. */
                       setSettingsNav({ sectionId: 'general', isSidebarCollapsed: false, focusShortcut: null });
                     } catch(e) {}
                     setApps(MINIMAL_MAIN_WORKSPACE_APPS); 
@@ -2680,7 +2683,7 @@ export default function App() {
 
       </div>
 
-      {/* Último frame do painel: quase transparente, mas não vazio, para Chromium submetê-lo ao DWM. */}
+      {/* The panel's last frame: almost transparent, but not empty, so Chromium submits it to the DWM. */}
       {isDesktopMode && panelNeutralizingClose && (
         <div
           className="fixed inset-0 z-[99999] pointer-events-none"
@@ -2689,8 +2692,8 @@ export default function App() {
         />
       )}
 
-      {/* Durante `applyWindowSize` o painel já está oculto no React — fundo sólido evita flash da última textura do compositor.
-          Sem painel opaco antes (bandeja/ilha) fica transparente: aí o preto era ele próprio o flash. */}
+      {/* During `applyWindowSize` the panel is already hidden in React — a solid background avoids a flash of the compositor's last texture.
+          With no opaque panel before it (tray/island) it stays transparent: there the black was itself the flash. */}
       {isDesktopMode && radialOpenAwaitingFullscreen && (
         <div
           className={`fixed inset-0 z-[65] pointer-events-auto ${radialAwaitCoverOpaque ? 'bg-[#0A0A0A]' : ''}`}
@@ -2698,7 +2701,7 @@ export default function App() {
         />
       )}
 
-      {/* Ilha small→windowed: cobre um frame errado do DWM antes do invalidate após `applyWindowSize`. */}
+      {/* Island small→windowed: covers a wrong DWM frame before the invalidate after `applyWindowSize`. */}
       {isDesktopMode && panelResizeSolidCover && (
         <div
           className="fixed inset-0 z-[96] bg-[#0A0A0A] pointer-events-none"
@@ -2710,7 +2713,7 @@ export default function App() {
       {/* TRANSPARENT LAYER — no background, RadialMenu + toasts live here    */}
       {/* ------------------------------------------------------------------ */}
 
-        {/* Durante `radialOpenAwaitingFullscreen` o menu não pode ficar montado com `isOpen={false}` — o Framer animava “fechar” e depois “abrir”, causando flash de saída/entrada. */}
+        {/* During `radialOpenAwaitingFullscreen` the menu cannot stay mounted with `isOpen={false}` — Framer animated “close” and then “open”, causing an exit/entry flash. */}
         {(!radialOpenAwaitingFullscreen || isMenuOpen) && (
           <RadialMenu
             key={radialMountKey}

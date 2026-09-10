@@ -51,12 +51,12 @@ module.exports = async function afterPackWinIcon(context) {
   }
 
   /**
-   * Além do ícone, os metadados do executável.
+   * Beyond the icon, the executable's metadata.
    *
-   * O Gestor de Tarefas mostra o campo `FileDescription` do recurso de versão do PE. O binário
-   * pré-compilado do Electron traz lá "Electron", e com `signAndEditExecutable: false` ninguém o
-   * reescrevia — a app aparecia ao utilizador com o nome do runtime em vez do seu. `rcedit` já
-   * estava a ser usado para o ícone; escrever a versão no mesmo passo não custa nada.
+   * Task Manager shows the `FileDescription` field of the PE version resource. Electron's
+   * prebuilt binary carries "Electron" there, and with `signAndEditExecutable: false` nobody
+   * rewrote it — the app showed up to the user under the runtime's name instead of its own.
+   * `rcedit` was already in use for the icon; writing the version in the same step costs nothing.
    */
   const pkg = require("../package.json");
   const year = new Date().getFullYear();

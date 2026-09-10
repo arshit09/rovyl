@@ -55,12 +55,12 @@ const url = require("url");
 const isDev = !app.isPackaged;
 
 /**
- * Canal de distribuição. A Microsoft Store proíbe mecanismos próprios de atualização — quem
- * atualiza é a loja — e uma submissão com o `electron-updater` ativo é reprovada na certificação.
- * O mesmo código serve os dois canais; é aqui que se decide qual deles está a correr.
+ * Distribution channel. The Microsoft Store forbids self-updating mechanisms — the store is what
+ * updates — and a submission with `electron-updater` live fails certification. The same code serves
+ * both channels; this is where it decides which one is running.
  *
- * `process.windowsStore` é posto pelo Electron quando o processo corre dentro de um pacote MSIX.
- * A variável de ambiente existe só para poder testar o comportamento sem empacotar.
+ * `process.windowsStore` is set by Electron when the process runs inside an MSIX package. The
+ * environment variable exists only so the behaviour can be tested without packaging.
  */
 const isStoreBuild = () =>
   process.windowsStore === true || process.env.ROVYL_STORE_BUILD === "1";
@@ -74,9 +74,9 @@ let isWriting = false;
 let logFlushTimer = null;
 
 /**
- * O log era append puro: crescia para sempre (e cada abertura acrescenta uma linha por ícone
- * resolvido). Duas gerações de 2 MB chegam para diagnosticar e o disco deixa de pagar juros.
- * O tamanho é contado em memória — `statSync` a cada escrita seria trocar um problema por outro.
+ * The log was pure append: it grew forever (and every open adds a line per resolved icon). Two
+ * generations of 2 MB are enough to diagnose with, and the disk stops paying interest. The size is
+ * counted in memory — a `statSync` on every write would trade one problem for another.
  */
 const LOG_MAX_BYTES = 2 * 1024 * 1024;
 let logBytesWritten = null;
@@ -90,7 +90,7 @@ const rotateLogIfNeeded = (incomingBytes) => {
       logBytesWritten += incomingBytes;
       return;
     }
-    /** `renameSync` sobre o `.1` anterior descarta a geração mais velha sem passo extra. */
+    /** `renameSync` over the previous `.1` drops the oldest generation with no extra step. */
     fs.renameSync(logFile, `${logFile}.1`);
     logBytesWritten = incomingBytes;
   } catch (e) {
@@ -141,9 +141,9 @@ const scheduleLogFlush = () => {
 };
 
 /**
- * Botões de rato aceites como gatilho. Esquerdo (0x01) e direito (0x02) estão deliberadamente
- * fora: vigiá-los globalmente colidiria com o clique primário e o menu de contexto de todo o
- * sistema. Os laterais (X1/X2) são livres na esmagadora maioria das aplicações.
+ * Mouse buttons accepted as a trigger. Left (0x01) and right (0x02) are deliberately out: watching
+ * them globally would collide with the primary click and the context menu of the whole system. The
+ * side buttons (X1/X2) are free in the overwhelming majority of applications.
  */
 const MOUSE_TRIGGER_VK = { middle: 0x04, x1: 0x05, x2: 0x06 };
 const MOUSE_TRIGGER_BUTTONS = Object.keys(MOUSE_TRIGGER_VK);
@@ -247,7 +247,7 @@ function ensureUnifiedUserDataDirectory() {
 
 /**
  * Packaged apps don't ship the repo-root .env.local. Load from (in order, last wins per key):
- * - project / asar parent: `.env` then `.env.local` (último ganha) — funciona com `npm start` sem build
+ * - project / asar parent: `.env` then `.env.local` (last wins) — works with `npm start` without a build
  * - resources (extraResources / beside installer)
  * - userData (recommended for installed builds: copy .env.local here)
  */
@@ -285,10 +285,10 @@ loadEnvLocalFiles();
 if (process.env.ZENITH_DISABLE_HARDWARE_ACCELERATION === "1") {
   app.disableHardwareAcceleration();
   diagLog(
-    "[GPU] ZENITH_DISABLE_HARDWARE_ACCELERATION=1 — renderização por software.",
+    "[GPU] ZENITH_DISABLE_HARDWARE_ACCELERATION=1 — software rendering.",
   );
 } else {
-  diagLog("[GPU] Aceleração de hardware ativa para o radial transparente.");
+  diagLog("[GPU] Hardware acceleration on for the transparent radial.");
 }
 
 // Helper function to detect preferred terminal emulator
@@ -325,43 +325,43 @@ const getAssetPath = (...paths) => {
   );
 };
 
-/* ── MRU de IDEs da família VS Code ──────────────────────────────────────────────────────────
+/* ── MRU for VS Code–family IDEs ─────────────────────────────────────────────────────────────
  *
- * O nome da pasta de perfil não é o nome do produto e muda entre versões e fabricantes:
- * "Antigravity IDE" (e não "Antigravity", que é só runtime do Chromium), "Code - Insiders",
- * "Windsurf", "Trae"… Uma tabela fixa de caminhos falha em silêncio — devolve lista vazia sem
- * erro, exatamente o que aconteceu com o Antigravity. Em vez de adivinhar o caminho, descobre-se:
- * qualquer pasta com `User/globalStorage/{storage.json|state.vscdb}` É um perfil desta família,
- * e escolhe-se a que melhor corresponde ao nome/executável da app. IDEs que ainda não existem
- * passam a funcionar sem alterar código.
+ * The profile folder name is not the product name and changes across versions and vendors:
+ * "Antigravity IDE" (and not "Antigravity", which is only the Chromium runtime), "Code - Insiders",
+ * "Windsurf", "Trae"… A fixed table of paths fails silently — it returns an empty list with no
+ * error, exactly what happened with Antigravity. Instead of guessing the path, discover it: any
+ * folder with `User/globalStorage/{storage.json|state.vscdb}` IS a profile of this family, and the
+ * one that best matches the app's name/executable wins. IDEs that do not exist yet start working
+ * without a code change.
  */
 
-/** Nomes normalizados: comparação sem espaços, hífens, pontuação nem maiúsculas. */
+/** Normalized names: comparison without spaces, hyphens, punctuation or case. */
 function normalizeIdeToken(value) {
   return String(value || "").toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
-/** Rótulos que não parecem com a pasta que o produto cria. */
+/** Labels that look nothing like the folder the product creates. */
 const IDE_TOKEN_ALIASES = {
   visualstudiocode: "code",
   vscode: "code",
   vscodeinsiders: "codeinsiders",
 };
 
-/** Troços de caminho e de nome de ficheiro que nunca identificam um produto. */
+/** Path and file-name fragments that never identify a product. */
 const IDE_TOKEN_STOPLIST = new Set([
   "exe", "com", "app", "bin", "cmd", "lnk", "url",
   "users", "user", "appdata", "local", "locallow", "roaming",
   "program", "programs", "programfiles", "files", "windows", "system32",
   "start", "menu", "desktop", "microsoft", "google", "data",
-  /** Prefixos de AUMID de apps Electron: `electron.app.Antigravity` não identifica produto nenhum. */
+  /** AUMID prefixes of Electron apps: `electron.app.Antigravity` identifies no product at all. */
   "electron", "electronapp", "shell", "launcher",
 ]);
 
 /**
- * Pistas de identidade por ordem de confiança. O EXECUTÁVEL vem primeiro: `Antigravity IDE.exe` e
- * `Antigravity.exe` são produtos diferentes que partilham prefixo, e o rótulo — editável pelo
- * utilizador — não os distingue. Só depois vem o nome visível e, por fim, o caminho.
+ * Identity clues in order of confidence. The EXECUTABLE comes first: `Antigravity IDE.exe` and
+ * `Antigravity.exe` are different products that share a prefix, and the label — editable by the
+ * user — does not tell them apart. Only then the visible name and, last, the path.
  */
 function ideIdentityTokens(appName, appCommand) {
   const tokens = [];
@@ -380,7 +380,7 @@ function ideIdentityTokens(appName, appCommand) {
 
   /** `Antigravity IDE.exe` → `antigravityide`. */
   push(executable.replace(/\.[a-z0-9]+$/i, ""));
-  /** Pasta de instalação: `...\Programs\Antigravity IDE\...`. */
+  /** Install folder: `...\Programs\Antigravity IDE\...`. */
   if (segments.length >= 2) push(segments[segments.length - 2]);
   /** AUMID: `Google.Antigravity` → `antigravity`. */
   executable.split(".").forEach(push);
@@ -395,7 +395,7 @@ function ideIdentityTokens(appName, appCommand) {
   return tokens;
 }
 
-/** Diretórios onde as apps desta família guardam o perfil. */
+/** Directories where apps of this family keep the profile. */
 function ideProfileSearchRoots() {
   return [process.env.APPDATA, process.env.LOCALAPPDATA].filter(Boolean);
 }
@@ -411,13 +411,13 @@ function readIdeProfileAt(dir, dirName) {
       mtime = Math.max(mtime, fs.statSync(file).mtimeMs);
       found = true;
     } catch (e) {
-      /* ficheiro ausente — o outro ainda pode existir */
+      /* file missing — the other one may still exist */
     }
   }
   return found ? { name: dirName, normalized: normalizeIdeToken(dirName), globalStorage, mtime } : null;
 }
 
-/** A varredura é de disco: guardada por instantes para não correr a cada abertura da roda. */
+/** The sweep hits disk: cached for moments so it does not run on every open of the wheel. */
 let ideProfileCache = { at: 0, profiles: [] };
 const IDE_PROFILE_CACHE_MS = 15000;
 
@@ -444,7 +444,7 @@ function listIdeProfiles() {
         profiles.push(profile);
         continue;
       }
-      /** Um nível abaixo cobre perfis debaixo do fabricante (`Google\Antigravity`). */
+      /** One level down covers profiles under the vendor (`Google\Antigravity`). */
       let nested = [];
       try {
         nested = fs.readdirSync(dir, { withFileTypes: true });
@@ -467,9 +467,9 @@ function listIdeProfiles() {
 }
 
 /**
- * Correspondência por grau, nunca por substring solta: `code` não pode capturar `VSCodium`, e
- * `antigravity` tem de encontrar `Antigravity IDE`. Empate resolve-se pelo perfil escrito há menos
- * tempo, que é o que o utilizador anda mesmo a usar.
+ * Match by degree, never by loose substring: `code` must not capture `VSCodium`, and `antigravity`
+ * has to find `Antigravity IDE`. A tie is settled by the most recently written profile, which is
+ * the one the user is actually using.
  */
 function scoreIdeProfile(token, profile) {
   const name = profile.normalized;
@@ -482,10 +482,10 @@ function scoreIdeProfile(token, profile) {
 }
 
 /**
- * Verdadeiro quando o token nomeia uma pasta de dados própria que NÃO é um perfil desta família.
- * É o sinal decisivo contra o espelhamento: `Antigravity.exe` (o agente) tem `%APPDATA%\Antigravity`
- * sem `globalStorage`, portanto não tem MRU nenhum — e não pode herdar o de `Antigravity IDE` só
- * porque um nome é prefixo do outro.
+ * True when the token names a data folder of its own that is NOT a profile of this family. It is
+ * the decisive signal against mirroring: `Antigravity.exe` (the agent) has `%APPDATA%\Antigravity`
+ * with no `globalStorage`, so it has no MRU at all — and it must not inherit `Antigravity IDE`'s
+ * just because one name is a prefix of the other.
  */
 function ideTokenHasOwnNonProfileDataDir(token) {
   for (const root of ideProfileSearchRoots()) {
@@ -504,30 +504,30 @@ function ideTokenHasOwnNonProfileDataDir(token) {
   return false;
 }
 
-/** `globalStorage` do IDE indicado, ou "" quando nenhum perfil corresponde. */
+/** `globalStorage` of the named IDE, or "" when no profile matches. */
 function resolveIdeGlobalStorage(appName, appCommand) {
   const tokens = ideIdentityTokens(appName, appCommand);
   if (tokens.length === 0) return "";
   const profiles = listIdeProfiles();
   if (profiles.length === 0) return "";
 
-  /** 1) Correspondência exata: um produto identificado ao milímetro nunca cede a um prefixo. */
+  /** 1) Exact match: a product identified to the millimetre never yields to a prefix. */
   for (const token of tokens) {
     const exact = profiles
       .filter((profile) => profile.normalized === token)
       .sort((a, b) => b.mtime - a.mtime)[0];
     if (exact) {
-      diagLog(`[Recents] "${appName}" → perfil "${exact.name}" (exato via "${token}")`);
+      diagLog(`[Recents] "${appName}" → profile "${exact.name}" (exact via "${token}")`);
       return exact.globalStorage;
     }
-    /** 2) O produto tem casa própria e ela não é um perfil: não há MRU para mostrar. */
+    /** 2) The product has a home of its own and it is not a profile: there is no MRU to show. */
     if (ideTokenHasOwnNonProfileDataDir(token)) {
-      diagLog(`[Recents] "${appName}" tem pasta de dados própria sem globalStorage ("${token}") — sem MRU`);
+      diagLog(`[Recents] "${appName}" has its own data folder with no globalStorage ("${token}") — no MRU`);
       return "";
     }
   }
 
-  /** 3) Só então se aceita parcial, para perfis cujo nome difere do produto. */
+  /** 3) Only then accept a partial, for profiles whose name differs from the product. */
   let best = null;
   tokens.forEach((token, tokenIndex) => {
     for (const profile of profiles) {
@@ -547,7 +547,7 @@ function resolveIdeGlobalStorage(appName, appCommand) {
   });
 
   if (!best) return "";
-  diagLog(`[Recents] "${appName}" → perfil "${best.profile.name}" (parcial ${best.score})`);
+  diagLog(`[Recents] "${appName}" → profile "${best.profile.name}" (partial ${best.score})`);
   return best.profile.globalStorage;
 }
 
@@ -586,10 +586,10 @@ async function loadRecentlyOpenedPathsFromVscdb(vscdbPath) {
 diagLog("Rovyl Main Process Started");
 
 /**
- * Ctrl+C no terminal envia SIGINT ao processo Node/Electron. Sem este handler, o processo
- * termina abruptamente sem acionar `before-quit`, pelo que o flush síncrono do renderer
- * nunca acontece e as últimas alterações perdem-se. Redirecionar SIGINT para `app.quit()`
- * permite que o fluxo normal de fecho (before-quit → renderer flush → exit) ocorra.
+ * Ctrl+C in the terminal sends SIGINT to the Node/Electron process. Without this handler the
+ * process ends abruptly without firing `before-quit`, so the renderer's synchronous flush never
+ * happens and the last changes are lost. Routing SIGINT through `app.quit()` lets the normal
+ * shutdown flow (before-quit → renderer flush → exit) run.
  */
 process.on("SIGINT", () => {
   diagLog("[Signal] SIGINT received — routing through app.quit() for clean persistence flush");
@@ -622,10 +622,10 @@ function sumQuarantinedConfigBytes(userDataDir) {
 /** Declared before single-instance lock so `second-instance` can safely reference it. */
 let mainWindow;
 
-// Chromium: evitar afetar a pilha GPU/DWM de todo o Windows (Edge, Zen Browser, etc. a “carregar para sempre”).
-// O bloco antigo (ignore-gpu-blocklist, etc.) podia degradar drivers partilhados. Só ativar com ZENITH_AGGRESSIVE_GPU=1.
+// Chromium: avoid touching the GPU/DWM stack of the whole of Windows (Edge, Zen Browser, etc. “loading forever”).
+// The old block (ignore-gpu-blocklist, etc.) could degrade shared drivers. Only enable with ZENITH_AGGRESSIVE_GPU=1.
 if (process.env.ZENITH_AGGRESSIVE_GPU === "1") {
-  diagLog("[GPU] ZENITH_AGGRESSIVE_GPU=1 — switches Chromium legados ativos.");
+  diagLog("[GPU] ZENITH_AGGRESSIVE_GPU=1 — legacy Chromium switches on.");
   app.commandLine.appendSwitch("disable-gpu-cache");
   app.commandLine.appendSwitch("no-sandbox");
   app.commandLine.appendSwitch("enable-zero-copy-dxgi-video");
@@ -642,7 +642,7 @@ if (process.env.ZENITH_AGGRESSIVE_GPU === "1") {
   app.commandLine.appendSwitch("ignore-gpu-blocklist");
 } else {
   diagLog(
-    "[GPU] Modo seguro: sem flags agressivas. Se o radial ficar estranho, experimente ZENITH_AGGRESSIVE_GPU=1 em .env.local",
+    "[GPU] Safe mode: no aggressive flags. If the radial looks off, try ZENITH_AGGRESSIVE_GPU=1 in .env.local",
   );
 }
 
@@ -650,17 +650,17 @@ if (process.env.ZENITH_AGGRESSIVE_GPU === "1") {
  * Chromium throttles occluded/background renderers aggressively on Windows.
  * The transparent radial HUD must keep requestAnimationFrame + drag at full rate.
  *
- * `CalculateNativeWinOcclusion` é o ponto crítico e vale TAMBÉM em dev: numa janela layered
- * transparente que é escondida/mostrada/redimensionada a cada gesto, o Chromium marca-a como
- * ocluída, descarta os frames e o `show()` seguinte apresenta a textura antiga (dashboard/ilha)
- * ou um frame preto. Isto reproduz-se em QUALQUER ação (abrir, fechar, restaurar), não só na
- * abertura — era por isso que os handshakes de cobertura não chegavam.
- * A deteção nativa continua desativada para evitar a textura antiga, mas o throttling
- * global de timers NÃO: `webContents.setBackgroundThrottling(false/true)` já o alterna
- * nos pontos de mostrar/esconder, permitindo que a app durma quando está na bandeja.
+ * `CalculateNativeWinOcclusion` is the critical one and it counts in dev TOO: on a transparent
+ * layered window that is hidden/shown/resized on every gesture, Chromium marks it occluded, drops
+ * the frames, and the next `show()` presents the old texture (dashboard/island) or a black frame.
+ * This reproduces on ANY action (open, close, restore), not only on opening — that is why the
+ * coverage handshakes were not enough.
+ * Native detection stays off to avoid the stale texture, but the global timer throttling does NOT:
+ * `webContents.setBackgroundThrottling(false/true)` already toggles it at the show/hide points,
+ * letting the app sleep while it sits in the tray.
  */
 if (process.env.ZENITH_AGGRESSIVE_GPU !== "1") {
-  /** No modo agressivo o `disable-features` já inclui estas (appendSwitch repetido substitui a lista). */
+  /** In aggressive mode `disable-features` already includes these (a repeated appendSwitch replaces the list). */
   app.commandLine.appendSwitch(
     "disable-features",
     "CalculateNativeWinOcclusion,WindowOcclusionPrediction",
@@ -741,12 +741,12 @@ function extractUiConfigFromPersistenceBlob(blob) {
 
 // Window Management Persistence — compact desktop panel, not a full-screen dashboard.
 /**
- * 720×540 deixava ~430px de conteúdo depois da navegação e do padding: as Settings
- * pareciam miniaturas dentro de um rect grande. 880×600 dá uma coluna de conteúdo de
- * ~565px (236px de navegação + padding) — a largura para que a escala tipográfica
- * (13px label / 11.5px descrição) foi desenhada — sem virar dashboard.
- * Continua a caber a 175% de escala do Windows em 1080p
- * graças ao clamp de `windowedBoundsForWorkArea`.
+ * 720×540 left ~430px of content after the navigation and the padding: Settings looked like
+ * thumbnails inside a big rect. 880×600 gives a content column of ~565px (236px of navigation +
+ * padding) — the width the type scale (13px label / 11.5px description) was drawn for — without
+ * turning into a dashboard.
+ * It still fits at 175% Windows scaling on 1080p
+ * thanks to the clamp in `windowedBoundsForWorkArea`.
  */
 const DEFAULT_WINDOWED_WIDTH = 880;
 const DEFAULT_WINDOWED_HEIGHT = 600;
@@ -758,14 +758,15 @@ let lastWindowedBounds = {
 };
 let isUpdatingBounds = false;
 
-/** Ilha (modo `small` + hit-shape) encolhe o HWND — não gravar isso como "janela normal" ou o dashboard abre num rect minúsculo. */
+/** The island (`small` mode + hit-shape) shrinks the HWND — do not save that as "normal window" or the dashboard opens in a tiny rect. */
 const MIN_REASONABLE_WINDOWED_W = 480;
 const MIN_REASONABLE_WINDOWED_H = 360;
 
 /**
- * Rect windowed por omissão, centrado e sempre dentro da área de trabalho.
- * `workArea` já vem em DIPs, por isso isto cobre 100/125/150/175% de escala do Windows:
- * a 175% em 1080p a área útil ronda 1097×583 DIPs e o rect encolhe em vez de sair do ecrã.
+ * Default windowed rect, centred and always inside the work area.
+ * `workArea` already comes in DIPs, so this covers 100/125/150/175% Windows scaling:
+ * at 175% on 1080p the usable area is around 1097×583 DIPs and the rect shrinks instead of
+ * running off the screen.
  */
 function windowedBoundsForWorkArea() {
   try {
@@ -812,12 +813,12 @@ let windowBuriedPassive = false;
 /** Last mode passed to updateWindowSize — used to fix hit-testing after minimize/restore without renderer IPC. */
 let nativeWindowSizeMode = "windowed";
 
-/** Sync with `set-window-hit-shape`: "__empty__" ou "" = rato reencaminhado; outro = regiões HUD. */
+/** Sync with `set-window-hit-shape`: "__empty__" or "" = mouse passed through; anything else = HUD regions. */
 let lastWindowHitShapeKey = "";
 
 /**
- * `updateWindowSize` não pode aplicar `setBounds` com a janela minimizada; guardamos o último pedido
- * e aplicamos no `restore` para a ilha/`small` voltarem a sincronizar com o HWND.
+ * `updateWindowSize` cannot apply `setBounds` while the window is minimized; we keep the last
+ * request and apply it on `restore` so the island/`small` sync back up with the HWND.
  */
 let pendingWindowSize = null;
 
@@ -835,8 +836,8 @@ function flushPendingWindowSizeIfNeeded() {
 }
 
 /**
- * `show-window` e restauros de foco não podem forçar `setIgnoreMouseEvents(false)` em modo `small`:
- * isso fazia o overlay a tamanho do monitor capturar o rato (invisível).
+ * `show-window` and focus restores must not force `setIgnoreMouseEvents(false)` in `small` mode:
+ * that made the monitor-sized overlay capture the mouse (invisibly).
  */
 function applyMousePolicyAfterReveal(win) {
   const w = win || mainWindow;
@@ -864,24 +865,24 @@ function applyMousePolicyAfterReveal(win) {
 /** When true, allow BrowserWindow to close (real quit). Otherwise close → hide to tray. */
 let isAppQuitting = false;
 /**
- * Parar o gatilho no fecho — e é um requisito de ATUALIZAÇÃO, não de higiene.
+ * Stop the trigger on shutdown — and this is an UPDATE requirement, not hygiene.
  *
- * O processo PowerShell do gatilho vive dentro da pasta de instalação. Se sobreviver ao fecho da
- * app, mantém um handle aberto sobre `mouse-blocker.ps1`, o instalador NSIS não consegue substituir
- * os ficheiros, e a atualização falha em silêncio: no arranque seguinte a app encontra a mesma
- * versão nova e volta a propô-la. Para sempre.
+ * The trigger's PowerShell process lives inside the install folder. If it survives the app closing,
+ * it keeps a handle open on `mouse-blocker.ps1`, the NSIS installer cannot replace the files, and
+ * the update fails silently: on the next startup the app finds the same new version and offers it
+ * again. Forever.
  *
- * A função vive dentro de `app.whenReady`; esta referência é como o `will-quit` lhe chega.
+ * The function lives inside `app.whenReady`; this reference is how `will-quit` reaches it.
  */
 let stopMouseHookForShutdown = () => {};
 
 let updateInstallInProgress = false;
-/** Ensures renderer runs saveFullConfigSync before exit (tray "Sair" / OS shutdown paths). */
+/** Ensures renderer runs saveFullConfigSync before exit (tray "Quit" / OS shutdown paths). */
 let zenithQuitFlushStarted = false;
 /**
- * Definido como `true` imediatamente antes de chamar `app.exit(0)` no handler de importação.
- * Impede que o `before-quit` envie `zenith-before-quit-flush` ao renderer — que ainda tem
- * o estado ANTERIOR à importação em memória e sobrescreveria o backup recém-gravado no disco.
+ * Set to `true` immediately before calling `app.exit(0)` in the import handler. It stops
+ * `before-quit` from sending `zenith-before-quit-flush` to the renderer — which still holds the
+ * PRE-import state in memory and would overwrite the backup just written to disk.
  */
 let skipQuitFlushForImport = false;
 
@@ -898,7 +899,7 @@ app.on("before-quit", (event) => {
   if (!w || w.isDestroyed()) {
     return;
   }
-  // Importação: o backup já está no disco — não deixar o renderer sobrescrevê-lo com estado antigo.
+  // Import: the backup is already on disk — do not let the renderer overwrite it with old state.
   if (skipQuitFlushForImport) {
     diagLog("[Quit] Skipping renderer flush — import in progress, backup on disk is authoritative");
     return;
@@ -1011,9 +1012,9 @@ function stopShortcutRecording() {
 }
 
 async function createWindow() {
-  /** Centrado e clampado à área útil — nunca maior que o ecrã em escalas altas do Windows. */
+  /** Centred and clamped to the work area — never larger than the screen at high Windows scaling. */
   const initialBounds = windowedBoundsForWorkArea();
-  /** `updateWindowSize('windowed')` pode correr antes do primeiro evento `resize`: alinhar já. */
+  /** `updateWindowSize('windowed')` can run before the first `resize` event: line them up now. */
   lastWindowedBounds = { ...initialBounds };
   const newWindow = new BrowserWindow({
     width: initialBounds.width,
@@ -1085,7 +1086,7 @@ async function createWindow() {
       }, 200);
     });
 
-    // Track bounds for persistence — só em modo `windowed` (fullscreen/small usam bounds especiais; small+ilha não deve sobrescrever o último tamanho real).
+    // Track bounds for persistence — only in `windowed` mode (fullscreen/small use special bounds; small+island must not overwrite the last real size).
     newWindow.on("resize", () => {
       if (
         nativeWindowSizeMode === "windowed" &&
@@ -1136,7 +1137,7 @@ function attachWindowUserRestoreGuards(window) {
 
   const onRestore = () => {
     if (!window || window.isDestroyed()) return;
-    /** Restaurar da bandeja/minimização com o renderer ainda throttled expõe a textura antiga. */
+    /** Restoring from tray/minimize with the renderer still throttled exposes the stale texture. */
     try {
       if (typeof window.webContents?.setBackgroundThrottling === "function") {
         window.webContents.setBackgroundThrottling(false);
@@ -1154,9 +1155,9 @@ function attachWindowUserRestoreGuards(window) {
         return;
       }
       /**
-       * Minimize→atalho radial: `updateWindowSize('fullscreen')` só encola em `pendingWindowSize`.
-       * O handler seguinte faz flush em `setImmediate`; se enviarmos `window-native-display-restored` antes,
-       * o renderer aplica `setWindowSize('windowed')` com modo nativo ainda obsoleto e o menu fica no rect do painel.
+       * Minimize→radial shortcut: `updateWindowSize('fullscreen')` only parks in `pendingWindowSize`.
+       * The next handler flushes it in `setImmediate`; if we send `window-native-display-restored` first,
+       * the renderer applies `setWindowSize('windowed')` with the native mode still stale and the menu stays in the panel's rect.
        */
       flushPendingWindowSizeIfNeeded();
       if (
@@ -1166,7 +1167,7 @@ function attachWindowUserRestoreGuards(window) {
       ) {
         window.setOpacity(1);
         window.setIgnoreMouseEvents(false);
-        /** Apenas o painel windowed visível representa Settings na barra de tarefas. */
+        /** Only the visible windowed panel stands for Settings in the taskbar. */
         window.setSkipTaskbar(
           nativeWindowSizeMode !== "windowed" || !rendererPanelVisible,
         );
@@ -1186,10 +1187,10 @@ function attachWindowUserRestoreGuards(window) {
 }
 
 function setupMainWindow(window) {
-  // Nível máximo de sobreposição
+  // Highest overlay level
   window.setAlwaysOnTop(true, "screen-saver", 1);
 
-  // Enviar eventos de janelamento para o React
+  // Send windowing events to React
   window.on("maximize", () =>
     window.webContents.send("window-state", "maximized"),
   );
@@ -1253,7 +1254,7 @@ function setupMainWindow(window) {
 
   attachWindowUserRestoreGuards(window);
 
-  /** Sincroniza ilha/painel no renderer: minimizado ≠ painel “visível” (React mantém dashboard aberto). */
+  /** Syncs island/panel in the renderer: minimized ≠ panel “visible” (React keeps the dashboard open). */
   const sendMainWindowMinimizedState = () => {
     if (window.isDestroyed() || !window.webContents || window.webContents.isDestroyed()) return;
     try {
@@ -1268,7 +1269,7 @@ function setupMainWindow(window) {
   window.on("restore", () => {
     if (window.isDestroyed() || !window.webContents || window.webContents.isDestroyed()) return;
     const win = window;
-    /** Deixa o renderer processar `open-dashboard` / IPC antes de aplicar o pending (bandeja → windowed). */
+    /** Lets the renderer process `open-dashboard` / IPC before applying the pending one (tray → windowed). */
     setImmediate(() => {
       try {
         if (win.isDestroyed()) return;
@@ -1285,23 +1286,23 @@ function setupMainWindow(window) {
 
 let radialOpenPaintSequence = 0;
 
-/* zenith-verify:radial-handshake-main — prepare → radial-prep-paint-done → open-menu → radial-open-paint-done → show; ver scripts/verify-radial-windowing.mjs */
+/* zenith-verify:radial-handshake-main — prepare → radial-prep-paint-done → open-menu → radial-open-paint-done → show; see scripts/verify-radial-windowing.mjs */
 function showMenuAtCursor(source = "shortcut") {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   const radialOpenStartedAt = Date.now();
 
-  /** Posição fixa significa fixa de verdade: nem a posição nem o monitor seguem o cursor. */
+  /** A fixed position means truly fixed: neither the position nor the monitor follows the cursor. */
   const targetDisplay = screen.getPrimaryDisplay();
   let radialCenter = {
     x: Math.round(targetDisplay.bounds.x + targetDisplay.bounds.width / 2),
     y: Math.round(targetDisplay.bounds.y + targetDisplay.bounds.height / 2),
   };
   /**
-   * Se o centro real do monitor cabe dentro do HWND do Settings, mantemos o HWND completamente
-   * imóvel (sem flash DWM) e desenhamos a roda naquele ponto em coordenadas de cliente. Antes este
-   * caminho substituía `radialCenter` pelo centro DO SETTINGS — (906,345) no vídeo — e parecia
-   * seguir o cursor. Se o painel estiver noutro monitor/fora do centro, usa-se o caminho seguro de
-   * hide+resize abaixo para honrar o centro do monitor principal.
+   * If the monitor's real centre falls inside the Settings HWND, we keep the HWND completely still
+   * (no DWM flash) and draw the wheel at that point in client coordinates. This path used to
+   * replace `radialCenter` with SETTINGS' centre — (906,345) in the video — and looked like it was
+   * following the cursor. If the panel is on another monitor / off centre, the safe hide+resize
+   * path below is used to honour the primary monitor's centre.
    */
   let keepExistingPanelWindow = false;
   if (
@@ -1330,10 +1331,10 @@ function showMenuAtCursor(source = "shortcut") {
   }
 
   /**
-   * Definir isto ANTES de qualquer resize, `open-menu` ou `show-window`. Se esperarmos pelo
-   * `reveal`, o renderer pode pedir `show()` primeiro e o Windows cria por um instante um botão
-   * do radial na barra de tarefas. Quando Settings permanece por baixo do radial, preservamos o
-   * botão existente porque ele continua a representar o painel visível, não o modal radial.
+   * Set this BEFORE any resize, `open-menu` or `show-window`. If we wait for the `reveal`, the
+   * renderer can ask for `show()` first and Windows briefly creates a taskbar button for the
+   * radial. When Settings stays underneath the radial we preserve the existing button, because it
+   * still stands for the visible panel, not the radial modal.
    */
   if (!rendererPanelVisible) {
     clearSkipTaskbarHideTimer();
@@ -1345,8 +1346,8 @@ function showMenuAtCursor(source = "shortcut") {
   }
 
   /**
-   * O estado lógico pode ficar um IPC atrás da geometria (Settings→radial→Settings→fechar).
-   * Se o renderer já confirmou que não há painel, nenhuma flag de união pode sobreviver.
+   * The logical state can lag the geometry by one IPC (Settings→radial→Settings→close).
+   * Once the renderer has confirmed there is no panel, no union flag may survive.
    */
   if (!rendererPanelVisible) {
     panelOverlayActive = false;
@@ -1354,10 +1355,10 @@ function showMenuAtCursor(source = "shortcut") {
   }
 
   /**
-   * Qualquer transição geométrica → radial muda os bounds nativos. Se o HWND continuar visível,
-   * o DWM estica por um frame a última textura do Settings (ou a textura que acabou de fechar),
-   * causando o flash. Guardamos antes que o painel estava realmente visível e retiramos a
-   * superfície do compositor antes do resize; o handshake volta a mostrá-la já pintada.
+   * Any geometric transition → radial changes the native bounds. If the HWND stays visible, the DWM
+   * stretches Settings' last texture (or the texture that just closed) for one frame, which is the
+   * flash. We record first that the panel really was visible and pull the surface out of the
+   * compositor before the resize; the handshake shows it again once it is painted.
    */
   let nativeResizeRisk = false;
   if (!wasMinimized && !keepExistingPanelWindow) {
@@ -1389,12 +1390,12 @@ function showMenuAtCursor(source = "shortcut") {
   updateWindowSize("fullscreen", radialCenter);
 
   /**
-   * Estacionar o ponteiro ANTES do `open-menu`: a primeira amostra que o renderer usar já tem de
-   * ser a do centro, senão o gesto nasce a apontar para onde a mão por acaso estava.
+   * Park the pointer BEFORE `open-menu`: the first sample the renderer uses has to be the centre
+   * one already, or the gesture is born pointing wherever the hand happened to be.
    *
-   * MMB em modo segurar fica de fora — esse gesto executa ao largar e a mira dele vem da sondagem
-   * do main, que arranca no ponto onde o botão foi premido. Mover o cursor por baixo dele seria
-   * confirmar uma fatia que ninguém escolheu.
+   * MMB in hold mode is left out — that gesture executes on release and its aim comes from the
+   * main-process polling, which starts at the point where the button was pressed. Moving the cursor
+   * under it would confirm a slice nobody chose.
    */
   if (source !== "mmb") captureRadialCursor(radialCenter);
 
@@ -1402,9 +1403,9 @@ function showMenuAtCursor(source = "shortcut") {
   // without a fresh web frame (user sees through / "nothing", while hit-testing still works).
 
   /**
-   * `hide-window` / `collapse-idle-overlay` / `reapply-small-overlay` deixam o renderer throttled.
-   * Se abrirmos pelo caminho rápido sem o acordar, o `show()` chega antes do primeiro frame novo
-   * e o DWM apresenta a textura anterior (ilha/dashboard) ou preto. Acordar em TODOS os caminhos.
+   * `hide-window` / `collapse-idle-overlay` / `reapply-small-overlay` leave the renderer throttled.
+   * If we open through the fast path without waking it, the `show()` arrives before the first new
+   * frame and the DWM presents the previous texture (island/dashboard) or black. Wake on ALL paths.
    */
   try {
     if (typeof mainWindow.webContents?.setBackgroundThrottling === "function") {
@@ -1422,10 +1423,10 @@ function showMenuAtCursor(source = "shortcut") {
     let radialClientSize = null;
     try {
       /**
-       * Minimizada, `updateWindowSize` só enfileira fullscreen; `getBounds()` ainda devolve o
-       * Settings na posição em que foi minimizado. Usar esse rect gerava (440,300) e prendia a
-       * primeira roda ao antigo centro do painel. O rect radial é determinístico, portanto o
-       * payload pode — e deve — antecipar a geometria que será aplicada no restore.
+       * While minimized, `updateWindowSize` only queues fullscreen; `getBounds()` still returns
+       * Settings at the position it was minimized from. Using that rect produced (440,300) and
+       * pinned the first wheel to the panel's old centre. The radial rect is deterministic, so the
+       * payload can — and should — anticipate the geometry that will be applied on restore.
        */
       const bounds = wasMinimized
         ? radialModeBounds(targetDisplay.bounds, radialCenter)
@@ -1455,10 +1456,10 @@ function showMenuAtCursor(source = "shortcut") {
         if (!mainWindow || mainWindow.isDestroyed()) return;
 
         /**
-         * Radial por cima do painel sem resize: a janela JÁ está visível, no sítio certo e na
-         * barra de tarefas. Repetir `show`/`setSkipTaskbar`/`setVisibleOnAllWorkspaces` aqui só
-         * força recomposição do HWND — e cada recomposição de uma janela layered é um risco de
-         * flash. Neste caminho só é preciso pô-la à frente.
+         * Radial on top of the panel with no resize: the window is ALREADY visible, in the right
+         * place and in the taskbar. Repeating `show`/`setSkipTaskbar`/`setVisibleOnAllWorkspaces`
+         * here only forces the HWND to recompose — and every recomposition of a layered window is
+         * a flash risk. On this path it just needs to be brought to the front.
          */
         if (panelOverlayKeptWindow) {
           windowBuriedPassive = false;
@@ -1472,15 +1473,15 @@ function showMenuAtCursor(source = "shortcut") {
         }
 
         /**
-         * Fechar Settings dispara a recolha assíncrona para `small`. O atalho global pode chegar
-         * enquanto esse IPC ainda está na fila: nesse caso ele sobrescrevia o primeiro resize do
-         * radial e o HWND era revelado no rect antigo/canto do monitor. O reveal é a barreira final
-         * da abertura; reaplicar fullscreen aqui garante que nenhum resize obsoleto do fechamento
-         * seja o último comando geométrico antes de `show()`.
+         * Closing Settings fires the async collapse to `small`. The global shortcut can arrive
+         * while that IPC is still queued: it then overwrote the radial's first resize and the HWND
+         * was revealed in the old rect / monitor corner. The reveal is the opening's final barrier;
+         * reapplying fullscreen here guarantees no stale resize from the close is the last
+         * geometric command before `show()`.
          */
         updateWindowSize("fullscreen", radialCenter);
 
-        /** Defesa final: só um Settings ainda visível por baixo do radial conserva o botão. */
+        /** Final defence: only a Settings still visible under the radial keeps the button. */
         mainWindow.setSkipTaskbar(!rendererPanelVisible);
 
         windowBuriedPassive = false;
@@ -1489,8 +1490,8 @@ function showMenuAtCursor(source = "shortcut") {
         if (!mainWindow.isVisible()) mainWindow.showInactive();
         if (typeof paintToken === "number") {
           /**
-           * O renderer preparou o radial com alfa zero. Liberar o bloom somente depois de `show()`
-           * garante que o primeiro frame entregue ao DWM seja transparente, nunca meia animação.
+           * The renderer prepared the radial at zero alpha. Releasing the bloom only after `show()`
+           * guarantees the first frame handed to the DWM is transparent, never half an animation.
            */
           const releaseAnimationTimer = setTimeout(() => {
             if (!mainWindow || mainWindow.isDestroyed()) return;
@@ -1519,8 +1520,8 @@ function showMenuAtCursor(source = "shortcut") {
         }
 
         /**
-         * O handshake já esperou dois paints completos. Invalidar depois de `show()` fazia o DWM
-         * reapresentar a textura vazia/antiga, percebida como clarão nas primeiras aberturas.
+         * The handshake already waited for two full paints. Invalidating after `show()` made the
+         * DWM re-present the empty/old texture, seen as a flash on the first few opens.
          */
       });
     };
@@ -1537,27 +1538,27 @@ function showMenuAtCursor(source = "shortcut") {
     }
 
     mainWindow.webContents.send("open-menu", {
-      /** Centro real do monitor; nunca usar estas coordenadas como posição livre do cursor. */
+      /** The monitor's real centre; never use these coordinates as a free cursor position. */
       x: radialCenter.x,
       y: radialCenter.y,
       source: source,
-      /** Main já chamou `updateWindowSize('fullscreen')` (exceto minimizado: bounds em fila). */
+      /** Main already called `updateWindowSize('fullscreen')` (except minimized: bounds queued). */
       preSizedByMain: !wasMinimized,
-      /** O painel continua no ecrã por baixo do radial — o renderer não o pode fechar. */
+      /** The panel is still on screen under the radial — the renderer must not close it. */
       keepPanel: panelOverlayActive,
       /**
-       * Rect de ecrã do painel, SEMPRE que ele fica por baixo do radial.
+       * The panel's screen rect, WHENEVER it sits under the radial.
        *
-       * Antes só era enviado quando a janela tinha sido alargada, partindo do princípio de que no
-       * outro caminho ela ficava do tamanho do painel. Mas a janela do radial é uma caixa quadrada
-       * (988×988 com os valores típicos) e o painel é 880×600: sem rect, ele é desenhado a
-       * `inset-0` e cresce com a janela — as Definições ficavam maiores do que são.
+       * It used to be sent only when the window had been widened, on the assumption that on the
+       * other path it stayed panel-sized. But the radial window is a square box (988×988 with the
+       * typical values) and the panel is 880×600: with no rect it is drawn at `inset-0` and grows
+       * with the window — Settings came out bigger than it is.
        *
-       * Mandá-lo sempre remove a ambiguidade: no caminho sem resize o rect coincide com os bounds
-       * da janela, portanto posicionar dá exatamente o mesmo resultado que `inset-0`.
+       * Always sending it removes the ambiguity: on the no-resize path the rect coincides with the
+       * window bounds, so positioning gives exactly the same result as `inset-0`.
        */
       panelRect: panelOverlayActive ? { ...lastWindowedBounds } : null,
-      /** Não depender de window.screenX/Y no primeiro tick após setBounds: ainda podem ser os do Settings. */
+      /** Do not rely on window.screenX/Y on the first tick after setBounds: they can still be Settings'. */
       clientPosition: radialClientPosition,
       windowOrigin: radialWindowOrigin,
       clientSize: radialClientSize,
@@ -1581,8 +1582,9 @@ function showMenuAtCursor(source = "shortcut") {
   }
 
   /**
-   * Caminho rápido: janela já visível e não minimizada — handshake prepare-radial custa ~2 rAF + IPC
-   * e parece “lag” ao abrir. O prep mantém-se só quando minimizado ou HWND oculto (bandeja / flash DWM).
+   * Fast path: window already visible and not minimized — the prepare-radial handshake costs ~2 rAF
+   * + IPC and reads as “lag” on open. The prep stays only when minimized or the HWND is hidden
+   * (tray / DWM flash).
    */
   if (!wasMinimized && visibleOk) {
     setImmediate(sendOpenMenuAndReveal);
@@ -1590,9 +1592,9 @@ function showMenuAtCursor(source = "shortcut") {
   }
 
   /**
-   * A janela ociosa fica oculta e throttled. Acordamos o renderer, mas mantemos o HWND escondido:
-   * `showInactive()` aqui expunha exatamente a textura antiga de Settings que o handshake pretende
-   * substituir. Com background throttling desligado, os rAF de preparação continuam a ser pintados.
+   * The idle window is hidden and throttled. We wake the renderer but keep the HWND hidden:
+   * `showInactive()` here exposed exactly the stale Settings texture the handshake exists to
+   * replace. With background throttling off, the preparation rAFs keep being painted.
    */
   try {
     if (typeof wc.setBackgroundThrottling === "function") {
@@ -1603,9 +1605,9 @@ function showMenuAtCursor(source = "shortcut") {
   }
 
   /**
-   * Repouso normal: o HWND está oculto, mas não minimizado. O próprio `open-menu` monta todas as
-   * camadas em alfa zero e confirma o paint, logo o handshake neutro anterior era redundante e
-   * somava até 72 ms antes de sequer montar a roda. Minimização mantém a preparação especial.
+   * Normal idle: the HWND is hidden but not minimized. `open-menu` itself mounts every layer at
+   * zero alpha and acknowledges the paint, so the earlier neutral handshake was redundant and added
+   * up to 72 ms before the wheel was even mounted. Minimization keeps the special preparation.
    */
   if (!wasMinimized) {
     sendOpenMenuAndReveal(true);
@@ -1613,7 +1615,7 @@ function showMenuAtCursor(source = "shortcut") {
   }
 
   /**
-   * Frame neutro antes de `open-menu` + `show` — sobretudo restore da minimização / HWND escondido.
+   * Neutral frame before `open-menu` + `show` — mostly restore from minimize / hidden HWND.
    */
   const prepTimeoutMs = wasMinimized ? 200 : 72;
   const prepPromise = new Promise((resolve) => {
@@ -1634,30 +1636,29 @@ function showMenuAtCursor(source = "shortcut") {
 }
 
 /**
- * Em `small` não há nada para desenhar, mas o HWND NÃO é escondido nem encolhido: `smallModeBounds`
- * mantém-no nos bounds do radial (988×988, centrado) e visível — ver "Repouso estável" mais abaixo,
- * que troca isso por não precisar de hide/show nem resize ao abrir. Este comentário descrevia o
- * comportamento antigo e ficou a mentir durante várias investigações de lag; a redação anterior era
- * "o HWND encolhe ao canto e é escondido".
+ * In `small` there is nothing to draw, but the HWND is NOT hidden or shrunk: `smallModeBounds`
+ * keeps it at the radial's bounds (988×988, centred) and visible — see "Stable idle" further down,
+ * which trades that for not needing hide/show or a resize on open. This comment described the old
+ * behaviour and went on lying through several lag investigations; the previous wording was "the
+ * HWND shrinks into the corner and is hidden".
  *
- * O risco que o texto antigo descrevia é real mas é de COMPOSIÇÃO (DWM/MPO), não de input: uma
- * janela layered topmost ao tamanho do monitor fá-la compor em cada frame. Medido nesta máquina, a
- * caixa de 988×988 em repouso não move a agulha do `dwm` (4,5% -> 4,3%, dentro do ruído). Se algum
- * dia se quiser mesmo eliminá-la, estacionar os bounds fora do desktop visível preserva a
- * superfície quente; esconder reintroduz o flash de textura obsoleta que o handshake de abertura
- * existe para evitar.
+ * The risk the old text described is real but it is a COMPOSITION one (DWM/MPO), not input: a
+ * topmost layered window the size of the monitor makes it compose on every frame. Measured on this
+ * machine, the 988×988 box at idle does not move the `dwm` needle (4.5% -> 4.3%, inside the noise).
+ * If it ever really has to go, parking the bounds outside the visible desktop preserves the warm
+ * surface; hiding reintroduces the stale-texture flash the opening handshake exists to avoid.
  *
- * Existia aqui uma flag `overlayHudActive` para o caso de haver um HUD (faixa de Pomodoro/Cronómetro).
- * Além de os widgets já não existirem, a flag causava um artefacto: ao FECHAR o radial, o renderer
- * chamava `setWindowSize('small')` de forma síncrona, antes do commit React que a punha a false. O main
- * ainda a via `true`, expandia o HWND ao monitor inteiro (origem = borda ESQUERDA) com a janela visível,
- * e via-se o radial a saltar para a esquerda antes de desaparecer.
+ * There used to be an `overlayHudActive` flag here for the case of a HUD (Pomodoro/Stopwatch strip).
+ * Beyond the widgets no longer existing, the flag caused an artifact: on CLOSING the radial, the
+ * renderer called `setWindowSize('small')` synchronously, before the React commit that set it false.
+ * Main still saw `true`, expanded the HWND to the whole monitor (origin = LEFT edge) with the window
+ * visible, and the radial was seen jumping left before disappearing.
  */
 /**
- * Radial aberto: caixa quadrada à volta do menu em vez do monitor inteiro — menos área layered para o DWM.
- * `size` vem do renderer (raio + ícone + rótulo + margem de gesto); o fallback cobre a config padrão.
- * A margem importa: o ângulo e o clique de seleção são lidos de eventos de rato da JANELA, por isso a caixa
- * tem de ser bem maior que o círculo, senão um gesto largo sai da janela e a seleção não confirma.
+ * Radial open: a square box around the menu instead of the whole monitor — less layered area for the DWM.
+ * `size` comes from the renderer (radius + icon + label + gesture margin); the fallback covers the default config.
+ * The margin matters: the angle and the selection click are read from WINDOW mouse events, so the box
+ * has to be well bigger than the circle, or a wide gesture leaves the window and the selection never confirms.
  */
 let radialViewportSize = 988;
 ipcMain.on("set-radial-viewport", (_event, payload) => {
@@ -1669,21 +1670,21 @@ ipcMain.on("set-radial-viewport", (_event, payload) => {
 });
 
 /**
- * Uma janela transparente do tamanho do monitor faz o Windows marcar vídeos/apps por baixo como
- * ocultos e reduzir a renderização. Este hook fica dormente fora do radial e, durante o modal,
- * consome apenas cliques/scroll fora da caixa visual da nossa BrowserWindow.
+ * A transparent window the size of the monitor makes Windows mark videos/apps underneath as hidden
+ * and cut back their rendering. This hook lies dormant outside the radial and, during the modal,
+ * eats only clicks/scroll outside our BrowserWindow's visual box.
  */
 let radialMouseBlocker = null;
 let radialMouseBlockerReady = false;
 let pendingRadialMouseBlockCommand = null;
 /**
- * Quem recebe TRIGGER_DOWN/TRIGGER_UP. O botao de disparo passou a ser capturado pelo hook do
- * bloqueador em vez de sondado por GetAsyncKeyState: engolir o evento e continuar a deteta-lo
- * por sondagem e impossivel, porque um hook que devolve 1 esconde o botao do GetAsyncKeyState.
+ * Who receives TRIGGER_DOWN/TRIGGER_UP. The trigger button is now captured by the blocker's hook
+ * instead of polled with GetAsyncKeyState: swallowing the event and still detecting it by polling
+ * is impossible, because a hook that returns 1 hides the button from GetAsyncKeyState.
  */
 let radialTriggerListener = null;
 
-/** Folga de arrasto: abaixo disto a pressao foi um clique, nao uma mira. */
+/** Drag slop: below this the press was a click, not an aim. */
 const TRIGGER_PASSTHROUGH_SLOP_PX = 6;
 
 function radialMouseBlockerAssetPath() {
@@ -1698,25 +1699,26 @@ function writeRadialMouseBlocker(command) {
     radialMouseBlocker.stdin.write(`${command}\n`);
     pendingRadialMouseBlockCommand = null;
   } catch (e) {
-    diagLog(`[RadialBlocker] comando falhou: ${e.message}`);
+    diagLog(`[RadialBlocker] command failed: ${e.message}`);
   }
 }
 
 /**
- * Ranhura propria para os `WARP`.
+ * A slot of its own for the `WARP`s.
  *
- * `pendingRadialMouseBlockCommand` guarda UM comando, e o primeiro radial de uma sessao manda o
- * `BLOCK` enquanto o PowerShell ainda arranca: um warp a partilhar a ranhura apagava-o e o
- * bloqueio de cliques fora da roda desaparecia nessa abertura. Aqui o ultimo warp ganhar e
- * correto por natureza — estacionar e depois devolver ao sitio so interessa pelo destino final.
+ * `pendingRadialMouseBlockCommand` holds ONE command, and a session's first radial sends the
+ * `BLOCK` while PowerShell is still starting: a warp sharing the slot erased it and the blocking of
+ * clicks outside the wheel vanished for that open. Here the last warp winning is correct by nature
+ * — parking and then putting it back only matters for the final destination.
  */
 let pendingRadialCursorCommand = null;
 
 /**
- * NAO chama `ensureRadialMouseBlocker`: o helper ja esta de pe sempre que isto importa, porque
- * `updateWindowSize("fullscreen")` o arranca antes de a roda existir. Se ele morreu, ou estamos a
- * sair, ressuscita-lo aqui deixava um PowerShell orfao — que e exatamente o que impede o
- * instalador de substituir a pasta. Sem processo, o comando fica na ranhura e sai no proximo READY.
+ * Does NOT call `ensureRadialMouseBlocker`: the helper is already up whenever this matters, because
+ * `updateWindowSize("fullscreen")` starts it before the wheel exists. If it died, or we are on the
+ * way out, resurrecting it here left an orphan PowerShell — which is exactly what stops the
+ * installer replacing the folder. With no process, the command waits in the slot and leaves on the
+ * next READY.
  */
 function writeRadialCursorCommand(command) {
   if (!radialMouseBlocker || !radialMouseBlockerReady || !radialMouseBlocker.stdin?.writable) {
@@ -1727,18 +1729,18 @@ function writeRadialCursorCommand(command) {
   try {
     radialMouseBlocker.stdin.write(`${command}\n`);
   } catch (e) {
-    diagLog(`[RadialBlocker] cursor falhou: ${e.message}`);
+    diagLog(`[RadialBlocker] cursor failed: ${e.message}`);
   }
 }
 
 /**
- * Execucao sem clique: o ponteiro e escondido e o gesto passa a ser uma DIRECAO.
+ * Clickless execution: the pointer is hidden and the gesture becomes a DIRECTION.
  *
- * Esconder e CSS, e CSS so pinta por cima da nossa janela — a caixa do radial e ~988px, nao o
- * monitor. Por isso o cursor e estacionado no centro da roda ao abrir: fica dentro da janela (logo
- * invisivel, logo a gerar `mousemove`) e o gesto arranca do zero em vez de ja valer a fatia do
- * lado onde a mao por acaso estava. Ao fechar volta exatamente ao ponto de onde saiu — quem abriu
- * a roda sobre um campo de texto encontra-o la.
+ * Hiding is CSS, and CSS only paints over our window — the radial's box is ~988px, not the monitor.
+ * That is why the cursor is parked at the wheel's centre on open: it stays inside the window (so
+ * invisible, so generating `mousemove`) and the gesture starts from zero instead of already being
+ * worth the slice on whichever side the hand happened to be. On close it goes back to exactly the
+ * point it left — whoever opened the wheel over a text field finds it there.
  */
 let radialCursorCaptureWanted = false;
 let radialCursorParked = false;
@@ -1760,22 +1762,22 @@ function captureRadialCursor(center) {
   writeRadialCursorCommand(`WARP ${radialCursorParkPoint.x} ${radialCursorParkPoint.y}`);
 }
 
-/** Reencosta ao centro sem terminar a captura — o gesto acumula deltas, portanto nao sente o salto. */
+/** Nudges back to the centre without ending the capture — the gesture accumulates deltas, so it does not feel the jump. */
 function reparkRadialCursor() {
   if (!radialCursorParked || !radialCursorParkPoint) return;
   writeRadialCursorCommand(`WARP ${radialCursorParkPoint.x} ${radialCursorParkPoint.y}`);
 }
 
 /**
- * Quem sabe se a execucao sem clique esta ligada e o renderer, que tem o UIConfig. O main so
- * precisa do sim/nao, e recebe-o sempre que a definicao muda — nunca a meio de uma abertura.
+ * The one that knows whether clickless execution is on is the renderer, which holds the UIConfig.
+ * Main only needs the yes/no, and gets it whenever the setting changes — never mid-open.
  */
 ipcMain.on("set-radial-cursor-capture", (_event, enabled) => {
   radialCursorCaptureWanted = !!enabled;
   if (!radialCursorCaptureWanted) releaseRadialCursor();
 });
 
-/** O ponteiro afastou-se da caixa do radial: reencostar antes de sair dela e voltar a aparecer. */
+/** The pointer drifted from the radial's box: nudge it back before it leaves and reappears. */
 ipcMain.on("park-radial-cursor", () => {
   reparkRadialCursor();
 });
@@ -1813,10 +1815,10 @@ function ensureRadialMouseBlocker() {
       try {
         radialTriggerListener(text);
       } catch (e) {
-        diagLog(`[RadialBlocker] disparo: ${e.message}`);
+        diagLog(`[RadialBlocker] trigger: ${e.message}`);
       }
     }
-    /** Linha isolada: "TRIGGER_READY" tambem contem READY e nao anuncia o arranque. */
+    /** A line on its own: "TRIGGER_READY" also contains READY and does not announce the startup. */
     if (!/^READY\s*$/m.test(text)) return;
     radialMouseBlockerReady = true;
     if (pendingRadialMouseBlockCommand) {
@@ -1837,7 +1839,7 @@ function ensureRadialMouseBlocker() {
     if (radialMouseBlocker === child) {
       radialMouseBlocker = null;
       radialMouseBlockerReady = false;
-      /** Sem processo não há como devolver o cursor: não guardar uma restauração que nunca chega. */
+      /** With no process there is no way to give the cursor back: do not keep a restore that never comes. */
       radialCursorParked = false;
       radialCursorParkPoint = null;
       radialCursorRestorePoint = null;
@@ -1855,13 +1857,15 @@ function setRadialMouseBlocking(bounds, monitorBounds) {
 }
 
 /**
- * Passa a captura do botao de disparo para o hook. `slop` decide o que ainda conta como clique
- * simples e e devolvido a janela por baixo; acima disso o gesto foi uma mira e nao se devolve nada.
+ * Hands the trigger button's capture to the hook. `slop` decides what still counts as a plain click
+ * and is given back to the window underneath; above that the gesture was an aim and nothing is
+ * given back.
  *
- * `clickHoldMs` e `clickDragPx` sao as duas provas do modo "click" de que a pressao deixou de ser
- * nossa: durou de mais, ou a mao saiu do sitio. Vale a que chegar primeiro, e o hook devolve o
- * botao a janela por baixo enquanto a pressao ainda decorre. Vao no comando em vez de estarem
- * escritos nas duas linguagens — o main e quem manda nos numeros, como ja acontece com o `slop`.
+ * `clickHoldMs` and `clickDragPx` are "click" mode's two proofs that the press stopped being ours:
+ * it lasted too long, or the hand left the spot. Whichever comes first wins, and the hook gives the
+ * button back to the window underneath while the press is still going. They travel in the command
+ * instead of being written in both languages — main is what owns the numbers, as it already does
+ * with `slop`.
  */
 function setRadialTriggerCapture(virtualKey, mode, slop, clickHoldMs, clickDragPx) {
   if (process.platform !== "win32") return;
@@ -1900,24 +1904,24 @@ function stopRadialMouseBlocker() {
 }
 
 /**
- * Radial aberto POR CIMA do painel (Settings/Welcome): a janela é uma só, por isso encolher ao
- * quadrado do radial fazia o painel desaparecer — era o "pisca e fica só o radial".
- * Aqui a caixa do radial passa a englobar também o rect do painel, e o renderer desenha-o na
- * mesma posição de ecrã que tinha. O modo `windowed` continua a guardar esse rect em
- * `lastWindowedBounds`, portanto fechar o radial devolve a janela ao sítio exato.
+ * Radial open ON TOP of the panel (Settings/Welcome): there is only one window, so shrinking to the
+ * radial's square made the panel disappear — that was the "it blinks and only the radial is left".
+ * Here the radial's box grows to take in the panel's rect too, and the renderer draws it at the
+ * same screen position it had. `windowed` mode still keeps that rect in `lastWindowedBounds`, so
+ * closing the radial puts the window back in the exact spot.
  */
 let panelOverlayActive = false;
-/** Verdadeiro quando o radial abriu por cima do painel SEM tocar nos bounds (ver `keepPanelWindow`). */
+/** True when the radial opened over the panel WITHOUT touching the bounds (see `keepPanelWindow`). */
 let panelOverlayKeptWindow = false;
 /**
- * Painel à vista, segundo o renderer. `nativeWindowSizeMode === 'windowed'` NÃO serve para isto:
- * `hide-window` esconde a janela sem mudar de modo, e o radial seguinte concluía que havia painel
- * no ecrã — abria sem redimensionar e trazia as definições atrás.
+ * Panel in view, according to the renderer. `nativeWindowSizeMode === 'windowed'` is NOT good for
+ * this: `hide-window` hides the window without changing mode, and the next radial concluded there
+ * was a panel on screen — it opened without resizing and dragged the settings along behind it.
  */
 let rendererPanelVisible = false;
 ipcMain.on("set-panel-surface-visible", (event, visible) => {
   rendererPanelVisible = !!visible;
-  /** O renderer usa sendSync: fechar Settings e acionar o radial no mesmo instante não pode ler estado antigo. */
+  /** The renderer uses sendSync: closing Settings and firing the radial at the same instant must not read stale state. */
   event.returnValue = true;
 });
 
@@ -1942,7 +1946,7 @@ function radialBoundsUnionWithPanel(radialRect, displayBounds) {
   const union = unionScreenRects([radialRect, panel]);
   if (!union) return radialRect;
 
-  /** Limitado ao monitor: um painel arrastado para fora não pode esticar a janela para lá dele. */
+  /** Capped to the monitor: a panel dragged outside must not stretch the window past it. */
   const width = Math.min(union.width, displayBounds.width);
   const height = Math.min(union.height, displayBounds.height);
   return {
@@ -1957,7 +1961,7 @@ function radialBoundsUnionWithPanel(radialRect, displayBounds) {
   };
 }
 
-/** Caixa do radial sempre centrada no monitor apontado. A posição livre foi descontinuada. */
+/** The radial's box is always centred on the monitor being pointed at. Free positioning is gone. */
 function radialModeBounds(displayBounds, point) {
   const side = Math.min(
     radialViewportSize,
@@ -1980,8 +1984,8 @@ function radialModeBounds(displayBounds, point) {
 }
 
 /**
- * Repouso estável: a superfície transparente usa exatamente os bounds do radial.
- * Assim abrir não exige hide/show nem resize; como o mouse é ignorado, a área não bloqueia o desktop.
+ * Stable idle: the transparent surface uses exactly the radial's bounds.
+ * Opening then needs no hide/show and no resize; since the mouse is ignored, the area does not block the desktop.
  */
 function smallModeBounds(displayBounds) {
   return radialModeBounds(displayBounds, {
@@ -1992,7 +1996,7 @@ function smallModeBounds(displayBounds) {
 
 function applySmallModeCollapsedBounds(anchorScreenPoint) {
   if (!mainWindow || mainWindow.isDestroyed()) return;
-  /** O radial é fixo no monitor principal; repouso nunca segue o cursor. */
+  /** The radial is fixed on the primary monitor; idle never follows the cursor. */
   const targetDisplay = screen.getPrimaryDisplay();
   const nextBounds = smallModeBounds(targetDisplay.bounds);
   if (!boundsApproxEqual(mainWindow.getBounds(), nextBounds)) {
@@ -2053,11 +2057,11 @@ function boundsApproxEqual(a, b, eps = 2) {
  */
 function updateWindowSize(mode, anchorScreenPoint) {
   if (!mainWindow || mainWindow.isDestroyed()) return;
-  /** Enquanto minimizado não aplicamos `setBounds`; fila e aplicamos no `restore` (flush). */
+  /** While minimized we do not apply `setBounds`; queue it and apply on `restore` (flush). */
   try {
     if (mainWindow.isMinimized()) {
       pendingWindowSize = { mode, anchorScreenPoint };
-      /** Minimizada não há painel à vista — não deixar a flag anterior decidir o próximo radial. */
+      /** Minimized there is no panel in view — do not let the previous flag decide the next radial. */
       panelOverlayActive = false;
       panelOverlayKeptWindow = false;
       return;
@@ -2090,9 +2094,9 @@ function updateWindowSize(mode, anchorScreenPoint) {
       panelOverlayKeptWindow = false;
     }
     /**
-     * Vir de `windowed` significa que há painel no ecrã: ele fica visível por baixo do radial,
-     * logo a janela tem de continuar a cobri-lo. A flag é o estado, não `previousMode` — reabrir
-     * o radial já em fullscreen não pode perder o painel.
+     * Coming from `windowed` means there is a panel on screen: it stays visible under the radial,
+     * so the window has to keep covering it. The flag is the state, not `previousMode` — reopening
+     * the radial while already fullscreen must not lose the panel.
      */
     const keepPanelWindow =
       previousMode === "windowed" &&
@@ -2102,15 +2106,15 @@ function updateWindowSize(mode, anchorScreenPoint) {
       panelOverlayActive = true;
     }
     /**
-     * Mantemos a superfície visual compacta para o DWM não congelar vídeos/apps por baixo. O hook
-     * temporário bloqueia os cliques no restante monitor sem criar uma janela que os cubra.
+     * We keep the visual surface compact so the DWM does not freeze videos/apps underneath. The
+     * temporary hook blocks clicks on the rest of the monitor without creating a window to cover them.
      */
-    /** Settings visível usa o HWND estável; fora dele a caixa radial continua centrada no monitor. */
+    /** A visible Settings uses the stable HWND; outside it the radial box stays centred on the monitor. */
     panelOverlayKeptWindow = keepPanelWindow;
     if (keepPanelWindow) {
       /**
-       * Não tocar nos bounds: Settings e radial partilham o frame já composto. Ao fechar,
-       * `windowed` encontra os mesmos bounds e também não recompõe a janela.
+       * Do not touch the bounds: Settings and radial share the already composed frame. On close,
+       * `windowed` finds the same bounds and does not recompose the window either.
        */
       const stableBounds = mainWindow.getBounds();
       setRadialMouseBlocking(stableBounds, b);
@@ -2126,8 +2130,8 @@ function updateWindowSize(mode, anchorScreenPoint) {
     mainWindow.setAlwaysOnTop(true, "screen-saver", 1);
     mainWindow.setIgnoreMouseEvents(false);
     /**
-     * Não usar centenas de rects em `setShape` para imitar o círculo: o DWM recalcula essas regiões
-     * durante o movimento e pode atrasar o cursor global. O círculo visual já é desenhado em CSS.
+     * Do not use hundreds of rects in `setShape` to imitate the circle: the DWM recomputes those
+     * regions during movement and can lag the global cursor. The visual circle is already drawn in CSS.
      */
     try {
       if (typeof mainWindow.setShape === "function") mainWindow.setShape([]);
@@ -2142,25 +2146,25 @@ function updateWindowSize(mode, anchorScreenPoint) {
     if (mainWindow.isFullScreen()) {
       mainWindow.setFullScreen(false);
     }
-    /** Ilha tinha o HWND encolhido — repor estado do hit-shape para o próximo modo não herdar rect fantasma. */
+    /** The island had the HWND shrunk — reset the hit-shape state so the next mode does not inherit a ghost rect. */
     lastWindowHitShapeKey = "__empty__";
     mainWindow.setResizable(true);
     resetLastWindowedBoundsIfIslandCorrupted();
     /**
-     * Se a janela já está exatamente nestes bounds (caso do radial aberto por cima do painel sem
-     * resize), voltar a aplicá-los é uma recomposição inútil do HWND — e cada uma é um risco de
-     * flash na janela transparente. Fechar o radial passa a não tocar na geometria.
+     * If the window is already at exactly these bounds (the case of the radial opened over the
+     * panel without a resize), applying them again is a pointless HWND recomposition — and every
+     * one of those is a flash risk on the transparent window. Closing the radial now leaves the
+     * geometry alone.
      */
     let boundsAlreadyCorrect = false;
     try {
       /**
-       * Maximizada conta como correta. `lastWindowedBounds` está congelado no rect ANTES de
-       * maximizar — os trackers de `resize`/`move` ignoram a janela maximizada — por isso os dois
-       * rects diferem sempre e o `setBounds` corria de certeza. E `setBounds` numa janela
-       * maximizada desmaximiza-a sem emitir `unmaximize`, deixando o botão do título a mostrar
-       * "Restaurar" numa janela que já não está maximizada: a pancada seguinte maximiza em vez de
-       * restaurar. Reabrir Settings (bandeja, `toggle-settings`, duplo-MMB) não é pedido para
-       * mudar o tamanho da janela.
+       * Maximized counts as correct. `lastWindowedBounds` is frozen at the rect from BEFORE the
+       * maximize — the `resize`/`move` trackers ignore a maximized window — so the two rects always
+       * differ and `setBounds` ran for certain. And `setBounds` on a maximized window unmaximizes
+       * it without emitting `unmaximize`, leaving the title button showing "Restore" on a window
+       * that is no longer maximized: the next hit maximizes instead of restoring. Reopening
+       * Settings (tray, `toggle-settings`, double-MMB) is not a request to change the window size.
        */
       boundsAlreadyCorrect =
         mainWindow.isMaximized() ||
@@ -2183,7 +2187,7 @@ function updateWindowSize(mode, anchorScreenPoint) {
     } catch (e) {
       /* ignore */
     }
-    /** Ilha em `small` → rect windowed: o DWM reutiliza a textura e o relógio parece “deslizar” até ao painel. */
+    /** Island in `small` → windowed rect: the DWM reuses the texture and the clock looks like it “slides” into the panel. */
     if (previousMode === "small") {
       try {
         setImmediate(() => {
@@ -2358,7 +2362,7 @@ function getActiveWinModule() {
 }
 
 /**
- * Rect da janela cobre o monitor inteiro (fullscreen real), não maximizado típico (workArea).
+ * The window rect covers the whole monitor (real fullscreen), not the typical maximized (workArea).
  */
 function isBoundsFullscreenMonitor(bounds, ownerExePathLower) {
   if (!bounds || typeof bounds.width !== "number") return false;
@@ -2415,8 +2419,8 @@ function isForegroundWindowFullscreen(win) {
 }
 
 /**
- * Lista plana de especificações de correspondência.
- * Cada segmento CSV pode ser: `token` ou `alt1|alt2::rótulo` (rótulo só para UI; alts são OR).
+ * Flat list of match specifications.
+ * Each CSV segment can be: `token` or `alt1|alt2::label` (label is UI only; alts are OR).
  */
 function parseBlockedAppTokens(csv) {
   const out = [];
@@ -2437,17 +2441,17 @@ function parseBlockedAppTokens(csv) {
   return out;
 }
 
-/** Mínimo de caracteres no "stem" para bater no título/cmd (evita ruído). */
+/** Minimum characters in the "stem" to match against title/cmd (avoids noise). */
 const GAME_MODE_TITLE_STEM_MIN = 5;
 
-/** Palavra isolada (evita "zen" em "frozen"). */
+/** Whole word only (avoids "zen" inside "frozen"). */
 function hayContainsTokenWord(hay, word) {
   if (!word || word.length < 3) return false;
   const esc = word.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   return new RegExp(`(^|[^a-z0-9])${esc}([^a-z0-9]|$)`, "i").test(hay);
 }
 
-/** Segmentos úteis a partir de tokens antigos tipo "openai.chatgpt - desktop_xxx" ou caminhos WindowsApps. */
+/** Useful segments out of legacy tokens like "openai.chatgpt - desktop_xxx" or WindowsApps paths. */
 function expandGameModeTokenFragments(tok) {
   const t = String(tok).toLowerCase().trim();
   const out = new Set();
@@ -2467,7 +2471,7 @@ function expandGameModeTokenFragments(tok) {
 }
 
 /**
- * App em primeiro plano corresponde à lista — exe, título, CommandLine e fragmentos do token (Store/PWA).
+ * Foreground app matches the list — exe, title, CommandLine and token fragments (Store/PWA).
  */
 function tokensMatchForeground(exePathLower, titleLower, cmdlineLower, tokens) {
   if (!tokens.length) return false;
@@ -2597,7 +2601,7 @@ function isZenithOwnExePath(exeLower) {
   }
 }
 
-/** active-win: exe + título (sem command line nativo). */
+/** active-win: exe + title (no native command line). */
 function foregroundMatchesBlockedList(win, tokens) {
   if (!win || !tokens.length) return false;
   const ownerPath = ((win.owner && win.owner.path) || "")
@@ -2631,7 +2635,7 @@ function foregroundLooksLikeGame(exePath, cmdline = "") {
   return result;
 }
 
-// Main function to decide if we should open (atalho global + botão do meio)
+// Main function to decide if we should open (global shortcut + middle button)
 /**
  * "Pause trigger" from the tray, as an instant in time rather than a flag.
  *
@@ -2678,18 +2682,17 @@ const shouldOpenMenu = async () => {
       return false;
     }
     /**
-     * Caminho rápido para produtividade diária: `active-win` cobre o caso normal de fullscreen.
-     * O fallback PowerShell era usado em toda abertura e pode custar 1-2s no Windows.
+     * Fast path for everyday productivity: `active-win` covers the normal fullscreen case.
+     * The PowerShell fallback was used on every open and can cost 1-2s on Windows.
      */
     if (activeResult) return true;
   }
 
   /**
-   * `active-win` já entrega executável, título e limites da janela ativa. No modo
-   * de lista isso é tudo de que precisamos para decidir o caso normal. Antes,
-   * mesmo com esses dados válidos, cada acionamento ainda iniciava um novo
-   * PowerShell; essa criação de processo acontecia antes de `showMenuAtCursor`
-   * e era percebida como atraso do radial.
+   * `active-win` already hands over the executable, title and bounds of the active
+   * window. In list mode that is all we need to decide the normal case. Before, even
+   * with that data valid, every trigger still started a new PowerShell; that process
+   * creation happened before `showMenuAtCursor` and was felt as radial lag.
    */
   if (mode === "list" && activeResult) {
     const listed = foregroundMatchesBlockedList(activeResult, tokens);
@@ -2734,7 +2737,7 @@ const shouldOpenMenu = async () => {
     return true;
   }
 
-  // mode === "list": apps escolhidos e, opcionalmente, jogos detectados automaticamente.
+  // mode === "list": chosen apps and, optionally, automatically detected games.
   if (tokens.length === 0 && !autoDetectGames) return true;
 
   const listedPs =
@@ -2784,45 +2787,45 @@ let tray = null;
  * in development: `latest.yml` only exists beside a published installer.
  */
 /**
- * O renderer precisa de saber que há atualização para a assinalar na roda — um selo no hub, que
- * o utilizador vê quando abre o menu, sem ninguém lhe interromper o que está a fazer.
+ * The renderer needs to know there is an update so it can flag it on the wheel — a badge on the
+ * hub, which the user sees when the menu opens, without anyone interrupting what they are doing.
  */
 /**
- * Estado do updater, em UM sítio.
+ * Updater state, in ONE place.
  *
- * O painel e a bandeja liam antes duas coisas diferentes: um "há versão pronta" vindo do evento e
- * um botão "Check for updates" que existia sempre, mesmo com o instalador já em disco. Carregar
- * nele voltava a descarregar o que já estava descarregado e punha a linha de novo em
- * "downloading" — a UI andava para trás. Agora há uma máquina de estados só, e quem pinta
- * (`update-state`) e quem age (`check-for-updates`) leem-na a ela.
+ * The panel and the tray used to read two different things: a "there is a version ready" coming
+ * from the event, and a "Check for updates" button that was always there, even with the installer
+ * already on disk. Pressing it downloaded again what was already downloaded and put the row back
+ * into "downloading" — the UI moved backwards. Now there is a single state machine, and whoever
+ * paints (`update-state`) and whoever acts (`check-for-updates`) both read it.
  *
- * `idle`        nunca se verificou nesta sessão
- * `checking`    pedido em curso
- * `current`     verificado, nada novo (`checkedAt` diz quando)
- * `downloading` a transferir (`percent`, quando o servidor dá tamanho)
- * `ready`       descarregado e verificado — só falta reiniciar. Estado FINAL: nada volta atrás
- * `error`       a última verificação falhou (rede, servidor, assinatura)
+ * `idle`        never checked in this session
+ * `checking`    request in flight
+ * `current`     checked, nothing new (`checkedAt` says when)
+ * `downloading` transferring (`percent`, when the server gives a size)
+ * `ready`       downloaded and verified — only a restart is missing. FINAL state: nothing goes back
+ * `error`       the last check failed (network, server, signature)
  * @type {{ state: string, version: string|null, percent?: number, checkedAt?: number, error?: string }}
  */
 let lastKnownUpdate = { state: "idle", version: null };
 
-/** Verificação em curso — o segundo pedido junta-se ao primeiro em vez de abrir outro. */
+/** Check in flight — the second request joins the first instead of opening another. */
 let pendingUpdateCheck = null;
 
 function notifyRendererUpdateState(state, version, extra = {}) {
   /**
-   * `ready` é terminal. O instalador já está em disco e `quitAndInstall` continua a funcionar; um
-   * erro de rede posterior (ou uma verificação periódica que falha) não pode apagar da UI o único
-   * botão que importa — nem fazer a linha regredir para "a transferir".
+   * `ready` is terminal. The installer is already on disk and `quitAndInstall` still works; a later
+   * network error (or a periodic check that fails) must not wipe from the UI the only button that
+   * matters — nor make the row regress to "downloading".
    */
   if (lastKnownUpdate.state === "ready" && state !== "ready") return;
 
   const previous = lastKnownUpdate;
   lastKnownUpdate = { state, version: version ?? null, ...extra };
   /**
-   * A bandeja mostra o mesmo estado que o painel — mas só quando ele MUDA. O menu nativo é
-   * reconstruído por inteiro a cada `setContextMenu`, e o `download-progress` dispara dezenas de
-   * vezes: reconstruí-lo a cada ponto percentual é trabalho puro, e pisca se estiver aberto.
+   * The tray shows the same state as the panel — but only when it CHANGES. The native menu is
+   * rebuilt whole on every `setContextMenu`, and `download-progress` fires dozens of times:
+   * rebuilding it on each percentage point is pure work, and it flickers if it is open.
    */
   if (previous.state !== state || previous.version !== lastKnownUpdate.version) refreshTrayMenuRef();
   if (!mainWindow || mainWindow.isDestroyed()) return;
@@ -2833,19 +2836,19 @@ function notifyRendererUpdateState(state, version, extra = {}) {
   }
 }
 
-/** A app vive na bandeja durante dias: verificar só uma vez no arranque não chega. */
+/** The app lives in the tray for days: checking only once at startup is not enough. */
 const UPDATE_RECHECK_INTERVAL_MS = 6 * 60 * 60_000;
 
 function configureAutoUpdates() {
   if (!app.isPackaged || process.platform !== "win32") return;
 
   /**
-   * Build da Store: nem sequer registamos os listeners. Não basta não chamar `checkForUpdates` —
-   * o `autoInstallOnAppQuit` deixaria o instalador a correr à saída, que é exatamente o
-   * comportamento que a certificação procura.
+   * Store build: we do not even register the listeners. Not calling `checkForUpdates` is not
+   * enough — `autoInstallOnAppQuit` would leave the installer running on exit, which is exactly
+   * the behaviour certification looks for.
    */
   if (isStoreBuild()) {
-    diagLog("[Update] Build da Store — updater desativado");
+    diagLog("[Update] Store build — updater disabled");
     return;
   }
 
@@ -2854,7 +2857,7 @@ function configureAutoUpdates() {
 
   autoUpdater.on("error", (error) => {
     diagLog(`[Update] ${error?.message || error}`);
-    /** Já descarregado: o `notify` protege o estado `ready`, mas nem vale a pena repintar. */
+    /** Already downloaded: `notify` protects the `ready` state, and a repaint is not even worth it. */
     notifyRendererUpdateState("error", lastKnownUpdate.version, {
       error: error?.message || String(error),
     });
@@ -2864,7 +2867,7 @@ function configureAutoUpdates() {
     notifyRendererUpdateState("checking", lastKnownUpdate.version);
   });
 
-  /** Nada novo: dizer que se verificou vale mais do que ficar em silêncio no `idle`. */
+  /** Nothing new: saying it was checked is worth more than staying silent on `idle`. */
   autoUpdater.on("update-not-available", () => {
     notifyRendererUpdateState("current", app.getVersion(), { checkedAt: Date.now() });
   });
@@ -2878,9 +2881,9 @@ function configureAutoUpdates() {
     const raw = Number(progress?.percent);
     if (!Number.isFinite(raw)) return;
     const percent = Math.max(0, Math.min(100, Math.round(raw)));
-    /** Ao ponto percentual: o evento chega dezenas de vezes por segundo, a UI só mostra inteiros. */
+    /** To the percentage point: the event arrives dozens of times a second, the UI only shows integers. */
     if (lastKnownUpdate.percent === percent) return;
-    /** Só o número muda; manter o resto do estado para não perder o `checkedAt`. */
+    /** Only the number changes; keep the rest of the state so `checkedAt` is not lost. */
     notifyRendererUpdateState("downloading", lastKnownUpdate.version, {
       checkedAt: lastKnownUpdate.checkedAt,
       percent,
@@ -2888,12 +2891,12 @@ function configureAutoUpdates() {
   });
 
   /**
-   * Sem caixa nativa.
+   * No native box.
    *
-   * O diálogo do sistema aparecia por cima do que o utilizador estivesse a fazer, com o visual do
-   * Windows e um texto noutra língua do resto da app — e para uma coisa que não é urgente: a
-   * atualização JÁ está descarregada e instala-se sozinha ao sair. O aviso passou para onde não
-   * interrompe: o selo no hub do radial, e uma linha nas Definições com a ação.
+   * The system dialog appeared on top of whatever the user was doing, with Windows' own look and
+   * text in a different language from the rest of the app — and for something that is not urgent:
+   * the update is ALREADY downloaded and installs itself on exit. The notice moved to where it does
+   * not interrupt: the badge on the radial's hub, and a row in Settings with the action.
    */
   autoUpdater.on("update-downloaded", (info) => {
     diagLog(`[Update] Downloaded version ${info.version}`);
@@ -2906,8 +2909,8 @@ function configureAutoUpdates() {
   }, 10_000).unref?.();
 
   /**
-   * Reverificação periódica. Para quando houver algo em disco: a partir do `ready` não há nada
-   * que uma verificação possa descobrir, e `runUpdateCheck` já a recusaria.
+   * Periodic re-check. Stops once there is something on disk: from `ready` on there is nothing a
+   * check could discover, and `runUpdateCheck` would refuse it anyway.
    */
   setInterval(() => {
     if (lastKnownUpdate.state === "ready" || lastKnownUpdate.state === "downloading") return;
@@ -2919,20 +2922,20 @@ app.whenReady().then(async () => {
   if (!gotTheLock) return;
 
   /**
-   * Compila/inicializa o helper em repouso; ao abrir o radial o bloqueio entra sem atraso.
+   * Compiles/initializes the helper while idle; when the radial opens the block lands with no delay.
    *
-   * DEPOIS do `gotTheLock`: uma segunda instância vai fechar-se a seguir, e arrancar aqui o
-   * helper deixava um `powershell` com um hook WH_MOUSE_LL global pendurado no arranque que foi
-   * rejeitado. `setRadialMouseBlocking` e `setRadialTriggerCapture` também o garantem, por isso
-   * esta chamada é só aquecimento — nunca a única.
+   * AFTER `gotTheLock`: a second instance is about to close itself, and starting the helper here
+   * left a `powershell` with a global WH_MOUSE_LL hook hanging off a startup that was rejected.
+   * `setRadialMouseBlocking` and `setRadialTriggerCapture` also guarantee it, so this call is only
+   * a warm-up — never the only one.
    */
   ensureRadialMouseBlocker();
 
   configureAutoUpdates();
 
   /**
-   * Carrega e executa `active-win` durante a inicialização. A primeira carga do
-   * binding nativo não deve acontecer justamente no primeiro acionamento do radial.
+   * Loads and runs `active-win` during startup. The native binding's first load
+   * must not happen on the radial's very first trigger.
    */
   const activeWinWarmup = getActiveWinModule();
   if (activeWinWarmup) {
@@ -3269,17 +3272,17 @@ app.whenReady().then(async () => {
   };
 
   /**
-   * Caminho normal de gravação: assíncrono, serializado e sem regravar conteúdo idêntico.
+   * The normal save path: async, serialized and without rewriting identical content.
    *
-   * A versão síncrona acima continua a existir — é a certa para o flush de saída, onde não há
-   * mais loop de eventos para esperar. Mas usá-la em TODAS as alterações punha ~1,2 MB de
-   * `JSON.stringify` + `writeFile` + dois `fsync` no processo main, que é o mesmo processo que
-   * serve o IPC de abrir o radial: era daí que vinham engasgos sem causa aparente.
+   * The synchronous version above still exists — it is the right one for the exit flush, where
+   * there is no event loop left to wait on. But using it for EVERY change put ~1.2 MB of
+   * `JSON.stringify` + `writeFile` + two `fsync`s on the main process, which is the same process
+   * that serves the IPC that opens the radial: that is where stutters with no visible cause came from.
    *
-   * Três defesas, por ordem de valor:
-   *   1. hash do conteúdo — o renderer grava a cada alteração de estado, e boa parte é idêntica;
-   *   2. serialização — sem ela duas gravações competiam pelo mesmo ficheiro `.tmp`;
-   *   3. coalescência — se chegarem várias durante uma gravação, só a última interessa.
+   * Three defences, in order of value:
+   *   1. content hash — the renderer saves on every state change, and much of it is identical;
+   *   2. serialization — without it two saves competed for the same `.tmp` file;
+   *   3. coalescing — if several arrive during a save, only the last one matters.
    */
   const fsp = fs.promises;
   let configWritePending = null;
@@ -3335,14 +3338,14 @@ app.whenReady().then(async () => {
       const hash = crypto.createHash("sha1").update(json).digest("hex");
       const bytes = Buffer.byteLength(json, "utf-8");
       /**
-       * Saltar a escrita exige duas provas: o conteúdo é o mesmo que gravámos E o ficheiro em disco
-       * continua a ser esse. Sem a segunda, um primário substituído por fora (foi o que aconteceu
-       * a 12/ago) ficaria desatualizado para sempre — a app nunca mais o reescreveria.
+       * Skipping the write takes two proofs: the content is the same as what we saved AND the file
+       * on disk is still that one. Without the second, a primary replaced from outside (which is
+       * what happened on Aug 12) would stay stale forever — the app would never rewrite it again.
        */
       if (hash === lastConfigWriteHash) {
         const current = await fsp.stat(configPath).catch(() => null);
         if (current && current.size === bytes) return true;
-        diagLog("[Persist] Primário divergente do último save — a reescrever.");
+        diagLog("[Persist] Primary diverged from the last save — rewriting.");
       }
 
       await fsp.writeFile(tempPath, json, "utf-8");
@@ -3370,7 +3373,7 @@ app.whenReady().then(async () => {
     } catch (e) {
       console.error("Failed to save full config (async):", e);
       diagLog(`[ERROR] Persistence Failure (async): ${e.message}`);
-      /** Último recurso é o caminho síncrono já provado — perder a config é pior que um engasgo. */
+      /** Last resort is the already proven synchronous path — losing the config is worse than a stutter. */
       lastConfigWriteHash = null;
       return saveFullConfigToDisk(config);
     } finally {
@@ -3445,7 +3448,7 @@ app.whenReady().then(async () => {
     }
   };
 
-  /** Caminho síncrono — só para o flush de saída. Invalida o hash: o assíncrono não pode assumir estado. */
+  /** Synchronous path — only for the exit flush. Invalidates the hash: the async one cannot assume state. */
   const persistFullConfigFromRenderer = (payload) => {
     const ok = saveFullConfigToDisk(payload);
     lastConfigWriteHash = null;
@@ -3453,7 +3456,7 @@ app.whenReady().then(async () => {
     return ok;
   };
 
-  /** Caminho normal — os efeitos colaterais aplicam-se já; só a ida ao disco é que espera. */
+  /** Normal path — the side effects apply right away; only the trip to disk waits. */
   const persistFullConfigFromRendererAsync = async (payload) => {
     applyPersistedFullConfigSideEffects(payload);
     return saveFullConfigToDiskAsync(payload);
@@ -3603,7 +3606,7 @@ app.whenReady().then(async () => {
     }
   });
 
-  /** invoke: main processa e grava antes do renderer continuar — mais fiável que `send` ao fechar a app. */
+  /** invoke: main processes and writes before the renderer moves on — more reliable than `send` while the app is closing. */
   ipcMain.handle("save-full-config", async (_event, payload) => {
     try {
       if (!payload || typeof payload !== "object") {
@@ -3633,8 +3636,8 @@ app.whenReady().then(async () => {
 
   /**
    * IPC: Persistence Debug Logger.
-   * Era `appendFileSync` a cada gravação — I/O síncrono no main pelo mesmo motivo que a config,
-   * e sem limite de tamanho. Agora é assíncrono e roda numa geração anterior ao passar de 1 MB.
+   * It used to be `appendFileSync` on every save — synchronous I/O on main for the same reason as
+   * the config, and with no size cap. Now it is async and rotates into a previous generation past 1 MB.
    */
   const PERSIST_LOG_MAX_BYTES = 1024 * 1024;
   let persistLogBytes = null;
@@ -3754,30 +3757,30 @@ app.whenReady().then(async () => {
 
       if (data.config) {
         /**
-         * Normalizar antes de gravar: garantir que `config.workspaces` é um array válido e
-         * que existe o espelho `workspaces` de topo de nível que `normalizeFullPersistenceBlob`
-         * usa como fallback. Sem isto, um backup com forma ligeiramente diferente pode fazer
-         * `get-full-config` retornar `null` → LS migration → overwrite do backup.
+         * Normalize before writing: make sure `config.workspaces` is a valid array and that the
+         * top-level `workspaces` mirror that `normalizeFullPersistenceBlob` uses as a fallback
+         * exists. Without this, a backup with a slightly different shape can make
+         * `get-full-config` return `null` → LS migration → the backup gets overwritten.
          */
         const normalized = normalizeFullPersistenceBlob(data.config);
         if (!normalized) {
           throw new Error("Invalid backup file: workspace structure is missing or empty.");
         }
-        // Garantir mirror de workspaces no nível de raiz (fallback do normalizer)
+        // Make sure the workspaces mirror exists at the root level (the normalizer's fallback)
         if (!Array.isArray(normalized.workspaces) && Array.isArray(normalized.config?.workspaces)) {
           normalized.workspaces = normalized.config.workspaces;
         }
         /**
-         * A licença NÃO vem no backup — e não pode ir-se embora com ele.
+         * The licence does NOT come in the backup — and it must not leave with it either.
          *
-         * O perfil ativado vive no `user` dentro do `config-v2.json`, e a importação substitui
-         * esse ficheiro inteiro. Um backup feito antes da ativação (ou noutra máquina) traz
-         * `user: null`, e a app pedia a chave outra vez a seguir a restaurar — apesar de o
-         * dispositivo continuar ativado do lado do servidor.
+         * The activated profile lives in `user` inside `config-v2.json`, and the import replaces
+         * that whole file. A backup made before activation (or on another machine) carries
+         * `user: null`, and the app asked for the key again right after restoring — even though
+         * the device was still activated on the server side.
          *
-         * A ativação é uma propriedade DESTA instalação, não do conteúdo do backup: se já existe
-         * um perfil ativado, ele sobrevive à importação. Um backup que traga um perfil ativado
-         * continua a poder trazê-lo, para quem restaura numa máquina nova.
+         * Activation is a property of THIS install, not of the backup's content: if an activated
+         * profile already exists, it survives the import. A backup that does carry an activated
+         * profile can still bring it, for whoever restores on a new machine.
          */
         try {
           const currentRaw = fs.existsSync(configPath)
@@ -3788,14 +3791,14 @@ app.whenReady().then(async () => {
           if (currentUser && currentUser.isPremium === true && !(importedUser && importedUser.isPremium === true)) {
             normalized.user = currentUser;
             if (normalized.config) normalized.config.user = currentUser;
-            diagLog("[Import] Licença desta instalação preservada — o backup não trazia perfil ativado");
+            diagLog("[Import] This install's licence preserved — the backup carried no activated profile");
           }
         } catch (e) {
-          diagLog(`[Import] Não foi possível preservar a licença: ${e.message}`);
+          diagLog(`[Import] Could not preserve the licence: ${e.message}`);
         }
 
         const toWrite = JSON.stringify(normalized, null, 2);
-        // Escrita atómica idêntica ao saveFullConfigToDisk
+        // Atomic write identical to saveFullConfigToDisk
         const tempPath = configPath + ".tmp";
         fs.writeFileSync(tempPath, toWrite, "utf-8");
         fs.renameSync(tempPath, configPath);
@@ -3803,17 +3806,17 @@ app.whenReady().then(async () => {
       if (data.settings) fs.writeFileSync(settingsPath, JSON.stringify(data.settings, null, 2));
 
       /**
-       * Ícones de um backup antigo não são reaproveitáveis.
+       * Icons from an old backup are not reusable.
        *
-       * O backup guarda os `customIconUrl` já resolvidos — imagens em base64 — e o cache de
-       * ícones. Se esse material foi produzido por um pipeline anterior, restaurá-lo repõe
-       * exatamente os ícones defeituosos que motivaram a correção: com placa, com halo, ou
-       * simplesmente do produto errado. E a cura automática nunca os substitui, porque ela só
-       * preenche quem está SEM ícone; um ícone errado, para ela, é um ícone presente.
+       * The backup keeps the `customIconUrl`s already resolved — base64 images — plus the icon
+       * cache. If that material was produced by an earlier pipeline, restoring it puts back exactly
+       * the defective icons the fix was made for: with a plate, with a halo, or simply from the
+       * wrong product. And automatic healing never replaces them, because it only fills in what has
+       * NO icon; a wrong icon, to it, is an icon that is there.
        *
-       * Quando a proveniência não corresponde ao pipeline atual, descartamos os dois: os ícones
-       * embutidos na config e o cache. Ficam por resolver, e a cura resolve-os de novo — agora
-       * pelo caminho correto. Favicons de atalhos web são poupados: vêm da net, não do Windows.
+       * When the provenance does not match the current pipeline we drop both: the icons embedded in
+       * the config and the cache. They stay unresolved, and healing resolves them again — now by
+       * the correct route. Favicons of web shortcuts are spared: they come from the net, not Windows.
        */
       const backupIconVersion = data.iconCache && data.iconCache.__pipelineVersion;
       const iconsAreCurrent = backupIconVersion === ICON_PIPELINE_VERSION;
@@ -3828,13 +3831,13 @@ app.whenReady().then(async () => {
         }
         const stripped = stripStaleNativeIcons(configPath);
         diagLog(
-          `[Import] Ícones do backup descartados (pipeline ${backupIconVersion ?? "desconhecido"} ` +
-            `≠ ${ICON_PIPELINE_VERSION}); ${stripped} entradas ficam para reextração`,
+          `[Import] Backup icons discarded (pipeline ${backupIconVersion ?? "unknown"} ` +
+            `≠ ${ICON_PIPELINE_VERSION}); ${stripped} entries left for re-extraction`,
         );
       }
 
-      // Criar o .bak imediatamente — se o before-quit disparar mesmo assim, o save do renderer
-      // iria sobrescrever apenas o primary (o .bak preserva o backup importado).
+      // Create the .bak immediately — if before-quit fires anyway, the renderer's save would only
+      // overwrite the primary (the .bak preserves the imported backup).
       try {
         if (data.config && fs.existsSync(configPath)) {
           fs.copyFileSync(configPath, `${configPath}.bak`);
@@ -3842,9 +3845,9 @@ app.whenReady().then(async () => {
       } catch (_) { /* non-fatal */ }
 
       /**
-       * Limpar o localStorage do renderer antes do relaunch.
-       * Se `get-full-config` falhar no próximo arranque e o LS ainda tiver as chaves
-       * `zenith_config` / `zenith_apps` antigas, a migração LS sobrescreveria o backup.
+       * Clear the renderer's localStorage before the relaunch.
+       * If `get-full-config` fails on the next startup and LS still holds the old
+       * `zenith_config` / `zenith_apps` keys, the LS migration would overwrite the backup.
        */
       try {
         const { session } = require("electron");
@@ -3857,8 +3860,8 @@ app.whenReady().then(async () => {
       diagLog(`[Backup] Configuration imported from ${result.filePaths[0]}. Relaunching...`);
 
       /**
-       * Sinalizar ao handler before-quit que não deve pedir ao renderer para fazer flush
-       * — o renderer tem estado ANTERIOR à importação em memória e sobrescreveria o backup.
+       * Signal to the before-quit handler that it must not ask the renderer to flush
+       * — the renderer holds PRE-import state in memory and would overwrite the backup.
        */
       skipQuitFlushForImport = true;
       app.relaunch();
@@ -3872,9 +3875,9 @@ app.whenReady().then(async () => {
   });
 
   /**
-   * Fonte única de verdade para "isto é um IDE com projetos recentes?": a mesma resolução que o
-   * MRU usa. O renderer adivinhava por palavras-chave, e `electron.app.Antigravity` (o agente)
-   * batia em "antigravity" — passava por IDE e oferecia recentes que não existem.
+   * Single source of truth for "is this an IDE with recent projects?": the same resolution the MRU
+   * uses. The renderer guessed by keyword, and `electron.app.Antigravity` (the agent) matched
+   * "antigravity" — it passed as an IDE and offered recents that do not exist.
    */
   ipcMain.handle("app-supports-recents", (event, appName, appCommand) =>
     Boolean(resolveIdeGlobalStorage(appName, appCommand)),
@@ -3883,14 +3886,14 @@ app.whenReady().then(async () => {
   ipcMain.handle("get-app-recents", async (event, appName, appCommand) => {
     diagLog(`[Recents] Fetching for appName: "${appName}", appCommand: "${appCommand}"`);
 
-    /** Usados mais abaixo, ao converter cada entrada do MRU no comando que abre a pasta. */
+    /** Used further down, when turning each MRU entry into the command that opens the folder. */
     const lowerName = appName ? appName.toLowerCase() : "";
     const lowerCommand = appCommand ? appCommand.toLowerCase() : "";
 
-    /** Descoberta em vez de caminho fixo — ver `resolveIdeGlobalStorage`. */
+    /** Discovery instead of a fixed path — see `resolveIdeGlobalStorage`. */
     const globalStorageDir = resolveIdeGlobalStorage(appName, appCommand);
     if (!globalStorageDir) {
-      diagLog(`[Recents] Nenhum perfil de IDE corresponde a "${appName}" / "${appCommand}"`);
+      diagLog(`[Recents] No IDE profile matches "${appName}" / "${appCommand}"`);
       return [];
     }
 
@@ -3955,7 +3958,7 @@ app.whenReady().then(async () => {
         // 2. Identify if it's an IDE that supports recent folders
         let appCommandString = normalizeAumidIdeCommands((appCommand || "").trim());
 
-        /** Atalhos descobertos pelo Windows podem ser AUMIDs, que não aceitam argumento de pasta. */
+        /** Shortcuts discovered by Windows can be AUMIDs, which take no folder argument. */
         const ideIdentity = `${itemLowerName} ${lowerCommand}`;
         if (ideIdentity.includes("cursor")) {
           appCommandString = resolveCursorExePath();
@@ -4008,7 +4011,7 @@ app.whenReady().then(async () => {
           if (fs.existsSync(decoded) && !fs.statSync(decoded).isDirectory()) {
             workingDirectory = path.dirname(decoded);
           }
-        } catch (e) { /* manter o caminho decodificado */ }
+        } catch (e) { /* keep the decoded path */ }
 
         return {
           id: `recent-${uri}`,
@@ -4046,7 +4049,7 @@ app.whenReady().then(async () => {
     }
   });
 
-  // Configurar Ícone na Bandeja (Tray)
+  // Set up the tray icon
   /**
    * `public/` in dev, `dist/` when packaged — Vite copies publicDir verbatim and `dist/**` is
    * already in electron-builder's `files`, so these read straight out of the asar. Both arms have
@@ -4125,7 +4128,7 @@ app.whenReady().then(async () => {
       if (isAppQuitting) return;
       openSettingsFromMainProcess();
     } catch (e) {
-      diagLog(`[Tray] Abrir Configurações: ${e.message}`);
+      diagLog(`[Tray] Open Settings: ${e.message}`);
     }
   };
 
@@ -4137,7 +4140,7 @@ app.whenReady().then(async () => {
       if (isAppQuitting) return;
       showMenuAtCursor("tray");
     } catch (e) {
-      diagLog(`[Tray] Abrir a roda: ${e.message}`);
+      diagLog(`[Tray] Open the wheel: ${e.message}`);
     }
   };
 
@@ -4150,7 +4153,7 @@ app.whenReady().then(async () => {
       /** The tick follows the renderer's save coming back round, not this send. */
       diagLog(`[Tray] switch-workspace -> ${index}`);
     } catch (e) {
-      diagLog(`[Tray] Trocar de workspace: ${e.message}`);
+      diagLog(`[Tray] Switch workspace: ${e.message}`);
     }
   };
 
@@ -4254,15 +4257,15 @@ app.whenReady().then(async () => {
       void openSettingsFromTray();
     });
 
-    // Feedback de início
+    // Startup feedback
     console.log("Rovyl started successfully in the background.");
   } catch (err) {
     console.error("Failed to create tray icon:", err);
   }
 
   /**
-   * Evita toast a cada save/reopen do radial quando o atalho está ocupado (ex.: Alt+Z da NVIDIA).
-   * Volta a notificar se o utilizador mudar o atalho e o novo também falhar.
+   * Avoids a toast on every save/reopen of the radial when the shortcut is taken (e.g. NVIDIA's Alt+Z).
+   * It notifies again if the user changes the shortcut and the new one also fails.
    */
 
   const shortcutCompactKey = (s) =>
@@ -4271,7 +4274,7 @@ app.whenReady().then(async () => {
       .replace(/Win/gi, "Super")
       .toLowerCase();
 
-  /** Alt+Z é comum na sobreposição GeForce / outros — mensagem mais útil que genérico "OS". */
+  /** Alt+Z is common in the GeForce overlay / others — a more useful message than a generic "OS". */
   /**
    * The one combination whose owner we can usually name. Two phrasings of one fact: the log has to
    * say where to go, the card is already there.
@@ -4314,8 +4317,8 @@ app.whenReady().then(async () => {
     const openRadialFromShortcut = async (sourceShortcut) => {
       diagLog(`${sourceShortcut} shortcut triggered`);
       /**
-       * Fechar diretamente evita passar novamente pelo fluxo de show/resize e, principalmente,
-       * não deixa a tecla que acionou o toggle confirmar o app/workspace atualmente apontado.
+       * Closing directly avoids going through the show/resize flow again and, above all, stops the
+       * key that fired the toggle from confirming the app/workspace currently pointed at.
        */
       if (workspaceShortcutsMenuOpen && mainWindow && !mainWindow.isDestroyed()) {
         mainWindow.webContents.send("open-menu", {
@@ -4348,7 +4351,7 @@ app.whenReady().then(async () => {
         diagLog(
           `[Shortcut] Global shortcut '${shortcut}' not registered; it is likely already in use.${altZOverlayHint(shortcut)}`,
         );
-        /** Sem monitor global de mouse, garantir sempre uma forma segura de abrir o radial. */
+        /** With no global mouse monitor, always guarantee a safe way to open the radial. */
         const fallbackShortcut = "Alt+Shift+F9";
         if (
           shortcutCompactKey(shortcut) !== shortcutCompactKey(fallbackShortcut) &&
@@ -4357,7 +4360,7 @@ app.whenReady().then(async () => {
           )
         ) {
           diagLog(
-            `[Shortcut] Fallback '${fallbackShortcut}' registrado porque '${shortcut}' está ocupado.`,
+            `[Shortcut] Fallback '${fallbackShortcut}' registered because '${shortcut}' is taken.`,
           );
         }
       }
@@ -4397,7 +4400,7 @@ app.whenReady().then(async () => {
                   diagLog(
                     `[Shortcuts] Failed to register app shortcut: ${appShortcut} for ${app.label} (Likely reserved by OS)`,
                   );
-                  // Não avisar o UI: save-full-config re-regista atalhos muitas vezes e inundava-o.
+                  // Do not warn the UI: save-full-config re-registers shortcuts often and flooded it.
                 }
               } catch (e) {
                 diagLog(
@@ -4715,12 +4718,12 @@ app.whenReady().then(async () => {
   }
 
   /**
-   * Impressão digital ESTÁVEL da máquina.
+   * STABLE machine fingerprint.
    *
-   * O `MachineGuid` é escrito pelo Windows na instalação do sistema e não muda com reinstalações
-   * de aplicações, limpezas de perfil nem atualizações. O UUID do hardware serve de alternativa
-   * quando o registo não é legível. Só se cai no aleatório se ambos falharem — e aí volta a valer
-   * o ficheiro em disco.
+   * `MachineGuid` is written by Windows when the system is installed and does not change with
+   * application reinstalls, profile wipes or updates. The hardware UUID is the alternative when
+   * the registry is not readable. Random is only reached if both fail — and then the file on disk
+   * is what counts again.
    */
   function readStableMachineId() {
     if (process.platform !== "win32") return null;
@@ -4744,22 +4747,22 @@ app.whenReady().then(async () => {
         const match = /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i.exec(output);
         if (match) return match[0].toLowerCase();
       } catch (e) {
-        /* tenta o seguinte */
+        /* try the next one */
       }
     }
     return null;
   }
 
   /**
-   * Identificador do dispositivo para o servidor de licenças.
+   * Device identifier for the licence server.
    *
-   * Era um valor ALEATÓRIO guardado na pasta de dados da app. Qualquer coisa que apagasse essa
-   * pasta — reinstalar, limpar o perfil, testar com `--user-data-dir` — produzia um identificador
-   * novo, e o servidor contava a MESMA máquina como mais um dispositivo. Três ativações no mesmo
-   * computador esgotavam o limite de três.
+   * It used to be a RANDOM value kept in the app's data folder. Anything that deleted that folder
+   * — reinstalling, wiping the profile, testing with `--user-data-dir` — produced a new identifier,
+   * and the server counted the SAME machine as one more device. Three activations on the same
+   * computer used up the limit of three.
    *
-   * Agora deriva-se do `MachineGuid` do Windows: o mesmo computador devolve sempre o mesmo
-   * identificador, haja ou não pasta de dados. O ficheiro passa a ser só cache.
+   * It is now derived from Windows' `MachineGuid`: the same computer always returns the same
+   * identifier, data folder or not. The file becomes cache only.
    */
   function getOrCreateLicenseDeviceId() {
     const devicePath = path.join(app.getPath("userData"), "license-device.json");
@@ -4773,10 +4776,10 @@ app.whenReady().then(async () => {
       try {
         const saved = JSON.parse(fs.readFileSync(devicePath, "utf8"));
         if (saved.deviceId !== deviceId) {
-          diagLog("[License] deviceId migrado para a impressão digital estável da máquina");
+          diagLog("[License] deviceId migrated to the stable machine fingerprint");
         }
       } catch (e) {
-        /* ficheiro ausente ou ilegível — escrever de novo */
+        /* file missing or unreadable — write it again */
       }
       try {
         fs.writeFileSync(devicePath, JSON.stringify({ deviceId, source: "machine-guid" }), {
@@ -4784,12 +4787,12 @@ app.whenReady().then(async () => {
           mode: 0o600,
         });
       } catch (e) {
-        /* o identificador é derivável na mesma; o ficheiro é só cache */
+        /* the identifier is derivable anyway; the file is only cache */
       }
       return deviceId;
     }
 
-    /** Sem identificador de máquina: comportamento antigo, com o ficheiro a mandar. */
+    /** No machine identifier: the old behaviour, with the file in charge. */
     try {
       const saved = JSON.parse(fs.readFileSync(devicePath, "utf8"));
       if (typeof saved.deviceId === "string" && saved.deviceId.length >= 32) return saved.deviceId;
@@ -4840,12 +4843,12 @@ app.whenReady().then(async () => {
   }
 
   /**
-   * Libertar o lugar do dispositivo no servidor.
+   * Free the device's seat on the server.
    *
-   * Sem isto, "Remove license" só apagava o perfil local: o lugar continuava ocupado e o
-   * utilizador ficava sem forma de o reaver — foi assim que se esgotaram três lugares numa só
-   * máquina. A chamada é tolerante por desenho: se a rota ainda não existir, ou a rede falhar,
-   * devolve o motivo e a app remove a licença localmente na mesma, para nunca ficar presa.
+   * Without this, "Remove license" only wiped the local profile: the seat stayed taken and the user
+   * had no way to get it back — that is how three seats were used up on a single machine. The call
+   * is forgiving by design: if the route does not exist yet, or the network fails, it returns the
+   * reason and the app removes the licence locally anyway, so it is never stuck.
    */
   async function deactivateRovylLicenseDevice() {
     const endpoint =
@@ -4857,13 +4860,13 @@ app.whenReady().then(async () => {
       body: JSON.stringify({ deviceId: getOrCreateLicenseDeviceId() }),
     });
     if (response.status === 404) {
-      const error = new Error("O serviço de licenças ainda não expõe desativação.");
+      const error = new Error("The license service does not expose deactivation yet.");
       error.code = "DEACTIVATE_UNAVAILABLE";
       throw error;
     }
     const result = await response.json().catch(() => ({}));
     if (!response.ok) {
-      const error = new Error(result.error || "Não foi possível libertar este dispositivo.");
+      const error = new Error(result.error || "This device could not be released.");
       error.code = result.code || "DEACTIVATE_FAILED";
       throw error;
     }
@@ -4873,25 +4876,24 @@ app.whenReady().then(async () => {
   ipcMain.handle("deactivate-rovyl-license", async () => {
     try {
       const result = await deactivateRovylLicenseDevice();
-      diagLog("[License] Dispositivo libertado no servidor");
+      diagLog("[License] Device released on the server");
       return { ok: true, result };
     } catch (error) {
-      diagLog(`[License] Desativação remota falhou: ${error?.message}`);
+      diagLog(`[License] Remote deactivation failed: ${error?.message}`);
       return {
         ok: false,
-        error: error?.message || "Não foi possível libertar este dispositivo.",
+        error: error?.message || "This device could not be released.",
         code: error?.code || "DEACTIVATE_FAILED",
       };
     }
   });
 
   /**
-   * Chave de desenvolvimento — ativação local, sem servidor e sem gastar dispositivos.
+   * Development key — local activation, no server and no device spent.
    *
-   * No binário fica só o SHA-256; a chave em si nunca é escrita no código, portanto quem
-   * desmontar o executável encontra um hash e não uma chave. Continua a ser uma porta: quem a
-   * souber ativa qualquer instalação. Trata-a como uma credencial — não a metas em capturas de
-   * ecrã, commits ou vídeos.
+   * Only the SHA-256 ends up in the binary; the key itself is never written in the code, so anyone
+   * taking the executable apart finds a hash and not a key. It is still a door: whoever knows it
+   * activates any install. Treat it as a credential — keep it out of screenshots, commits and videos.
    */
   const DEV_LICENSE_KEY_SHA256 =
     "b94dc0c453f99b63185c20e3fa538c7d89528328a5cf30fa92dd5fe358510972";
@@ -4902,7 +4904,7 @@ app.whenReady().then(async () => {
       .createHash("sha256")
       .update(licenseKey.trim().toUpperCase())
       .digest("hex");
-    /** Comparação em tempo constante: uma comparação normal vaza o prefixo por temporização. */
+    /** Constant-time comparison: a normal one leaks the prefix through timing. */
     const a = Buffer.from(digest, "hex");
     const b = Buffer.from(DEV_LICENSE_KEY_SHA256, "hex");
     return a.length === b.length && crypto.timingSafeEqual(a, b);
@@ -4910,7 +4912,7 @@ app.whenReady().then(async () => {
 
   ipcMain.handle("activate-rovyl-license", async (_event, licenseKey) => {
     if (isDevLicenseKey(licenseKey)) {
-      diagLog("[License] Chave de desenvolvimento aceite — ativação local, sem servidor");
+      diagLog("[License] Development key accepted — local activation, no server");
       return {
         ok: true,
         license: {
@@ -4992,9 +4994,9 @@ app.whenReady().then(async () => {
     const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
     const GOOGLE_CLIENT_SECRET = process.env.GOOGLE_CLIENT_SECRET;
     /**
-     * Sem valor por omissao: o ID identifica o projeto Google Cloud de quem publica, e num
-     * repositorio publico uma bifurcacao herdaria silenciosamente o projeto do autor.
-     * Quem compila define o seu em `.env.local` — ver `.env.example`.
+     * No default value: the ID identifies the publisher's Google Cloud project, and in a public
+     * repository a fork would silently inherit the author's project.
+     * Whoever builds sets their own in `.env.local` — see `.env.example`.
      */
     const GOOGLE_WEB_CLIENT_ID = process.env.GOOGLE_WEB_CLIENT_ID;
     const allowedAuds = [GOOGLE_WEB_CLIENT_ID, GOOGLE_CLIENT_ID].filter(Boolean);
@@ -5234,81 +5236,83 @@ app.whenReady().then(async () => {
     return isDev ? p : p.replace("app.asar", "app.asar.unpacked");
   };
 
-  // 2. Captura do botão do meio pelo hook WH_MOUSE_LL global em `backend/mouse-blocker.ps1`.
-  //    NÃO é sondagem: o hook vê todos os eventos de rato do sistema, movimento incluído.
+  // 2. Middle-button capture by the global WH_MOUSE_LL hook in `backend/mouse-blocker.ps1`.
+  //    It is NOT polling: the hook sees every mouse event in the system, movement included.
   let mouseHook = null;
-  /** Botão com que a sonda atual foi lançada — comparado para saber se é preciso relançá-la. */
+  /** The button the current probe was started with — compared to know whether it has to be restarted. */
   let activeMouseHookButton = "middle";
   let activeMouseHookMode = null;
   /**
-   * Limiar real do modo "segurar". Um clique MMB normal costuma terminar antes deste tempo:
-   * o MIDDLE_UP cancela o timer e o navegador recebe o gesto normalmente (por exemplo, para
-   * fechar uma aba). Somente manter o botão premido por 200 ms abre o radial.
-   * O modo "click" não passa por este timer.
+   * The real threshold of "hold" mode. A normal MMB click usually ends before this time: the
+   * MIDDLE_UP cancels the timer and the browser gets the gesture as usual (to close a tab, for
+   * instance). Only keeping the button down for 200 ms opens the radial.
+   * "click" mode does not go through this timer.
    */
   const MMB_HOLD_OPEN_DELAY_MS = 200;
   /**
-   * Limiar do modo "click": acima disto a pressão foi SEGURAR e o radial não abre.
+   * "click" mode's threshold: above this the press was a HOLD and the radial does not open.
    *
-   * Sem ele, o modo "click" abria em QUALQUER largada — a pressão era cronometrada em
-   * `mmbClickDownAt` e o valor nunca chegava a ser lido. Quem segura a roda para deslocar a
-   * página vê o hook engolir o botão (nada rola) e, ao largar, aparecia o radial; com a execução
-   * sem clique ligada, o movimento que ainda restava na mão confirmava logo uma direção e
-   * lançava uma app que ninguém escolheu.
+   * Without it, "click" mode opened on ANY release — the press was timed into `mmbClickDownAt` and
+   * the value was never read. Someone holding the wheel to pan the page sees the hook swallow the
+   * button (nothing scrolls) and, on release, the radial appeared; with clickless execution on, the
+   * movement still left in the hand immediately confirmed a direction and launched an app nobody
+   * chose.
    *
-   * Não é o `PASSTHROUGH_MAX_MS` de 250 ms do hook: esse decide se o clique engolido é devolvido
-   * à janela por baixo, onde falhar custa um clique do meio que se repete. Aqui falhar custa o
-   * gesto principal da app, sem qualquer sinal de que foi recusado — por isso a margem é mais
-   * larga. Um clique deliberado no botão do meio (duro, é a roda premida a eixo) chega aos 300 ms;
-   * segurar para deslocar nunca desce dos ~500 ms, porque o próprio movimento demora.
+   * It is not the hook's 250 ms `PASSTHROUGH_MAX_MS`: that one decides whether the swallowed click
+   * is given back to the window underneath, where failing costs one middle click that can be
+   * repeated. Here failing costs the app's main gesture, with no sign at all that it was refused —
+   * so the margin is wider. A deliberate middle-button click (stiff, it is the wheel pressed on its
+   * axis) reaches 300 ms; holding to pan never drops below ~500 ms, because the movement itself
+   * takes time.
    */
   const MMB_CLICK_MAX_MS = 400;
   /**
-   * A outra prova, e a que se sente: a mao saiu do sitio, logo a pressao nao e um clique e o botão
-   * pode ir para a janela por baixo JA, sem esperar pelos 400 ms.
+   * The other proof, and the one you feel: the hand left the spot, so the press is not a click and
+   * the button can go to the window underneath NOW, without waiting the 400 ms.
    *
-   * Deslocar é mover, portanto na prática o deslocamento arranca assim que há alguma coisa para
-   * deslocar — que é a diferença entre "a roda premida não faz nada durante meio segundo" e
-   * "funciona como sempre funcionou".
+   * Panning is moving, so in practice the pan starts as soon as there is anything to pan — which is
+   * the difference between "the pressed wheel does nothing for half a second" and "it works the way
+   * it always worked".
    *
-   * 30 px fica muito acima do tremor de uma mão a clicar (abaixo de 10 px, mesmo com DPI alto) e
-   * muito abaixo de qualquer gesto de deslocar. Não é o `TRIGGER_PASSTHROUGH_SLOP_PX` de 6 px:
-   * esse decide se um clique curto é devolvido, e 6 px aqui roubaria cliques a mãos trémulas.
+   * 30 px sits well above the tremor of a hand clicking (below 10 px, even at high DPI) and well
+   * below any pan gesture. It is not the 6 px `TRIGGER_PASSTHROUGH_SLOP_PX`: that one decides
+   * whether a short click is given back, and 6 px here would steal clicks from shaky hands.
    */
   const MMB_CLICK_DRAG_PX = 30;
   /**
-   * A rede do main, e nada mais.
+   * Main's net, and nothing more.
    *
-   * Quem classifica a pressao e o hook: tem o instante exato das duas metades do botao e manda
-   * `TRIGGER_HOLD` em vez de `TRIGGER_UP` quando ela foi segurar. Aqui so se mede do instante em
-   * que a LINHA do DOWN foi lida ao instante em que a do UP foi lida, o que inclui o stdout e o
-   * ciclo de eventos do Electron — apertar isto ate aos 400 ms punha os dois relogios a discutir a
-   * fronteira e a recusar cliques legitimos por causa de um atraso de leitura. Fica folgado: apanha
-   * uma pressao absurda que tenha chegado aqui na mesma, e mais nada.
+   * The one that classifies the press is the hook: it has the exact instant of both halves of the
+   * button and sends `TRIGGER_HOLD` instead of `TRIGGER_UP` when it was a hold. Here we only
+   * measure from the instant the DOWN LINE was read to the instant the UP one was read, which
+   * includes stdout and Electron's event loop — tightening this to 400 ms put the two clocks
+   * arguing over the boundary and refusing legitimate clicks because of a read delay. It stays
+   * loose: it catches an absurd press that reached here anyway, and nothing else.
    */
   const MMB_CLICK_BACKSTOP_MS = 1000;
   let mmbHoldOpenTimer = null;
   let mmbIsDown = false;
-  /** Invalida uma verificação assíncrona se o botão for solto ou surgir um gesto mais novo. */
+  /** Invalidates an async check if the button is released or a newer gesture appears. */
   let mmbHoldGestureId = 0;
   let mmbFirstDownAt = 0;
   let mmbClickDownAt = 0;
-  /** O MIDDLE_UP que pertence ao MMB usado apenas para fechar não pode selecionar a fatia ativa. */
+  /** The MIDDLE_UP belonging to an MMB used only to close must not select the active slice. */
   let suppressNextMmbRelease = false;
 
   /**
-   * Modo "segurar": o radial abre com o botão do meio AINDA premido. No Windows a captura do rato
-   * pertence à janela que recebeu o WM_MBUTTONDOWN (o desktop / a app por baixo), por isso a nossa
-   * janela não recebe UM ÚNICO `mousemove` enquanto o botão não é largado — o ângulo nunca atualiza
-   * e nada fica selecionável. Sondamos o cursor no main e reenviamos ao renderer, que o reproduz
-   * como um `mousemove` real. Só corre entre o MIDDLE_DOWN que abriu o radial e o MIDDLE_UP.
+   * "hold" mode: the radial opens with the middle button STILL down. On Windows the mouse capture
+   * belongs to the window that received the WM_MBUTTONDOWN (the desktop / the app underneath), so
+   * our window gets not A SINGLE `mousemove` until the button is released — the angle never updates
+   * and nothing becomes selectable. We poll the cursor in main and forward it to the renderer,
+   * which replays it as a real `mousemove`. It only runs between the MIDDLE_DOWN that opened the
+   * radial and the MIDDLE_UP.
    */
   const MMB_CURSOR_POLL_MS = 8;
   /**
-   * Rede de segurança: o fim normal da sonda é o MIDDLE_UP, mas se o processo do hook morrer com o
-   * botão premido esse evento nunca chega. Sem este limite ficava um intervalo de 8 ms a enviar IPC
-   * para sempre — exatamente o tipo de fuga que só se manifesta depois de horas de uso.
-   * Nenhum gesto de "segurar" real dura um minuto.
+   * Safety net: the probe's normal end is the MIDDLE_UP, but if the hook process dies with the
+   * button down that event never arrives. Without this cap an 8 ms interval was left sending IPC
+   * forever — exactly the kind of leak that only shows after hours of use.
+   * No real "hold" gesture lasts a minute.
    */
   const MMB_CURSOR_MAX_MS = 60000;
   let mmbCursorTimer = null;
@@ -5332,7 +5336,7 @@ app.whenReady().then(async () => {
         return;
       }
       if (Date.now() - mmbCursorStartedAt > MMB_CURSOR_MAX_MS) {
-        diagLog("[MouseHook] Sonda do cursor terminada por tempo limite (MIDDLE_UP não chegou).");
+        diagLog("[MouseHook] Cursor probe ended by timeout (MIDDLE_UP never arrived).");
         stopMmbCursorTracking();
         return;
       }
@@ -5352,7 +5356,7 @@ app.whenReady().then(async () => {
     }, MMB_CURSOR_POLL_MS);
   };
 
-  /** Definido mais abaixo; o bloqueador chama-o com as linhas TRIGGER_*. */
+  /** Defined further down; the blocker calls it with the TRIGGER_* lines. */
   let handleTriggerData = null;
 
   const startMouseHook = () => {
@@ -5362,9 +5366,9 @@ app.whenReady().then(async () => {
     const virtualKey = MOUSE_TRIGGER_VK[activeMouseHookButton] ?? MOUSE_TRIGGER_VK.middle;
     const mode = cachedRadialFlags.mouseTriggerMode === "click" ? "click" : "hold";
     diagLog(
-      `Mouse trigger capturado pelo hook (${activeMouseHookButton}, ${mode}, folga ${TRIGGER_PASSTHROUGH_SLOP_PX}px)`,
+      `Mouse trigger captured by the hook (${activeMouseHookButton}, ${mode}, slop ${TRIGGER_PASSTHROUGH_SLOP_PX}px)`,
     );
-    /** Marcador de "ativo": ja nao ha processo proprio, mas o resto do codigo testa a verdade disto. */
+    /** "Active" marker: there is no process of its own any more, but the rest of the code tests the truth of this. */
     mouseHook = { active: true };
     radialTriggerListener = (text) => {
       if (handleTriggerData) void handleTriggerData(text);
@@ -5388,9 +5392,9 @@ app.whenReady().then(async () => {
           mmbIsDown = true;
           const holdGestureId = ++mmbHoldGestureId;
           /**
-           * O renderer sincroniza `workspaceShortcutsMenuOpen` com o estado real do radial.
-           * Quando já está aberto, fechar imediatamente no DOWN e consumir o UP correspondente;
-           * assim um app/workspace sob o cursor nunca é executado pelo gesto de toggle.
+           * The renderer syncs `workspaceShortcutsMenuOpen` with the radial's real state.
+           * When it is already open, close immediately on the DOWN and consume the matching UP;
+           * that way an app/workspace under the cursor is never executed by the toggle gesture.
            */
           if (workspaceShortcutsMenuOpen && mainWindow && !mainWindow.isDestroyed()) {
             if (mmbHoldOpenTimer) {
@@ -5443,7 +5447,7 @@ app.whenReady().then(async () => {
               mmbHoldOpenTimer = null;
               mmbFirstDownAt = 0;
               const allowed = await shouldOpenMenu();
-              /** O clique pode ter terminado enquanto a verificação de modo de jogo aguardava. */
+              /** The click may have ended while the game-mode check was waiting. */
               if (
                 !allowed ||
                 !mmbIsDown ||
@@ -5451,16 +5455,16 @@ app.whenReady().then(async () => {
                 cachedRadialFlags.mouseTriggerMode !== "hold"
               ) return;
               showMenuAtCursor("mmb");
-              /** Botão ainda premido: sem esta sonda o renderer não recebe `mousemove` nenhum. */
+              /** Button still down: without this probe the renderer gets no `mousemove` at all. */
               startMmbCursorTracking();
             }, MMB_HOLD_OPEN_DELAY_MS);
           }
         } else if (msg === "TRIGGER_UP" || msg === "TRIGGER_HOLD") {
           /**
-           * `TRIGGER_HOLD` e a largada de uma pressao que o hook ja classificou como SEGURAR e ja
-           * devolveu a janela por baixo. Tem de passar por esta limpeza toda — em especial pelo
-           * consumo de `suppressNextMmbRelease`, que de outra forma ficava preso a comer a largada
-           * do gesto seguinte — mas nao pode abrir nem selecionar coisa nenhuma.
+           * `TRIGGER_HOLD` is the release of a press the hook has already classified as a HOLD and
+           * already handed to the window underneath. It has to go through all this cleanup — in
+           * particular the consumption of `suppressNextMmbRelease`, which would otherwise stay stuck
+           * eating the next gesture's release — but it must not open or select anything.
            */
           const wasHold = msg === "TRIGGER_HOLD";
           mmbIsDown = false;
@@ -5476,35 +5480,35 @@ app.whenReady().then(async () => {
           }
           if (cachedRadialFlags.mouseTriggerMode === "click") {
             /**
-             * Instantâneo ANTES do `await`: `shouldOpenMenu()` pode custar mais de um segundo pelo
-             * recurso ao PowerShell, e `handleTriggerData` é disparado sem espera — quando ele
-             * resolver, outra passagem já reescreveu estes campos.
+             * A snapshot BEFORE the `await`: `shouldOpenMenu()` can cost more than a second because
+             * of the PowerShell fallback, and `handleTriggerData` is fired without waiting — by the
+             * time it resolves, another pass has already rewritten these fields.
              */
             const downAt = mmbClickDownAt;
             const gestureId = mmbHoldGestureId;
             mmbClickDownAt = 0;
             /**
-             * Sem DOWN emparelhado a duração é DESCONHECIDA, e desconhecida resolve para segurar,
-             * nunca para clicar. É o caso de re-armar o hook com o botão já premido — mudar de
-             * botão ou de modo nas definições com o rato na mão: `stopMouseHook` zera
-             * `mmbClickDownAt`, portanto essa largada órfã deixa de abrir seja o que for.
+             * With no paired DOWN the duration is UNKNOWN, and unknown resolves to a hold, never to
+             * a click. That is the case of re-arming the hook with the button already down —
+             * changing button or mode in settings with the mouse in hand: `stopMouseHook` zeroes
+             * `mmbClickDownAt`, so that orphan release no longer opens anything.
              */
             const heldMs = downAt ? Date.now() - downAt : Number.POSITIVE_INFINITY;
             if (heldMs > MMB_CLICK_BACKSTOP_MS) {
-              /** O único modo de falha disto é um clique recusado em silêncio: fica no log. */
+              /** This one's only failure mode is a click refused in silence: it goes in the log. */
               diagLog(
-                `[MouseHook] Largada ignorada (${
-                  Number.isFinite(heldMs) ? `${heldMs}ms` : "sem DOWN"
-                } > ${MMB_CLICK_BACKSTOP_MS}ms): foi segurar, não clicar.`,
+                `[MouseHook] Release ignored (${
+                  Number.isFinite(heldMs) ? `${heldMs}ms` : "no DOWN"
+                } > ${MMB_CLICK_BACKSTOP_MS}ms): it was a hold, not a click.`,
               );
               continue;
             }
             const allowed = await shouldOpenMenu();
             /**
-             * O gesto pode ter sido substituído enquanto o modo de jogo era verificado: um DOWN
-             * novo fecha o radial pelo ramo `closeOnly` e arma `suppressNextMmbRelease`. Reabrir
-             * aqui devolvia a roda que o utilizador acabara de fechar e deixava essa bandeira
-             * presa, a comer a largada do gesto seguinte.
+             * The gesture may have been replaced while game mode was being checked: a new DOWN
+             * closes the radial through the `closeOnly` branch and arms `suppressNextMmbRelease`.
+             * Reopening here gave back the wheel the user had just closed and left that flag stuck,
+             * eating the next gesture's release.
              */
             if (!allowed || mmbHoldGestureId !== gestureId) continue;
             showMenuAtCursor("mmb-click");
@@ -5536,9 +5540,9 @@ app.whenReady().then(async () => {
     mmbFirstDownAt = 0;
     mmbClickDownAt = 0;
     /**
-     * Faltava aqui. Um hook reiniciado a meio da pressão deixava a bandeira presa e ela comia a
-     * largada do gesto seguinte — o mesmo "o meu clique não fez nada" que o limiar acima passa a
-     * tornar suspeito, portanto não pode ficar uma segunda causa dele de pé.
+     * This was missing here. A hook restarted mid-press left the flag stuck and it ate the next
+     * gesture's release — the same "my click did nothing" the threshold above now makes suspect, so
+     * a second cause of it cannot be left standing.
      */
     suppressNextMmbRelease = false;
     diagLog("Stopping Mouse Hook");
@@ -5551,18 +5555,18 @@ app.whenReady().then(async () => {
 
   syncMouseHookState = () => {
     /**
-     * O gatilho É um hook WH_MOUSE_LL global (`backend/mouse-blocker.ps1`), não sondagem — este
-     * comentário afirmava o contrário e foi por isso que uma regressão de lag global sobreviveu a
-     * várias investigações. Tem de ser o hook a detetar E a engolir: um poller `GetAsyncKeyState`
-     * só observava, o clique seguia para a janela por baixo e o Windows entrava em autoscroll.
+     * The trigger IS a global WH_MOUSE_LL hook (`backend/mouse-blocker.ps1`), not polling — this
+     * comment claimed the opposite and that is why a global lag regression survived several
+     * investigations. The hook has to both detect AND swallow: a `GetAsyncKeyState` poller only
+     * watched, the click went on to the window underneath and Windows entered autoscroll.
      *
-     * INVARIANTE: nada que bloqueie, aloque ou enumere pode correr no thread que serve esse hook —
-     * todo o rato do sistema passa por lá, serializado. Um watchdog de 15 ms que chamava
-     * `Process.GetProcessById` custava 12 ms por tique e engasgava o ecrã inteiro.
+     * INVARIANT: nothing that blocks, allocates or enumerates may run on the thread serving that
+     * hook — every mouse event in the system goes through it, serialized. A 15 ms watchdog that
+     * called `Process.GetProcessById` cost 12 ms per tick and stuttered the whole screen.
      */
     const wantHook = cachedRadialFlags.enableMouseTrigger;
-    /** Trocar de botão exige relançar a sonda: o VK é passado no arranque do processo. */
-    /** Botao OU modo: ambos vao no comando TRIGGER, logo qualquer um exige re-armar a captura. */
+    /** Changing button requires restarting the probe: the VK is passed at process startup. */
+    /** Button OR mode: both travel in the TRIGGER command, so either one requires re-arming the capture. */
     if (
       mouseHook &&
       (activeMouseHookButton !== cachedRadialFlags.mouseTriggerButton ||
@@ -5579,7 +5583,7 @@ app.whenReady().then(async () => {
   );
   if (mouseHookDelayMs > 0) {
     diagLog(
-      `[MouseHook] Primeira ativação do hook global adiada ${mouseHookDelayMs}ms (ZENITH_MOUSE_HOOK_DELAY_MS=0 para imediato).`,
+      `[MouseHook] First activation of the global hook delayed ${mouseHookDelayMs}ms (ZENITH_MOUSE_HOOK_DELAY_MS=0 for immediate).`,
     );
     setTimeout(() => syncMouseHookState(), mouseHookDelayMs);
   } else {
@@ -5587,7 +5591,7 @@ app.whenReady().then(async () => {
   }
 });
 
-// IPC: Renderer atualiza modo jogo (também hidratamos de config-v2.json no arranque / save-full-config)
+// IPC: renderer updates game mode (we also hydrate from config-v2.json at startup / save-full-config)
 ipcMain.on("set-game-mode", (_event, gm) => {
   mergeGameModeConfig(gm);
 });
@@ -5661,10 +5665,10 @@ function resolveVsCodeExePath() {
 }
 
 /**
- * "Antigravity" sao dois produtos: o IDE (`Antigravity IDE.exe`, com MRU) e o agente
- * (`Antigravity.exe`, sem MRU e sem argumento de pasta). Abrir um projeto recente tem de usar o
- * IDE, por isso ele vem sempre primeiro — o agente fica como ultimo recurso para instalacoes
- * antigas em que o IDE ainda se chamava so "Antigravity".
+ * "Antigravity" is two products: the IDE (`Antigravity IDE.exe`, with an MRU) and the agent
+ * (`Antigravity.exe`, no MRU and no folder argument). Opening a recent project has to use the IDE,
+ * so it always comes first — the agent is the last resort for old installs where the IDE was still
+ * called just "Antigravity".
  */
 function resolveAntigravityExePath() {
   if (process.platform !== "win32") return "antigravity";
@@ -5688,13 +5692,13 @@ function resolveAntigravityExePath() {
  * Rewrites Cursor/VS Code–style AUMID tokens to a real .exe or PATH shim so spawn/cmd succeed.
  */
 /**
- * Um id do tipo `electron.app.Antigravity` NAO e um AUMID do Windows: e o AppUserModelID que uma
- * app Electron define para agrupar janelas na barra de tarefas. Nao existe em `shell:AppsFolder`,
- * portanto lanca-lo por ai falha e o erro mostrado ao utilizador e o proprio id. O nome a seguir a
- * `electron.app.` e, porem, o do produto — e isso chega para encontrar o executavel instalado.
+ * An id like `electron.app.Antigravity` is NOT a Windows AUMID: it is the AppUserModelID an Electron
+ * app sets to group windows in the taskbar. It does not exist in `shell:AppsFolder`, so launching
+ * through there fails and the error shown to the user is the id itself. The name after
+ * `electron.app.` is, however, the product's — and that is enough to find the installed executable.
  *
- * AUMIDs reais (MSIX) trazem sempre `!` (`Microsoft.WindowsTerminal_8wekyb3d8bbwe!App`) e passam
- * intactos por aqui.
+ * Real AUMIDs (MSIX) always carry a `!` (`Microsoft.WindowsTerminal_8wekyb3d8bbwe!App`) and pass
+ * through here untouched.
  */
 function resolveElectronAumidExe(rawCommand) {
   if (process.platform !== "win32" || !rawCommand || typeof rawCommand !== "string") return null;
@@ -5721,13 +5725,13 @@ function resolveElectronAumidExe(rawCommand) {
       if (!entry.isDirectory()) continue;
       if (entry.name.toLowerCase().replace(/[^a-z0-9]/g, "") !== wanted) continue;
       const dir = path.join(root, entry.name);
-      /** O executavel costuma repetir o nome da pasta; caso contrario, o primeiro .exe do topo. */
+      /** The executable usually repeats the folder name; otherwise, the first .exe at the top. */
       const candidates = [path.join(dir, `${entry.name}.exe`), path.join(dir, `${product}.exe`)];
       for (const candidate of candidates) {
         try {
           if (fs.existsSync(candidate)) return candidate;
         } catch (e) {
-          /* continua */
+          /* carry on */
         }
       }
       try {
@@ -5736,7 +5740,7 @@ function resolveElectronAumidExe(rawCommand) {
           .find((file) => file.isFile() && /\.exe$/i.test(file.name) && !/^unins/i.test(file.name));
         if (exe) return path.join(dir, exe.name);
       } catch (e) {
-        /* continua */
+        /* carry on */
       }
     }
   }
@@ -5753,13 +5757,13 @@ function normalizeAumidIdeCommands(cmd) {
   s = s.replace(/shell:AppsFolder\\Anysphere\.Cursor(?:![^\s"]*)?/gi, `"${cursorExe}"`);
   s = s.replace(/^(shell:AppsFolder\\)?Anysphere\.Cursor(?:![^\s"]*)?(?=\s|$)/i, token);
 
-  /** `electron.app.X` nao existe em AppsFolder: trocar pelo executavel real antes de lancar. */
+  /** `electron.app.X` does not exist in AppsFolder: swap for the real executable before launching. */
   const head = s.trim().split(/\s+/)[0];
   const electronExe = resolveElectronAumidExe(head);
   if (electronExe) {
     const quoted = /\s/.test(electronExe) ? `"${electronExe}"` : electronExe;
     s = `${quoted}${s.trim().slice(head.length)}`;
-    diagLog(`[Exec] AppUserModelID de Electron "${head}" resolvido para ${electronExe}`);
+    diagLog(`[Exec] Electron AppUserModelID "${head}" resolved to ${electronExe}`);
   }
   return s;
 }
@@ -5816,7 +5820,7 @@ function removeIdeNewWindowFlag(cmd) {
   return cmd.replace(/\s+(?:-n|--new-window)(?=\s|$)/i, "");
 }
 
-/** Pequeno working set mantido em RAM; o Windows também conserva estas páginas no file cache. */
+/** A small working set kept in RAM; Windows also keeps these pages in the file cache. */
 const prewarmedExecutableBuffers = new Map();
 let prewarmAppsSignature = "";
 ipcMain.on("prewarm-apps", async (_event, rawCommands) => {
@@ -5886,19 +5890,19 @@ const escapeCommand = (cmd) => {
 };
 
 /**
- * Os factos que acompanham a string de erro no resultado de `execute-command`.
+ * The facts that travel with the error string in `execute-command`'s result.
  *
- * A string continua a ser a de sempre — quem só a lê não muda de comportamento. O que vai aqui já
- * estava em memória neste sítio, e sem isso o renderer teria de adivinhar a partir de prosa do
- * Windows, que é localizada: em português o mesmo erro diz "Acesso negado".
+ * The string is still the same one — anything that only reads it does not change behaviour. What
+ * goes here was already in memory at this point, and without it the renderer would have to guess
+ * from Windows prose, which is localized: in Portuguese the same error says "Acesso negado".
  *
- * `exeExists` é o sinal que nenhuma prosa dá. O `exec_direct` monta `<terminal> /c <linha>`, por
- * isso um escape mal feito num ficheiro que está lá escreve exatamente o mesmo "is not recognized"
- * que um ficheiro que desapareceu — e mandar reinstalar uma app que nunca se estragou é pior do
- * que não dizer nada. Ver `src/launchFailure.ts`.
+ * `exeExists` is the signal no prose gives. `exec_direct` builds `<terminal> /c <line>`, so a badly
+ * escaped file that is right there prints exactly the same "is not recognized" as a file that has
+ * gone — and telling someone to reinstall an app that never broke is worse than saying nothing.
+ * See `src/launchFailure.ts`.
  *
- * Nada de `stderr` cru na frase que o utilizador lê: isso vai em `raw`, e o cartão mete-o atrás de
- * "Details", numa caixa que rola.
+ * No raw `stderr` in the sentence the user reads: that goes in `raw`, and the card puts it behind
+ * "Details", in a box that scrolls.
  */
 const describeExecutionFailure = (
   trimmedCommand,
@@ -5911,24 +5915,24 @@ const describeExecutionFailure = (
   try {
     const { exe } = win32Launch.splitWin32SpawnExeAndArgs(String(resolvedCommand || "").trim());
     /**
-     * Só uma letra de unidade conta. Uma alternativa não ancorada (`[\\/]`) casaria com qualquer
-     * coisa que tenha uma barra — `https://…`, `steam://…`, `shell:AppsFolder\…!App` — e o disco
-     * responderia "não existe" a um atalho que nunca teve ficheiro nenhum.
+     * Only a drive letter counts. An unanchored alternative (`[\\/]`) would match anything with a
+     * slash in it — `https://…`, `steam://…`, `shell:AppsFolder\…!App` — and the disk would answer
+     * "does not exist" for a shortcut that never had a file at all.
      *
-     * UNC (`\\servidor\…`) fica deliberadamente de fora: isto corre no processo principal e um
-     * `existsSync` a uma partilha morta espera pelo timeout do SMB com a UI parada. Sem sondagem
-     * o classificador cai nos sinais de texto, que é o que fazia antes de ela existir.
+     * UNC (`\\server\…`) is deliberately out: this runs in the main process and an `existsSync` on
+     * a dead share waits for the SMB timeout with the UI frozen. With no probe the classifier falls
+     * back to the text signals, which is what it did before the probe existed.
      */
     if (exe && /^[A-Za-z]:[\\/]/.test(exe)) exeExists = fs.existsSync(exe);
   } catch (e) {
-    /* sondagem é um extra: sem ela o classificador cai nos sinais de texto */
+    /* the probe is a bonus: without it the classifier falls back to the text signals */
   }
   return {
     command: trimmedCommand,
     resolvedCommand,
     commandType,
     method: lastMethod,
-    /** `err.code` do Node: string no `spawn` (`ENOENT`), número (código de saída) no `exec`. */
+    /** Node's `err.code`: a string on `spawn` (`ENOENT`), a number (exit code) on `exec`. */
     errorCode: lastError?.code ?? null,
     exeExists,
     raw: String(lastError?.message || "").slice(0, 4000),
@@ -5936,33 +5940,32 @@ const describeExecutionFailure = (
 };
 
 /**
- * O resultado que o renderer recebe de volta. `ok: false` é a única forma de uma falha de arranque
- * chegar ao UI — o canal `execution-error`, que transmitia a falha a quem estivesse à escuta,
- * deixou de existir. O renderer emparelhava esse aviso com o item que tinha acabado de despachar
- * comparando comandos dentro de uma janela de 15 s; agora a falha volta pelo mesmo `invoke` que a
- * pediu e o item é conhecido sem adivinhar.
+ * The result the renderer gets back. `ok: false` is the only way a launch failure reaches the UI —
+ * the `execution-error` channel, which broadcast the failure to anyone listening, is gone. The
+ * renderer used to pair that notice with the item it had just dispatched by comparing commands
+ * inside a 15 s window; now the failure comes back through the same `invoke` that asked for it and
+ * the item is known without guessing.
  */
 const launchOk = (method) => ({ ok: true, method: method || null });
 const launchFailed = (error, details) => ({ ok: false, error, details });
 
 /**
- * Um alvo que já não existe nunca chega à shell — e é por isso que o cartão de erro aparece.
+ * A target that no longer exists never reaches the shell — and that is why the error card appears.
  *
- * `shell.openPath` e `start ""` respondem a um ficheiro apagado com uma CAIXA DE DIÁLOGO do
- * Windows ("O Windows não consegue encontrar…"), dona da nossa janela. A promessa não resolve, o
- * `exec` não chama de volta, e a escada fica pendurada até alguém carregar em OK — com o resto da
- * app parada atrás dela. Medido com um `.exe` inexistente: `shell.openPath` não resolveu em 8 s,
- * e o `start` a seguir também não. Enquanto o `execute-command` era um envio sem resposta isto
- * passava por "não aconteceu nada"; agora era a resposta que ficava por dar, precisamente no caso
- * que o cartão existe para explicar.
+ * `shell.openPath` and `start ""` answer a deleted file with a Windows DIALOG BOX ("Windows cannot
+ * find…"), owned by our window. The promise does not resolve, `exec` does not call back, and the
+ * ladder hangs until someone presses OK — with the rest of the app stuck behind it. Measured with a
+ * nonexistent `.exe`: `shell.openPath` did not resolve in 8 s, and the `start` after it did not
+ * either. While `execute-command` was a fire-and-forget send this passed for "nothing happened";
+ * now it was the answer that never came, in exactly the case the card exists to explain.
  *
- * Sonda só o que é seguro sondar: uma letra de unidade. UNC (`\\servidor\...`) espera pelo timeout do SMB no
- * processo principal, e AUMIDs, aliases e URLs não são ficheiros — para esses devolve `null` e a
- * escada corre como sempre.
+ * It only probes what is safe to probe: a drive letter. UNC (`\\server\...`) waits for the SMB
+ * timeout in the main process, and AUMIDs, aliases and URLs are not files — for those it returns
+ * `null` and the ladder runs as always.
  *
- * Um "não existe" daqui é de confiar. `splitWin32SpawnExeAndArgs` só desce ao primeiro espaço
- * depois de não encontrar NENHUM prefixo que seja um ficheiro real, por isso um caminho com
- * espaços que esteja lá é sempre reconhecido inteiro.
+ * A "does not exist" from here is trustworthy. `splitWin32SpawnExeAndArgs` only falls back to the
+ * first space after finding NO prefix that is a real file, so a path with spaces that is there is
+ * always recognized whole.
  */
 const missingTargetFailure = (trimmedCommand, resolvedCommand, commandType) => {
   if (process.platform !== "win32" || commandType === "url") return null;
@@ -5983,7 +5986,7 @@ const missingTargetFailure = (trimmedCommand, resolvedCommand, commandType) => {
   try {
     if (fs.existsSync(target)) return null;
   } catch (e) {
-    /** Um disco que não responde não é um atalho partido: deixar a escada tentar. */
+    /** A disk that does not answer is not a broken shortcut: let the ladder try. */
     return null;
   }
 
@@ -6002,7 +6005,7 @@ ${target}`,
   });
 };
 
-// IPC: Recebe comando do React para executar app
+// IPC: receives a command from React to run an app
 const runExecuteCommand = async (command, commandType, options = {}) => {
   if (!command || typeof command !== "string" || command.trim() === "") {
     console.warn("EXEC_ERROR: Received empty or invalid command");
@@ -6115,12 +6118,12 @@ const runExecuteCommand = async (command, commandType, options = {}) => {
     );
 
     /**
-     * Esperar pelo `spawn`/`error` do processo em vez de devolver a seguir ao pedido.
+     * Wait for the process's `spawn`/`error` instead of returning right after the request.
      *
-     * Enquanto isto era um envio sem resposta, o erro do `spawn` — que o Node emite um tick depois
-     * — chegava sempre DEPOIS de o handler ter terminado, e ia por um canal à parte. Agora a falha
-     * tem de caber no valor de retorno, e o `ChildProcess` emite `spawn` assim que o processo
-     * arranca de facto: é essa a corrida que se espera aqui, e não uma qualquer.
+     * While this was a fire-and-forget send, the `spawn` error — which Node emits a tick later —
+     * always arrived AFTER the handler had finished, and went out on a separate channel. Now the
+     * failure has to fit in the return value, and `ChildProcess` emits `spawn` as soon as the
+     * process actually starts: that is the race waited on here, not just any one.
      */
     const spawnOutcome = await new Promise((resolve) => {
       let settled = false;
@@ -6537,7 +6540,7 @@ const runExecuteCommand = async (command, commandType, options = {}) => {
         methodsToTry = ["exec_start", "exec_direct", "exec_explorer_shell"];
         diagLog(`[Exec] Shell app with args: trying start / quoted paths first.`);
       } else {
-        /** `exec_direct` passava o caminho inteiro ao cmd sem partir bem em espaços — preferir start/openPath. */
+        /** `exec_direct` passed the whole path to cmd without splitting properly on spaces — prefer start/openPath. */
         methodsToTry = ["exec_start", "shell.openPath", "exec_direct"];
       }
     }
@@ -6588,16 +6591,16 @@ const runExecuteCommand = async (command, commandType, options = {}) => {
     }
 
     /**
-     * A última paragem antes da shell, e a única depois de `resolvedCommand` estar decidido: o
-     * ramo do IDE reescreve-o a meio, e sondar antes disso sondava um caminho que já não é o que
-     * vai ser lançado.
+     * The last stop before the shell, and the only one after `resolvedCommand` is settled: the IDE
+     * branch rewrites it halfway through, and probing before that probed a path that is no longer
+     * the one about to be launched.
      */
     const gone = missingTargetFailure(trimmedCommand, resolvedCommand, commandType);
     if (gone) return gone;
 
     // Try each method in order
     let lastError = null;
-    /** Qual dos degraus da escada produziu o erro que sobrou — o renderer classifica melhor com ele. */
+    /** Which rung of the ladder produced the error that was left — the renderer classifies better with it. */
     let lastMethod = null;
     for (const method of methodsToTry) {
       try {
@@ -6632,17 +6635,18 @@ const runExecuteCommand = async (command, commandType, options = {}) => {
 };
 
 /**
- * `handle`, e não `on`: quem lançou fica a saber se lançou.
+ * `handle`, not `on`: whoever launched gets to know whether it launched.
  *
- * O renderer nunca soube que um atalho apontava para um ficheiro que já não existe — o envio não
- * tinha resposta e a falha saía por um canal de difusão que só levava o comando. É esta resposta
- * que dá ao cartão de erro o botão "Fix shortcut": o item que falhou é o item deste `invoke`.
+ * The renderer never knew that a shortcut pointed at a file that no longer exists — the send had no
+ * reply and the failure went out on a broadcast channel that carried only the command. It is this
+ * reply that gives the error card its "Fix shortcut" button: the item that failed is this
+ * `invoke`'s item.
  */
 ipcMain.handle("execute-command", async (_event, command, commandType, options = {}) => {
   try {
     return await runExecuteCommand(command, commandType, options);
   } catch (err) {
-    /** Uma exceção fora do `try` interno (resolveShellPath, canonicalize) não pode virar rejeição. */
+    /** An exception outside the inner `try` (resolveShellPath, canonicalize) must not become a rejection. */
     console.error("EXEC_ABORT: execute-command threw outside the ladder:", err);
     return launchFailed(`Unexpected error while running command: ${err?.message || err}`, {
       command: typeof command === "string" ? command : "",
@@ -6655,7 +6659,7 @@ ipcMain.handle("execute-command", async (_event, command, commandType, options =
   }
 });
 
-// IPC: Recebe comando para esconder janela
+// IPC: receives a command to hide the window
 ipcMain.on("hide-window", () => {
   if (!mainWindow || mainWindow.isDestroyed()) return;
 
@@ -6688,7 +6692,7 @@ ipcMain.on("hide-window", () => {
 });
 
 // IPC: Show Window explicitly
-/** Helper persistente: arrancar um powershell por pedido custaria mais do que o utilizador demora a escrever. */
+/** Persistent helper: starting one powershell per request would cost more than the user takes to type. */
 let foregroundFocusHelper = null;
 let foregroundFocusHelperReady = false;
 let pendingForegroundHwnd = null;
@@ -6728,7 +6732,7 @@ function ensureForegroundFocusHelper() {
       foregroundFocusHelperReady = false;
     }
   });
-  child.on("error", (err) => diagLog(`[Foreground] falhou: ${err.message}`));
+  child.on("error", (err) => diagLog(`[Foreground] failed: ${err.message}`));
 }
 
 function writeForegroundFocus(hwnd) {
@@ -6739,7 +6743,7 @@ function writeForegroundFocus(hwnd) {
   try {
     foregroundFocusHelper.stdin.write(`FOCUS ${hwnd}\n`);
   } catch (e) {
-    diagLog(`[Foreground] escrita falhou: ${e.message}`);
+    diagLog(`[Foreground] write failed: ${e.message}`);
   }
 }
 
@@ -6760,10 +6764,10 @@ function stopForegroundFocusHelper() {
 }
 
 /**
- * Windows aplica o foreground lock a quem não recebeu o último input: o radial é mostrado com
- * `showInactive()` e nem `focus()` nem `app.focus({ steal: true })` lhe dão teclado — as teclas
- * continuam a cair na app por baixo. Só partilhando a fila de input com a thread em primeiro plano
- * (no helper) é que `SetForegroundWindow` passa.
+ * Windows applies the foreground lock to anyone who did not receive the last input: the radial is
+ * shown with `showInactive()` and neither `focus()` nor `app.focus({ steal: true })` gives it the
+ * keyboard — the keys keep landing in the app underneath. Only by sharing the input queue with the
+ * foreground thread (in the helper) does `SetForegroundWindow` go through.
  */
 function stealForegroundForMainWindow() {
   if (process.platform !== "win32") return;
@@ -6776,7 +6780,7 @@ function stealForegroundForMainWindow() {
   try {
     hwnd = mainWindow.getNativeWindowHandle().readBigUInt64LE(0).toString();
   } catch (e) {
-    diagLog(`[Foreground] HWND indisponível: ${e.message}`);
+    diagLog(`[Foreground] HWND unavailable: ${e.message}`);
     return;
   }
   ensureForegroundFocusHelper();
@@ -6784,19 +6788,20 @@ function stealForegroundForMainWindow() {
 }
 
 /**
- * Superfícies com campo de texto (gate da licença) pedem o teclado explicitamente. O renderer só
- * envia isto quando `document.hasFocus()` é falso, portanto NÃO confiamos em `isFocused()` aqui:
- * o Electron reporta foco assim que `focus()` é chamado, mesmo quando o Windows o recusou — foi
- * exatamente essa leitura otimista que travava o roubo nativo e obrigava ao clique.
+ * Surfaces with a text field (the licence gate) ask for the keyboard explicitly. The renderer only
+ * sends this when `document.hasFocus()` is false, so we do NOT trust `isFocused()` here: Electron
+ * reports focus as soon as `focus()` is called, even when Windows refused it — that optimistic read
+ * is exactly what blocked the native steal and forced the click.
  */
-/** Versão real do executável — o rodapé das definições mostra-a. */
+/** The executable's real version — the settings footer shows it. */
 /**
- * A app foi aberta pelo arranque do Windows?
+ * Was the app opened by Windows startup?
  *
- * A varredura do Menu Iniciar é adiada 20 s para não competir com o login — nessa altura o disco
- * e o CPU estão saturados e uma sondagem em PowerShell deixa o sistema lento. Só que esse adiamento
- * aplicava-se SEMPRE, mesmo quando o utilizador abre a app à mão a meio do dia, e nesse caso ele
- * fica 20 s à espera de atalhos sem motivo nenhum. Saber a origem do arranque separa os dois casos.
+ * The Start Menu sweep is deferred 20 s so it does not compete with login — at that point the disk
+ * and CPU are saturated and a PowerShell probe leaves the system sluggish. Except that deferral
+ * applied ALWAYS, even when the user opens the app by hand in the middle of the day, and then they
+ * wait 20 s for shortcuts for no reason at all. Knowing where the launch came from separates the
+ * two cases.
  */
 ipcMain.handle("was-opened-at-login", () => {
   try {
@@ -6809,14 +6814,14 @@ ipcMain.handle("was-opened-at-login", () => {
 ipcMain.handle("get-app-version", () => app.getVersion());
 
 /**
- * Canal de distribuição, do ponto de vista de QUEM atualiza:
+ * Distribution channel, from the point of view of WHO updates:
  *
- * `store`       a loja trata disso — as linhas de atualização saem da UI
- * `unsupported` build por empacotar (ou fora do Windows): não há updater nenhum para chamar
- * `direct`      instalador NSIS — é aqui que a linha "Check for updates" faz sentido
+ * `store`       the store handles it — the update rows leave the UI
+ * `unsupported` unpackaged build (or off Windows): there is no updater to call at all
+ * `direct`      NSIS installer — this is where the "Check for updates" row makes sense
  *
- * Antes só havia `store`/`direct`, e em desenvolvimento ficava um botão "Check now" que só sabia
- * devolver erro. Um botão que nunca pode funcionar é pior do que botão nenhum.
+ * There used to be only `store`/`direct`, and in development a "Check now" button was left that
+ * only knew how to return an error. A button that can never work is worse than no button.
  */
 const buildChannel = () => {
   if (isStoreBuild()) return "store";
@@ -6826,16 +6831,16 @@ const buildChannel = () => {
 
 ipcMain.handle("get-build-channel", () => buildChannel());
 
-/** Estado atual, para o painel se pintar mesmo que tenha aberto depois do evento. */
+/** Current state, so the panel can paint itself even if it opened after the event. */
 ipcMain.handle("get-update-state", () => ({ ...lastKnownUpdate, channel: buildChannel() }));
 
 /**
- * Uma verificação, três chamadores: o arranque, o temporizador e o botão (painel ou bandeja).
+ * One check, three callers: startup, the timer and the button (panel or tray).
  *
- * O que ela recusa é tão importante como o que faz. Com o instalador já em disco (`ready`) não há
- * nada a descobrir: verificar outra vez só voltava a transferir o mesmo ficheiro e a fazer a UI
- * regredir de "Restart now" para "a transferir". Com uma transferência a decorrer, o pedido
- * junta-se à que já existe em vez de abrir outra.
+ * What it refuses matters as much as what it does. With the installer already on disk (`ready`)
+ * there is nothing to discover: checking again only downloaded the same file over and made the UI
+ * regress from "Restart now" to "downloading". With a download in flight, the request joins the one
+ * that exists instead of opening another.
  */
 const runUpdateCheck = async () => {
   const channel = buildChannel();
@@ -6865,10 +6870,10 @@ const runUpdateCheck = async () => {
       const result = await autoUpdater.checkForUpdates();
       const version = result?.updateInfo?.version;
       if (version && version !== app.getVersion()) {
-        /** `update-available` já pôs o estado; devolver o que ele ficou, não o que se esperava. */
+        /** `update-available` has already set the state; return what it became, not what was expected. */
         return { ok: true, state: lastKnownUpdate.state === "ready" ? "ready" : "downloading", version };
       }
-      /** Rede de segurança: se `update-not-available` não chegou, marcar na mesma o momento. */
+      /** Safety net: if `update-not-available` did not arrive, mark the moment anyway. */
       if (lastKnownUpdate.state !== "current") {
         notifyRendererUpdateState("current", app.getVersion(), { checkedAt: Date.now() });
       }
@@ -6888,29 +6893,29 @@ const runUpdateCheck = async () => {
 
 ipcMain.handle("check-for-updates", () => runUpdateCheck());
 
-/** Reinício para instalar — o utilizador escolhe o momento, na linha das Definições. */
+/** Restart to install — the user picks the moment, in the Settings row. */
 const installUpdateNow = () => {
   if (isStoreBuild()) return;
-  /** Só há o que instalar depois de `update-downloaded`; antes disso não existe ficheiro. */
+  /** There is only something to install after `update-downloaded`; before that there is no file. */
   if (lastKnownUpdate.state !== "ready") return;
   if (updateInstallInProgress) return;
-  diagLog("[Update] Instalação pedida pelo utilizador");
+  diagLog("[Update] Install requested by the user");
   updateInstallInProgress = true;
 
-  /** O ponteiro pode estar estacionado no centro da roda: devolvê-lo enquanto o helper vive. */
+  /** The pointer may be parked at the wheel's centre: give it back while the helper is alive. */
   releaseRadialCursor();
   /**
-   * Parar os helpers ANTES de sair. O `will-quit` também os para, mas o `quitAndInstall` corre o
-   * instalador assim que o processo termina, e um PowerShell órfão com um ficheiro da pasta de
-   * instalação aberto chega para a substituição falhar.
+   * Stop the helpers BEFORE exiting. `will-quit` stops them too, but `quitAndInstall` runs the
+   * installer as soon as the process ends, and one orphan PowerShell with a file from the install
+   * folder open is enough for the replacement to fail.
    */
   stopMouseHookForShutdown();
   stopRadialMouseBlocker();
   stopForegroundFocusHelper();
 
   /**
-   * `isForceRunAfter: true` — sem isto o NSIS instala e NÃO relança a app, obrigando o utilizador
-   * a abri-la à mão. Uma app que vive na bandeja simplesmente desaparecia depois de atualizar.
+   * `isForceRunAfter: true` — without this NSIS installs and does NOT relaunch the app, forcing the
+   * user to open it by hand. An app that lives in the tray simply vanished after updating.
    */
   autoUpdater.quitAndInstall(false, true);
 };
@@ -6919,7 +6924,7 @@ ipcMain.on("install-update-now", installUpdateNow);
 
 ipcMain.on("request-keyboard-focus", () => {
   if (!mainWindow || mainWindow.isDestroyed()) return;
-  /** Antes do reveal a janela ainda está oculta; o renderer volta a pedir a seguir. */
+  /** Before the reveal the window is still hidden; the renderer asks again right after. */
   if (!mainWindow.isVisible()) return;
   try {
     windowBuriedPassive = false;
@@ -6936,7 +6941,7 @@ ipcMain.on("request-keyboard-focus", () => {
   }
 
   stealForegroundForMainWindow();
-  /** O `focus()` do Electron só se reflete depois de o HWND ser mesmo o foreground. */
+  /** Electron's `focus()` only takes effect once the HWND really is the foreground one. */
   const settle = setTimeout(() => {
     if (!mainWindow || mainWindow.isDestroyed()) return;
     try {
@@ -6997,7 +7002,7 @@ ipcMain.handle("invalidate-paint", () => {
   return false;
 });
 
-/** Área de conteúdo Web em coordenadas de ecrã — `window.screenX/Y` no renderer podem atrasar após windowed→small (ilha deslocada). */
+/** Web content area in screen coordinates — `window.screenX/Y` in the renderer can lag after windowed→small (island shifted). */
 ipcMain.handle("get-main-window-content-bounds", () => {
   if (!mainWindow || mainWindow.isDestroyed()) return null;
   try {
@@ -7158,7 +7163,7 @@ ipcMain.handle("apply-window-size", (event, mode, anchorScreenPoint) => {
   return true;
 });
 
-/** Garante cliques no renderer após abrir widget/radial — limpa passthrough da ilha `small`. */
+/** Guarantees clicks reach the renderer after opening a widget/radial — clears the `small` island's passthrough. */
 ipcMain.handle("ensure-window-interactive", () => {
   if (!mainWindow || mainWindow.isDestroyed()) return false;
   try {
@@ -7177,7 +7182,7 @@ ipcMain.handle("ensure-window-interactive", () => {
   return true;
 });
 
-/** Compatibilidade: a geometria estável já elimina a transição small↔fullscreen. */
+/** Compatibility: the stable geometry already removes the small↔fullscreen transition. */
 let radialTransitionWarmed = false;
 ipcMain.handle("warm-radial-transition", () => {
   if (radialTransitionWarmed) return true;
@@ -7192,14 +7197,14 @@ ipcMain.handle("warm-radial-transition", () => {
     return true;
   }
 
-  /** `small` e radial já partilham os mesmos bounds; não há transição nativa a aquecer. */
+  /** `small` and the radial already share the same bounds; there is no native transition to warm. */
   radialTransitionWarmed = true;
   return true;
 });
 
 /**
- * Repouso sem HUD: conserva apenas o quadrado compacto do radial, totalmente transparente e com
- * mouse passthrough. Não é uma camada do tamanho do monitor e não há hide/show/resize ao abrir.
+ * Idle with no HUD: keeps only the radial's compact square, fully transparent and with mouse
+ * passthrough. It is not a monitor-sized layer and there is no hide/show/resize on open.
  */
 ipcMain.handle("collapse-idle-overlay", () => {
   if (!mainWindow || mainWindow.isDestroyed()) return false;
@@ -7208,7 +7213,7 @@ ipcMain.handle("collapse-idle-overlay", () => {
   } catch (e) {
     return false;
   }
-  /** Só em `small`: em fullscreen/windowed o radial ou um painel está a usar a janela. */
+  /** Only in `small`: in fullscreen/windowed either the radial or a panel is using the window. */
   if (nativeWindowSizeMode !== "small") return false;
 
   const cur = mainWindow.getBounds();
@@ -7237,7 +7242,7 @@ ipcMain.handle("collapse-idle-overlay", () => {
     }
   }
   windowBuriedPassive = false;
-  diagLog("[Overlay] Repouso estável: superfície radial transparente e mouse passthrough.");
+  diagLog("[Overlay] Stable idle: transparent radial surface and mouse passthrough.");
   return true;
 });
 
@@ -7249,7 +7254,7 @@ ipcMain.handle("reapply-small-overlay", () => {
   } catch (e) {
     return false;
   }
-  /** Widget / radial / painel — nunca regredir fullscreen|windowed → small (deixa cliques “presos” até o useEffect realinhar). */
+  /** Widget / radial / panel — never regress fullscreen|windowed → small (it leaves clicks “stuck” until the useEffect realigns). */
   if (nativeWindowSizeMode === "fullscreen" || nativeWindowSizeMode === "windowed") {
     try {
       mainWindow.setIgnoreMouseEvents(false);
@@ -7258,7 +7263,7 @@ ipcMain.handle("reapply-small-overlay", () => {
     }
     return true;
   }
-  /** Modo `small`: manter bounds do radial e superfície transparente estável. */
+  /** `small` mode: keep the radial's bounds and a stable transparent surface. */
   try {
     mainWindow.setIgnoreMouseEvents(true);
     applySmallModeCollapsedBounds(undefined);
@@ -7272,9 +7277,10 @@ ipcMain.handle("reapply-small-overlay", () => {
 });
 
 /**
- * Ilha: com `coordinateSpace: "screen"` encolhemos o HWND ao rect da ilha — fora disso o rato não
- * passa por uma janela topmost transparente a ecrã inteiro (cliques noutras apps deixam de “travar” o DWM).
- * Legado: coords de cliente + `setShape` em janela a ecrã inteiro.
+ * Island: with `coordinateSpace: "screen"` we shrink the HWND to the island's rect — outside it the
+ * mouse does not go through a fullscreen transparent topmost window (clicks in other apps stop
+ * “jamming” the DWM).
+ * Legacy: client coords + `setShape` on a fullscreen window.
  */
 ipcMain.handle("set-window-hit-shape", (event, rects, opts = {}) => {
   if (!mainWindow || mainWindow.isDestroyed()) return false;
@@ -7298,12 +7304,12 @@ ipcMain.handle("set-window-hit-shape", (event, rects, opts = {}) => {
         }
       }
       /*
-       * Só em modo `small` o rato deve reencaminhar por defeito. Em fullscreen (radial), limpar a
-       * ilha compacta desmonta o HUD e envia [] — não podemos aplicar forward aqui senão o menu radial
-       * fica “invisível” ao clique e parece um retângulo minúsculo atrás da ilha.
+       * Only in `small` mode should the mouse pass through by default. In fullscreen (radial),
+       * clearing the compact island unmounts the HUD and sends [] — we cannot apply forward here or
+       * the radial menu becomes “invisible” to clicks and looks like a tiny rectangle behind the island.
        *
-       * `setImmediate`: o renderer pode enviar `set-window-size` `windowed` no mesmo tick (abrir dashboard).
-       * Se expandirmos já para o monitor inteiro antes, o DWM mostra um retângulo a piscar. Adiar o expand.
+       * `setImmediate`: the renderer can send `set-window-size` `windowed` in the same tick (opening the dashboard).
+       * If we expand to the whole monitor before that, the DWM shows a flashing rectangle. Defer the expand.
        */
       try {
         if (nativeWindowSizeMode === "fullscreen" || nativeWindowSizeMode === "windowed") {
@@ -7617,8 +7623,8 @@ const ICON_PIPELINE_VERSION = 7;
 const ICON_CACHE_MAX_ENTRIES = 600;
 
 /**
- * Remove os ícones nativos já gravados na config em disco, para a cura os voltar a resolver.
- * Atalhos web (`http…`) mantêm o favicon: não vêm do pipeline do Windows.
+ * Removes the native icons already written into the config on disk, so healing resolves them again.
+ * Web shortcuts (`http…`) keep their favicon: they do not come from the Windows pipeline.
  */
 function stripStaleNativeIcons(configFilePath) {
   let removed = 0;
@@ -7652,7 +7658,7 @@ function stripStaleNativeIcons(configFilePath) {
       fs.renameSync(tempPath, configFilePath);
     }
   } catch (e) {
-    diagLog(`[Import] Não foi possível limpar ícones antigos: ${e.message}`);
+    diagLog(`[Import] Could not clear the old icons: ${e.message}`);
   }
   return removed;
 }
@@ -7723,10 +7729,10 @@ const loadIconCache = () => {
 };
 
 /**
- * O cache é o maior ficheiro da app (ícones em data URL) e era reescrito por inteiro a cada
- * minuto, houvesse ou não ícones novos — só se resolvem ícones ao descobrir apps, portanto a
- * esmagadora maioria dessas escritas gravava exatamente o mesmo conteúdo.
- * Marcar como sujo custa uma atribuição; a escrita passou a assíncrona pelo mesmo motivo da config.
+ * The cache is the app's biggest file (icons as data URLs) and was rewritten whole every minute,
+ * new icons or not — icons are only resolved when apps are discovered, so the overwhelming majority
+ * of those writes saved exactly the same content.
+ * Marking dirty costs one assignment; the write became async for the same reason the config's did.
  */
 let iconCacheDirty = false;
 let iconCacheWriting = false;
@@ -7786,9 +7792,9 @@ const saveIconCache = ({ sync = false } = {}) => {
       icons: Object.fromEntries(iconCache),
     };
     const json = JSON.stringify(data);
-    /** Limpo antes da escrita: um `set` que chegue durante o I/O tem de sujar outra vez. */
+    /** Cleared before the write: a `set` that arrives during the I/O has to dirty it again. */
     iconCacheDirty = false;
-    /** `will-quit`: assíncrono aqui perdia-se — o processo sai antes do callback. */
+    /** `will-quit`: async here would be lost — the process exits before the callback. */
     if (sync) {
       fs.writeFileSync(iconCachePath, json);
       return;
@@ -7910,7 +7916,7 @@ function fetchUrlBodyBuffer(targetUrl, maxBytes = 524288, redirectDepth = 0) {
   });
 }
 
-/** Evita <img src=https://…> no renderer (muitas vezes bloqueado); devolve data URL. */
+/** Avoids <img src=https://…> in the renderer (often blocked); returns a data URL. */
 /** Sniffed MIME to the extension the icon store will serve it back under. */
 const faviconExtensionForMime = (mime) =>
   ({
@@ -8254,9 +8260,9 @@ app.on("window-all-closed", (e) => {
 });
 
 app.on("will-quit", () => {
-  /** O ponteiro pode estar estacionado no centro da roda: devolvê-lo enquanto o helper vive. */
+  /** The pointer may be parked at the wheel's centre: give it back while the helper is alive. */
   releaseRadialCursor();
-  /** Primeiro os helpers: enquanto viverem, o instalador não consegue tocar na pasta. */
+  /** Helpers first: while they live, the installer cannot touch the folder. */
   stopMouseHookForShutdown();
   stopRadialMouseBlocker();
   stopForegroundFocusHelper();

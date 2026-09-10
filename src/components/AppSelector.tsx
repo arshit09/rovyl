@@ -73,8 +73,8 @@ export const AppSelector: React.FC<AppSelectorProps> = ({
     onClose,
     onAppSelect,
     appsOnly = false,
-    title = 'Adicionar ao Workspace',
-    subtitle = 'Escolha o tipo de atalho',
+    title = 'Add to Workspace',
+    subtitle = 'Choose the shortcut type',
 }) => {
     const [tab, setTab] = useState<Tab>('apps');
     const { apps, loading } = useInstalledApps(isOpen && tab === 'apps');
@@ -153,7 +153,7 @@ export const AppSelector: React.FC<AppSelectorProps> = ({
     const handleFolderConfirm = () => {
         if (!folderPath) return;
         onAppSelect({
-            name: folderName.trim() || folderPath.split(/[/\\]/).filter(Boolean).pop() || 'Pasta',
+            name: folderName.trim() || folderPath.split(/[/\\]/).filter(Boolean).pop() || 'Folder',
             path: folderPath,
             type: 'folder'
         });
@@ -217,12 +217,12 @@ export const AppSelector: React.FC<AppSelectorProps> = ({
                             active={tab === 'folder'}
                             onClick={() => setTab('folder')}
                             icon={<Folder size={14} />}
-                            label="Pasta"
+                            label="Folder"
                         />
                     </div>
                 ) : (
                     <div className="px-5 py-2.5 border-b border-white/[0.06] shrink-0 bg-[#0c0c0c]">
-                        <span className="text-[11px] font-medium text-white/35 uppercase tracking-wider">Apps instalados</span>
+                        <span className="text-[11px] font-medium text-white/35 uppercase tracking-wider">Installed apps</span>
                     </div>
                 )}
 
@@ -247,7 +247,7 @@ export const AppSelector: React.FC<AppSelectorProps> = ({
                                         <input
                                             ref={searchRef}
                                             type="text"
-                                            placeholder="Pesquisar aplicativo..."
+                                            placeholder="Search app..."
                                             value={searchTerm}
                                             onChange={e => setSearchTerm(e.target.value)}
                                             className="w-full bg-white/[0.04] border border-white/[0.07] rounded-xl pl-9 pr-4 py-2.5 text-sm text-white/80 placeholder:text-white/20 focus:outline-none focus:border-white/20 focus:bg-white/[0.06] transition-all duration-200"
@@ -268,13 +268,13 @@ export const AppSelector: React.FC<AppSelectorProps> = ({
                                     {loading ? (
                                         <div className="h-full flex flex-col items-center justify-center gap-3 text-white/30">
                                             <Loader2 size={24} className="animate-spin" />
-                                            <span className="text-xs">Carregando aplicativos...</span>
+                                            <span className="text-xs">Loading apps...</span>
                                         </div>
                                     ) : visibleApps.length === 0 ? (
                                         <div className="h-full flex flex-col items-center justify-center gap-3">
                                             <Package size={36} className="text-white/10" />
                                             <span className="text-sm text-white/25">
-                                                {searchTerm ? 'Nenhum app encontrado' : 'Nenhum app disponível'}
+                                                {searchTerm ? 'No app found' : 'No app available'}
                                             </span>
                                         </div>
                                     ) : (
@@ -292,7 +292,7 @@ export const AppSelector: React.FC<AppSelectorProps> = ({
                                                     <div className="flex-1 min-w-0">
                                                         <div className="text-sm font-medium text-white/80 group-hover:text-white truncate transition-colors">{app.DisplayName || app.Name}</div>
                                                         <div className={`text-[10px] text-white/20 truncate mt-0.5 ${appsOnly ? '' : 'font-mono'}`}>
-                                                            {appsOnly ? 'Aplicativo instalado' : app.Path}
+                                                            {appsOnly ? 'Installed app' : app.Path}
                                                         </div>
                                                     </div>
                                                     <ChevronRight size={14} className="text-white/10 group-hover:text-white/40 transition-all -translate-x-1 group-hover:translate-x-0 flex-shrink-0" />
@@ -307,11 +307,11 @@ export const AppSelector: React.FC<AppSelectorProps> = ({
                                 {!loading && filteredApps.length > 0 && (
                                     <div className="px-5 py-2.5 border-t border-white/[0.05] shrink-0 flex items-center justify-between bg-[#0c0c0c]">
                                         <span className="text-[11px] text-white/20 tabular-nums">
-                                            {visibleApps.length} de {filteredApps.length} apps
+                                            {visibleApps.length} of {filteredApps.length} apps
                                         </span>
                                         {filteredApps.length > visibleCount && (
                                             <button onClick={() => setVisibleCount(p => p + 40)} className="text-[11px] text-white/40 hover:text-white transition-colors flex items-center gap-1">
-                                                Carregar mais <ArrowRight size={11} />
+                                                Load more <ArrowRight size={11} />
                                             </button>
                                         )}
                                     </div>
@@ -345,7 +345,7 @@ export const AppSelector: React.FC<AppSelectorProps> = ({
                                             <input
                                                 type="url"
                                                 autoFocus
-                                                placeholder="https://exemplo.com"
+                                                placeholder="https://example.com"
                                                 value={urlInput}
                                                 onChange={e => setUrlInput(e.target.value)}
                                                 onKeyDown={e => e.key === 'Enter' && handleUrlConfirm()}
@@ -354,10 +354,10 @@ export const AppSelector: React.FC<AppSelectorProps> = ({
                                         </div>
                                     </div>
                                     <div>
-                                        <label className="text-xs font-semibold text-white/40 uppercase tracking-widest mb-2 block">Nome de exibição</label>
+                                        <label className="text-xs font-semibold text-white/40 uppercase tracking-widest mb-2 block">Display name</label>
                                         <input
                                             type="text"
-                                            placeholder="Ex: YouTube, Company Portal..."
+                                            placeholder="e.g. YouTube, Company Portal..."
                                             value={urlName}
                                             onChange={e => setUrlName(e.target.value)}
                                             onKeyDown={e => e.key === 'Enter' && handleUrlConfirm()}
@@ -373,7 +373,7 @@ export const AppSelector: React.FC<AppSelectorProps> = ({
                                         className="w-full py-3 rounded-xl font-semibold text-sm transition-all duration-200 flex items-center justify-center gap-2 disabled:opacity-30 disabled:cursor-not-allowed bg-white text-black hover:bg-white/90 active:scale-[0.98]"
                                     >
                                         <Check size={16} />
-                                        Adicionar URL
+                                        Add URL
                                     </button>
                                 </div>
                             </motion.div>
@@ -410,7 +410,7 @@ export const AppSelector: React.FC<AppSelectorProps> = ({
                                                     <div className="text-sm font-medium text-white/70">{folderPath.split(/[/\\]/).filter(Boolean).pop()}</div>
                                                     <div className="text-[10px] text-white/25 font-mono mt-0.5 max-w-xs truncate">{folderPath}</div>
                                                 </div>
-                                                <span className="text-xs text-white/30 hover:text-white/60 transition-colors">Clique para alterar</span>
+                                                <span className="text-xs text-white/30 hover:text-white/60 transition-colors">Click to change</span>
                                             </>
                                         ) : (
                                             <>
@@ -418,8 +418,8 @@ export const AppSelector: React.FC<AppSelectorProps> = ({
                                                     <Folder size={24} className="text-white/25 group-hover:text-white/50 transition-colors" />
                                                 </div>
                                                 <div className="text-center">
-                                                    <div className="text-sm font-medium text-white/40 group-hover:text-white/60 transition-colors">Selecionar pasta</div>
-                                                    <div className="text-xs text-white/20 mt-0.5">Clique para abrir o explorador</div>
+                                                    <div className="text-sm font-medium text-white/40 group-hover:text-white/60 transition-colors">Select folder</div>
+                                                    <div className="text-xs text-white/20 mt-0.5">Click to open the explorer</div>
                                                 </div>
                                             </>
                                         )}
@@ -429,10 +429,10 @@ export const AppSelector: React.FC<AppSelectorProps> = ({
                                 {/* Name override */}
                                 {folderPath && (
                                     <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}>
-                                        <label className="text-xs font-semibold text-white/40 uppercase tracking-widest mb-2 block">Nome de exibição</label>
+                                        <label className="text-xs font-semibold text-white/40 uppercase tracking-widest mb-2 block">Display name</label>
                                         <input
                                             type="text"
-                                            placeholder="Nome da pasta..."
+                                            placeholder="Folder name..."
                                             value={folderName}
                                             onChange={e => setFolderName(e.target.value)}
                                             onKeyDown={e => e.key === 'Enter' && handleFolderConfirm()}
@@ -448,7 +448,7 @@ export const AppSelector: React.FC<AppSelectorProps> = ({
                                         className="w-full py-3 rounded-xl font-semibold text-sm transition-all duration-200 flex items-center justify-center gap-2 disabled:opacity-30 disabled:cursor-not-allowed bg-white text-black hover:bg-white/90 active:scale-[0.98]"
                                     >
                                         <Check size={16} />
-                                        Adicionar Pasta
+                                        Add Folder
                                     </button>
                                 </div>
                             </motion.div>

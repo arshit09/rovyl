@@ -1,12 +1,12 @@
 /**
- * Hero art da Microsoft Store: a roda do Rovyl desenhada de raiz, a 1920x1080 nativos.
+ * Microsoft Store hero art: the Rovyl wheel drawn from scratch, at a native 1920x1080.
  *
- * A versão anterior era um recorte de uma captura, ampliado 2,57x — lia-se como cortado porque
- * era. Aqui a cena é composta à medida do quadro: o gradiente ocupa-o inteiro, a roda tem a
- * escala que um banner pede, e nada é interpolado.
+ * The previous version was a crop of a screenshot, scaled up 2.57x — it read as cropped because
+ * it was. Here the scene is composed to fit the frame: the gradient fills the whole of it, the
+ * wheel is at the scale a banner asks for, and nothing is interpolated.
  *
- * Regras da Store respeitadas: sem texto de espécie alguma, detalhe ao centro, nada de essencial
- * no terço inferior (a Store aplica lá um gradiente), e espaço vazio minimizado.
+ * Store rules respected: no text of any kind, detail at the center, nothing essential in the
+ * bottom third (the Store lays a gradient over it), and empty space minimized.
  */
 import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -27,7 +27,7 @@ const TILE = 96;
 const RADIUS = 214;
 const HUB = 136;
 
-/** Glifos de contorno, no espaço 24x24 do Lucide, desenhados centrados em cada mosaico. */
+/** Outline glyphs, in Lucide's 24x24 space, drawn centered on each tile. */
 const GLYPHS = [
   "M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13c0 1.1.9 2 2 2Z",
   "M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20ZM2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10Z",
@@ -81,12 +81,12 @@ const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">
 </svg>`;
 
 /**
- * O hub é branco com a marca escura, como na app quando está aceso.
+ * The hub is white with a dark mark, as in the app when it is lit.
  *
- * Inverter o ícone inteiro não serve: o fundo escuro vira cinzento-claro, não branco, e desenha
- * um quadrado visível dentro do círculo. Aqui usa-se a LUMINÂNCIA do ficheiro como canal alfa de
- * uma tinta escura — onde a marca é clara fica opaca, onde o fundo é escuro fica transparente.
- * O patamar corta o resto do fundo, que de outro modo deixaria o hub sujo.
+ * Inverting the whole icon does not work: the dark background turns light grey, not white, and
+ * draws a visible square inside the circle. Here the file's LUMINANCE is used as the alpha
+ * channel of a dark ink — where the mark is light it is opaque, where the background is dark it
+ * is transparent. The floor cuts the rest of the background, which would otherwise dirty the hub.
  */
 const markSize = Math.round(HUB * 0.58);
 const { data: luma } = await sharp(source)
@@ -115,4 +115,4 @@ await sharp(Buffer.from(svg))
   .toFile(out);
 
 const meta = await sharp(out).metadata();
-console.log(`HeroArt-F-wheel.png  ${meta.width}x${meta.height}  (roda ${RADIUS * 2 + TILE}px de diâmetro, sem ampliação)`);
+console.log(`HeroArt-F-wheel.png  ${meta.width}x${meta.height}  (wheel ${RADIUS * 2 + TILE}px across, no upscaling)`);
