@@ -46,6 +46,11 @@ check("the version line is a label, not a control", () => {
   assert.equal(find(full, "Rovyl 1.4.0").enabled, false);
 });
 
+check("the version heads the menu — it names what you opened, before the things it does", () => {
+  assert.equal(labels(full)[0], "Rovyl 1.4.0");
+  assert.notEqual(labels(full).at(-2), "Rovyl 1.4.0", "and no longer sits above Quit");
+});
+
 // ── Workspaces ────────────────────────────────────────────────────────────────
 check("every workspace is listed, and exactly the current one is ticked", () => {
   const submenu = find(full, "Workspace").submenu;

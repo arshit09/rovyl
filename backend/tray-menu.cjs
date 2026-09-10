@@ -53,6 +53,9 @@ function buildTrayMenuTemplate({
   const minutesLeft = paused ? Math.max(1, Math.ceil((pausedUntil - now) / 60000)) : 0;
 
   const items = [
+    /** Not a control: the one thing a bug report always needs and nobody can find. */
+    { label: `Rovyl ${version}`, enabled: false },
+    { type: "separator" },
     {
       label: "Open wheel",
       ...withIcon(icons.wheel),
@@ -140,8 +143,6 @@ function buildTrayMenuTemplate({
   }
 
   items.push({ type: "separator" });
-  /** Not a control: the one thing a bug report always needs and nobody can find. */
-  items.push({ label: `Rovyl ${version}`, enabled: false });
   items.push({
     label: "Quit",
     ...withIcon(icons.power),
