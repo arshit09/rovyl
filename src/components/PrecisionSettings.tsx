@@ -64,6 +64,12 @@ interface PrecisionSettingsProps {
    */
   nav: SettingsNav;
   setNav: React.Dispatch<React.SetStateAction<SettingsNav>>;
+  /**
+   * Whether the Start Menu scan is still to come. "This workspace is empty — add an application" is
+   * the wrong advice while a scan that will fill it is pending: it invites the user to redo work
+   * that is already on its way.
+   */
+  discoveryPhase?: 'idle' | 'waiting' | 'scanning';
   /** Estado da licença ativa nesta máquina — a linha das definições espelha-o. */
   /** Verdadeiro enquanto houver um pedido pendente para abrir o cartão da licença. */
   /** Chamado assim que o pedido é atendido, para o App o limpar. */
@@ -183,6 +189,7 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
   onReset,
   nav,
   setNav,
+  discoveryPhase = 'idle',
 }) => {
   /**
    * Os dois valores continuam a ler-se e a escrever-se como estado local — mudou só onde moram.
@@ -1117,6 +1124,7 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
               updateWorkspace={updateWorkspace}
               deleteWorkspace={deleteWorkspace}
               showToast={showToast}
+              discoveryPhase={discoveryPhase}
               setConfig={setConfig}
               apps={apps}
               gameMode={gameMode}
@@ -1557,6 +1565,7 @@ function SettingsEditor({
   updateWorkspace,
   deleteWorkspace,
   showToast,
+  discoveryPhase,
   setConfig,
   apps,
   gameMode,
@@ -1574,6 +1583,7 @@ function SettingsEditor({
   /** The one delete: it renumbers the positional hotkeys and offers the workspace back. */
   deleteWorkspace: (index: number) => void;
   showToast: (message: string, undo?: () => void) => void;
+  discoveryPhase: 'idle' | 'waiting' | 'scanning';
   setConfig: PrecisionSettingsProps['setConfig'];
   apps: AppItem[];
   gameMode: UIConfig['gameMode'];
@@ -1629,6 +1639,7 @@ function SettingsEditor({
         onFocusApplied={onFocusApplied}
         showToast={showToast}
         selectionMode={config.radialSelectionMode}
+        discoveryPhase={discoveryPhase}
         updateWorkspace={updateWorkspace}
         makeActive={() => update('activeWorkspaceIndex', index)}
         /**
@@ -2005,6 +2016,7 @@ function WorkspaceManager({
   onFocusApplied,
   showToast,
   selectionMode,
+  discoveryPhase,
 }: {
   workspace: Workspace;
   workspaceIndex: number;
@@ -2019,6 +2031,7 @@ function WorkspaceManager({
   showToast: (message: string, undo?: () => void) => void;
   /** Direction vs pointer changes what a crowded wheel actually costs, so the warning needs it. */
   selectionMode: UIConfig['radialSelectionMode'];
+  discoveryPhase: 'idle' | 'waiting' | 'scanning';
 }) {
   const [addMode, setAddMode] = useState<WorkspaceAddMode>(null);
   const { apps: installedApps, loading: loadingApps, error: appsError, reload: loadInstalledApps } =
@@ -2701,7 +2714,16 @@ function WorkspaceManager({
             </div>
           );})}
           {!workspace.apps.length && (
-            <div className="zs-manager-empty is-large"><SquareStack size={22} /><b>This workspace is empty</b><span>Add an application, URL, or folder above.</span></div>
+            discoveryPhase !== 'idle' ? (
+              /** Empty because a scan has not run yet, not because there is nothing to add. */
+              <div className="zs-manager-empty is-large">
+                <Loader2 className="zs-spin" size={22} />
+                <b>{discoveryPhase === 'scanning' ? 'Looking through your Start menu…' : 'Finding your applications'}</b>
+                <span>Rovyl fills this workspace by itself. You can add more above at any time.</span>
+              </div>
+            ) : (
+              <div className="zs-manager-empty is-large"><SquareStack size={22} /><b>This workspace is empty</b><span>Add an application, URL, or folder above.</span></div>
+            )
           )}
         </div>
         </div>

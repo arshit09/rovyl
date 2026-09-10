@@ -193,6 +193,11 @@ export function radialScrimGradient(
 }
 
 interface RadialMenuProps {
+  /**
+   * Whether the Start Menu scan is still to come. An empty wheel is otherwise indistinguishable
+   * from one that has lost its shortcuts, and at login the scan is deferred twenty seconds.
+   */
+  discoveryPhase?: 'idle' | 'waiting' | 'scanning';
   isOpen: boolean;
   position: Coordinates;
   viewportSize: { width: number; height: number };
@@ -746,6 +751,7 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
   currentWorkspace,
   animationReady = true,
   updateReady = false,
+  discoveryPhase = 'idle',
 }) => {
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const [isCenterActive, setIsCenterActive] = useState(false);
@@ -2420,6 +2426,21 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
                 {currentLevelApps.length === 0
                   ? 'no matches'
                   : `${currentLevelApps.length} of ${rawLevelApps.length}`}
+              </span>
+            </div>
+          )}
+
+          {/*
+            An empty wheel that is empty ON PURPOSE, said in the same place and the same plate as
+            the type-ahead readout — the two can never be on screen together, since a filter needs
+            something to filter. Only at the root: an empty FOLDER is empty because it is empty.
+          */}
+          {isOpen && !typeAhead && discoveryPhase !== 'idle' && rawLevelApps.length === 0 && folderStack.length === 0 && (
+            <div className="zn-radial-filter is-notice" role="status" aria-live="polite">
+              <span className="zn-radial-filter-count">
+                {discoveryPhase === 'scanning'
+                  ? 'Looking through your Start menu…'
+                  : 'Your apps are on their way — this wheel fills itself in a moment.'}
               </span>
             </div>
           )}

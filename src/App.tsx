@@ -47,6 +47,17 @@ const FirstRun = React.lazy(() =>
 
 const LS_MAIN_DISCOVERY_DONE = 'zenith_main_discovery_done';
 
+/**
+ * Where the Start Menu scan has got to, for the two surfaces that would otherwise just look broken.
+ *
+ * At login the scan is deliberately deferred twenty seconds so it cannot compete with Windows for
+ * the disk — and for those twenty seconds the Main workspace is genuinely empty. A wheel with
+ * nothing in it and no explanation is indistinguishable from one that has lost its shortcuts, and
+ * the empty state in Settings said "Add an application", which is advice to undo work that is
+ * already on its way.
+ */
+export type DiscoveryPhase = 'idle' | 'waiting' | 'scanning';
+
 /** Every Lucide glyph name a config can put on screen: shortcuts, folders, workspaces, centre button. */
 function* iterateItemIconNames(items: AppItem[]): Generator<string | undefined> {
   for (const item of items) {
@@ -299,6 +310,8 @@ export default function App() {
 
   const [windowState, setWindowState] = useState<'maximized' | 'windowed'>('windowed');
   const [isLoaded, setIsLoaded] = useState(false);
+  /** Only ever non-idle on a profile whose Main workspace has not been filled yet. */
+  const [discoveryPhase, setDiscoveryPhase] = useState<DiscoveryPhase>('idle');
   /** True quando hidratámos a partir de config-v2.json / migração — localStorage pode estar vazio após reboot. */
   const hydratedFromPersistenceRef = useRef(false);
   /** Desktop welcome / primeira sessão: corre só depois `isLoaded` (IPC não pode correr antes da hidratação). */
@@ -1028,10 +1041,13 @@ export default function App() {
         window.electron?.savePersistenceLog?.(
           `[StartMenu] varredura agendada em ${discoveryDeferMs}ms (arranque com o Windows: ${openedAtLogin})`,
         );
+        /** From here until the merge lands, an empty Main is a wait rather than a loss. */
+        setDiscoveryPhase('waiting');
 
         discoveryDeferTimer = window.setTimeout(() => {
           void (async () => {
             if (cancelled) {
+              setDiscoveryPhase('idle');
               startMenuScanPersistenceHoldRef.current = false;
               return;
             }
@@ -1040,6 +1056,7 @@ export default function App() {
             );
             /** Rastreia se a descoberta realmente adicionou apps — só marca como concluída quando sim. */
             let discoveryAddedApps = false;
+            setDiscoveryPhase('scanning');
             try {
               const discovered = (await window.electron!.getStartupApps()) as StartMenuDiscoveryRow[];
               if (discovered?.length > 0 && mainIdx !== -1) {
@@ -1090,6 +1107,11 @@ export default function App() {
                     : { ...prev, mainStartMenuDiscoveryDone: true },
                 );
               }
+              /**
+               * Idle either way. A scan that found nothing is over too, and leaving the message up
+               * would promise apps that are not coming — the empty state is then the honest one.
+               */
+              setDiscoveryPhase('idle');
               startMenuScanPersistenceHoldRef.current = false;
               queueMicrotask(() => {
                 flushPersistenceToDiskRef.current?.();
@@ -2619,6 +2641,7 @@ export default function App() {
                   isPage={true}
                   nav={settingsNav}
                   setNav={setSettingsNav}
+                  discoveryPhase={discoveryPhase}
                   onClose={handleClosePanelToBackground}
                   apps={apps} setApps={setApps} config={config} setConfig={setConfig} onReset={async () => {
                     try {
@@ -2690,6 +2713,7 @@ export default function App() {
             config={radialMenuConfig}
             triggerSource={triggerSource}
             updateReady={updateReady}
+            discoveryPhase={discoveryPhase}
             onWorkspaceSwitch={handleWorkspaceSwitch}
             currentWorkspace={radialCurrentWorkspace}
             animationReady={
