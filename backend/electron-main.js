@@ -47,6 +47,7 @@ const { buildTrayMenuTemplate } = require("./tray-menu.cjs");
 const { normalizeFullPersistenceBlob } = require("./persistence-normalize.cjs");
 const { detectGameExecutable } = require("./game-detection.cjs");
 const { parseForegroundSnapshot, createLineSplitter } = require("./foreground-snapshot.cjs");
+const { isPhysicalRectFullscreen } = require("./fullscreen-bounds.cjs");
 const crypto = require("crypto");
 const { GlobalKeyboardListener } = require("node-global-key-listener");
 const http = require("http");
@@ -2353,7 +2354,24 @@ function openSettingsFromMainProcess() {
 }
 
 /**
+ * `screen.screenToDipRect`, if this build has it.
+ *
+ * Both foreground helpers answer in physical pixels — `foreground-focus.ps1` goes out of its way
+ * to stay per-monitor-aware so it does — and Electron describes every display in DIP. Chromium is
+ * the only thing that knows where each monitor sits in physical space on a mixed-scale layout, so
+ * ask it rather than divide, and keep the arithmetic in `fullscreen-bounds.cjs` for the platforms
+ * (and the tests) that have no `screen`.
+ */
+function screenRectToDip(rect) {
+  if (typeof screen.screenToDipRect !== "function") return null;
+  return screen.screenToDipRect(null, rect);
+}
+
+/**
  * The window rect covers the whole monitor (real fullscreen), not the typical maximized (workArea).
+ *
+ * Ownership guards first, then geometry — see `backend/fullscreen-bounds.cjs`, where the geometry
+ * lives so a scale factor this machine does not have can still be tested.
  */
 function isBoundsFullscreenMonitor(bounds, ownerExePathLower) {
   if (!bounds || typeof bounds.width !== "number") return false;
@@ -2371,36 +2389,12 @@ function isBoundsFullscreenMonitor(bounds, ownerExePathLower) {
   const shellBase = path.basename(ownerExePathLower || "").toLowerCase();
   if (shellBase === "explorer.exe") return false;
 
-  const { x, y, width, height } = bounds;
-  if (width < 320 || height < 240) return false;
-
-  const cx = Math.round(x + width / 2);
-  const cy = Math.round(y + height / 2);
-  let display;
   try {
-    display = screen.getDisplayNearestPoint({ x: cx, y: cy });
+    return isPhysicalRectFullscreen(bounds, screen.getAllDisplays(), screenRectToDip);
   } catch (_) {
+    /* No display list means no verdict — fail open rather than block the wheel. */
     return false;
   }
-
-  const db = display.bounds;
-  const wa = display.workArea;
-  const slack = 10;
-
-  const matchesWorkArea =
-    Math.abs(x - wa.x) <= slack &&
-    Math.abs(y - wa.y) <= slack &&
-    Math.abs(width - wa.width) <= slack &&
-    Math.abs(height - wa.height) <= slack;
-  if (matchesWorkArea) return false;
-
-  const coversFullDisplay =
-    x <= db.x + slack &&
-    y <= db.y + slack &&
-    x + width >= db.x + db.width - slack &&
-    y + height >= db.y + db.height - slack;
-
-  return coversFullDisplay;
 }
 
 function isForegroundWindowFullscreen(win) {

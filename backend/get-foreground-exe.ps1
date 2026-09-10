@@ -17,8 +17,24 @@ public class ZFG {
   [DllImport("user32.dll", CharSet = CharSet.Unicode)]
   public static extern int GetWindowText(IntPtr hWnd, StringBuilder lpString, int nMaxCount);
   [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr hWnd, out RECT lpRect);
+  [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
+  [DllImport("user32.dll")] public static extern bool SetProcessDpiAwarenessContext(IntPtr ctx);
+
+  /**
+   * The rect on line 4 has to be in the same units as the one the warm helper reports, because
+   * both are handed to the same isBoundsFullscreenMonitor. A powershell left DPI-unaware is given
+   * coordinates virtualized to the system DPI instead of physical pixels, which on a scaled
+   * display is a third unit again — it would survive the conversion in the main process looking
+   * plausible and be wrong by exactly the scale factor. Per-monitor-v2, same as Electron and same
+   * as backend/foreground-focus.ps1.
+   */
+  public static void MatchElectronDpiAwareness() {
+    try { if (SetProcessDpiAwarenessContext(new IntPtr(-4))) return; } catch { }
+    try { SetProcessDPIAware(); } catch { }
+  }
 }
 '@ | Out-Null
+[ZFG]::MatchElectronDpiAwareness()
 $hwndFg = [ZFG]::GetForegroundWindow()
 if ($hwndFg -eq [IntPtr]::Zero) { exit 1 }
 $procId = 0
