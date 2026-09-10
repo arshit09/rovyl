@@ -240,6 +240,7 @@ export const DEFAULT_UI_CONFIG: UIConfig = {
   },
   globalShortcut: "Alt+Z",
   hasSeenOnboarding: false,
+  hasSeenDirectionHint: false,
   workspaces: DEFAULT_WORKSPACES,
   activeWorkspaceIndex: 0,
   workspaceSwitchMode: 'picker',

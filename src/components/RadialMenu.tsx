@@ -213,6 +213,12 @@ interface RadialMenuProps {
   animationReady?: boolean;
   /** Update downloaded and waiting on a restart — badge on the hub. */
   updateReady?: boolean;
+  /**
+   * The direction-mode hint has been read: fires once, ever, on the way out of an open that showed
+   * it. Deferred to the close on purpose — spending the flag with the wheel still up would pull the
+   * hint off screen mid-sentence, punishing the one person it was written for.
+   */
+  onDirectionHintSeen?: () => void;
 }
 
 /**
@@ -232,6 +238,14 @@ const INSTANT_ARM_DELAY_MS = 120;
 const INSTANT_ARM_DISPLACEMENT_PX = 24;
 /** Absorbs the reflex click that lands right after a dwell launch. */
 const INSTANT_QUARANTINE_MS = 300;
+/**
+ * How long the direction-mode hint has to stay on screen before it counts as read.
+ *
+ * The hint leaves the moment the hand moves, so an open that began with the mouse already in
+ * motion flashes it for a frame or two. Without this floor that flash would spend the single
+ * showing, and the person who never got to read it is exactly the person who needed it.
+ */
+const DIRECTION_HINT_SEEN_MS = 900;
 /**
  * Settle before counting.
  *
@@ -876,6 +890,7 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
   config,
   triggerSource = 'shortcut',
   onWorkspaceSwitch,
+  onDirectionHintSeen,
   currentWorkspace,
   animationReady = true,
   updateReady = false,
@@ -2608,6 +2623,53 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
     : null;
 
 
+  /**
+   * The direction-mode hint, and its one showing.
+   *
+   * The flag is read straight off `config`, with no per-open snapshot, precisely because it is only
+   * ever raised on the CLOSE — while the wheel is up the value cannot change under the reader.
+   *
+   * `…ShownRef` is this wheel's own record that the hint stood long enough to count;
+   * `…ReportedRef` keeps a wheel that is opened and closed repeatedly from telling App again while
+   * the saved config is still on its way back down as a prop.
+   */
+  const directionHintVisible =
+    isOpen &&
+    !echoActive &&
+    bloom &&
+    directionMode &&
+    !hasMoved &&
+    !typeAhead &&
+    rawLevelApps.length > 0 &&
+    config.hasSeenDirectionHint !== true;
+
+  const directionHintShownRef = useRef(false);
+  const directionHintReportedRef = useRef(false);
+  const onDirectionHintSeenRef = useRef(onDirectionHintSeen);
+  onDirectionHintSeenRef.current = onDirectionHintSeen;
+
+  useEffect(() => {
+    if (!directionHintVisible || directionHintShownRef.current) return;
+    const timer = setTimeout(() => {
+      directionHintShownRef.current = true;
+    }, DIRECTION_HINT_SEEN_MS);
+    return () => clearTimeout(timer);
+  }, [directionHintVisible]);
+
+  const reportDirectionHintSeen = useCallback(() => {
+    if (!directionHintShownRef.current || directionHintReportedRef.current) return;
+    directionHintReportedRef.current = true;
+    onDirectionHintSeenRef.current?.();
+  }, []);
+
+  useEffect(() => {
+    if (isOpen) return;
+    reportDirectionHintSeen();
+  }, [isOpen, reportDirectionHintSeen]);
+
+  /** The other way out: a wheel remounted by `radialMountKey` never sees `isOpen` fall. */
+  useEffect(() => reportDirectionHintSeen, [reportDirectionHintSeen]);
+
   const backdropRadius = Math.ceil(
     actualMenuRadius + actualIconSize * 0.75 + Math.max(18, minGap),
   );
@@ -2699,11 +2761,15 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
             that acknowledged the mode at all.
 
             Only until the hand moves. From that moment the arc is the explanation and the user is
-            aiming, not deciding whether to; a hint that stayed would be furniture on every open for
-            anyone who uses this daily. It costs nothing to show again next time, because next time
-            is another moment of not having moved yet.
+            aiming, not deciding whether to.
+
+            And only once, ever. Shown again on every open it became furniture for anyone who uses
+            this daily — read the first time, then a thing to look past for the next thousand. It is
+            spent the first time it has stood for `DIRECTION_HINT_SEEN_MS` (see
+            `directionHintVisible`), which is what keeps a spend from happening on an open where it
+            merely flickered.
           */}
-          {isOpen && !echoActive && bloom && directionMode && !hasMoved && !typeAhead && rawLevelApps.length > 0 && (
+          {directionHintVisible && (
             <div className="zn-radial-filter is-hint" role="note">
               <span className="zn-radial-filter-count">
                 Push toward a target to open it — or press <kbd>Esc</kbd> to close the wheel.

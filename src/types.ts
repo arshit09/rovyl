@@ -120,6 +120,13 @@ export interface UIConfig {
    * came off disk is marked true on load, so it can only ever be false on a genuinely new profile.
    */
   hasSeenOnboarding?: boolean;
+  /**
+   * Whether the direction-mode hint ("push toward a target") has had its one showing. It used to
+   * come back on every open until the hand moved — right for someone meeting the mode, furniture
+   * for everyone else. It is now spent the first time it has been on screen long enough to have
+   * been read, and does not come back.
+   */
+  hasSeenDirectionHint?: boolean;
   workspaces: Workspace[]; // New: Workspace configurations
   activeWorkspaceIndex: number; // New: Currently active workspace (0-indexed)
   /**

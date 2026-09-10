@@ -2390,6 +2390,26 @@ export default function App() {
     setUser((u) => (u ? { ...u, ...patch } : null));
   }, []);
 
+  /**
+   * The direction-mode hint has had its showing and does not come back.
+   *
+   * One-way, and it returns the SAME object when the flag is already up: `config` is the wheel's
+   * only prop identity and the trigger for the debounced disk write, so minting a new one for a
+   * no-op change would re-render the whole wheel and save for nothing.
+   *
+   * Deliberately not back-filled for configs written before the flag existed, the way
+   * `hasSeenOnboarding` is. Direction mode is off by default, so an absent flag mostly means
+   * "never turned this on" — marking those seen would quietly take the hint away from the people
+   * who have yet to meet the mode. The few who already had it on get it once more, then never.
+   */
+  const handleDirectionHintSeen = useCallback(() => {
+    setConfig((current) =>
+      current.hasSeenDirectionHint === true
+        ? current
+        : { ...current, hasSeenDirectionHint: true },
+    );
+  }, []);
+
   /** Menu-only slice of config: stable when unrelated settings (e.g. widget opacities) change — keeps RadialMenu from re-rendering the full wheel. */
   /**
    * The wheel gets the whole config; the memo exists only to stabilize the reference.
@@ -2727,6 +2747,7 @@ export default function App() {
             updateReady={updateReady}
             discoveryPhase={discoveryPhase}
             onWorkspaceSwitch={handleWorkspaceSwitch}
+            onDirectionHintSeen={handleDirectionHintSeen}
             currentWorkspace={radialCurrentWorkspace}
             animationReady={
               radialPendingPaintToken === null ||
