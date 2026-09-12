@@ -11,6 +11,7 @@ import {
   ArrowDownToLine,
   ArrowUpFromLine,
   Check,
+  CheckSquare,
   ChevronDown,
   Eye,
   EyeOff,
@@ -31,6 +32,7 @@ import {
   Palette,
   Settings,
   Shield,
+  Square,
   SquareStack,
   Trash2,
   Undo2,
@@ -46,10 +48,11 @@ import { SmartIcon } from './SmartIcon';
 import { IconPicker } from './IconPicker';
 import { RovylLogo } from './RovylLogo';
 import '../fonts-display.css';
-import { NativeAppIcon, useInstalledApps, type InstalledApp } from './installedApps';
+import { NativeAppIcon, useInstalledApps, clearInstalledAppsMemory, type InstalledApp } from './installedApps';
 import { radialCrowding } from '../utils/workspaceRadial';
 import { startMenuAppIdToLaunchCommand } from '../utils/windowsLaunchCommand';
 import { WheelPreview } from './WheelPreview';
+import { useTranslation } from '../i18n/useTranslation';
 
 interface PrecisionSettingsProps {
   isOpen: boolean;
@@ -196,6 +199,16 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
   setNav,
   discoveryPhase = 'idle',
 }) => {
+  const { t, isRtl } = useTranslation(config.language);
+
+  const sectionsList = useMemo(() => [
+    { id: 'general' as const, label: t('general'), caption: t('generalDesc'), icon: Settings },
+    { id: 'trigger' as const, label: t('trigger'), caption: t('triggerDesc'), icon: Mouse },
+    { id: 'appearance' as const, label: t('appearance'), caption: t('appearanceDesc'), icon: Palette },
+    { id: 'spaces' as const, label: t('workspaces'), caption: t('workspacesDesc'), icon: SquareStack },
+    { id: 'advanced' as const, label: t('advanced'), caption: t('advancedDesc'), icon: Shield },
+  ], [t]);
+
   /**
    * Both values are still read and written like local state — only where they live changed.
    * The functional `setNav` calls keep two writes in the same commit from erasing each other.
@@ -412,9 +425,16 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
     setIsDismissing(true);
     window.setTimeout(() => {
       setIsDismissing(false);
+      clearInstalledAppsMemory();
       onClose();
     }, 240);
   }, [onClose]);
+
+  useEffect(() => {
+    return () => {
+      clearInstalledAppsMemory();
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -752,6 +772,13 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
     return {
       general: [
         {
+          key: 'language', configKey: 'language', group: 'Language', title: t('language'),
+          description: t('languageDesc'),
+          kind: 'segmented', current: config.language ?? 'en',
+          choices: [{ value: 'en', label: 'English' }, { value: 'ar', label: 'العربية' }],
+          onChange: (value) => update('language', value as UIConfig['language']),
+        },
+        {
           key: 'openAtLogin', configKey: 'openAtLogin', group: 'Startup', title: 'Start with Windows',
           description: 'Rovyl is ready as soon as you sign in to Windows.',
           kind: 'bool', enabled: Boolean(config.openAtLogin),
@@ -774,6 +801,13 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
           key: 'shortcut', group: 'Keyboard', title: 'Global shortcut',
           description: 'Open the wheel over any application.',
           kind: 'open', value: config.globalShortcut, onOpen: () => setEditor({ kind: 'shortcut' }),
+        },
+        {
+          key: 'shortcutMode', configKey: 'shortcutTriggerMode', group: 'Keyboard', title: t('shortcutBehavior'),
+          description: t('shortcutBehaviorDesc'),
+          kind: 'segmented', current: config.shortcutTriggerMode ?? 'toggle',
+          choices: [{ value: 'toggle', label: t('shortcutToggle') }, { value: 'hold', label: t('shortcutHold') }],
+          onChange: (value) => update('shortcutTriggerMode', value as UIConfig['shortcutTriggerMode']),
         },
         {
           key: 'mouse', configKey: 'enableMouseTrigger', group: 'Mouse', title: 'Mouse trigger',
@@ -1002,7 +1036,7 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
   }, [config, gameMode, theme, apps, update, updateRow, canUpdate, onReset, deleteWorkspace, reorderWorkspaces]);
 
   const trimmedQuery = query.trim().toLowerCase();
-  const activeMeta = SECTIONS.find((section) => section.id === sectionId)!;
+  const activeMeta = sectionsList.find((section) => section.id === sectionId) || SECTIONS[0];
 
   /**
    * Where the list was, after touching a setting.
@@ -1043,7 +1077,7 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
       !trimmedQuery || `${item.title} ${item.description ?? ''} ${item.group}`.toLowerCase().includes(trimmedQuery);
 
     const source = trimmedQuery
-      ? SECTIONS.flatMap((section) => sections[section.id].filter(matches))
+      ? sectionsList.flatMap((section) => sections[section.id].filter(matches))
       : sections[sectionId];
 
     /** Groups while keeping declaration order: the group is a label, not a card. */
@@ -1054,7 +1088,7 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
       else groups.push({ name: item.group, items: [item] });
     }
     return groups;
-  }, [sections, sectionId, trimmedQuery]);
+  }, [sections, sectionId, trimmedQuery, sectionsList]);
 
   const isEmpty = results.length === 0;
 
@@ -1075,13 +1109,13 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
    */
   const sectionChanged = useMemo(() => {
     const changed = {} as Record<SectionId, boolean>;
-    for (const section of SECTIONS) {
+    for (const section of sectionsList) {
       changed[section.id] = (sections[section.id] ?? []).some(
         (row) => row.configKey && !isAtDefault(row.configKey),
       );
     }
     return changed;
-  }, [sections, isAtDefault]);
+  }, [sections, isAtDefault, sectionsList]);
 
   if (!isOpen) return null;
 
@@ -1090,6 +1124,7 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
       id="settings-container"
       className={`zs-shell${isDismissing ? ' is-dismissing' : ''}`}
       data-zn-theme={theme}
+      dir={isRtl ? 'rtl' : 'ltr'}
     >
       <motion.section
         className={`zs-window${isSidebarCollapsed ? ' is-sidebar-collapsed' : ''}${searchForced ? ' is-search-forced' : ''}`}
@@ -1100,7 +1135,7 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
       >
         <aside className="zs-sidebar">
           <div className="zs-sidebar-head">
-            <h2>Settings</h2>
+            <h2>{t('settings')}</h2>
           </div>
 
           <div className="zs-search">
@@ -1111,8 +1146,8 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
               onChange={(event) => setQuery(event.target.value)}
               /** The rail comes back only if nothing was searched for; a query keeps its own box. */
               onBlur={() => { if (!query.trim()) setSearchForced(false); }}
-              placeholder="Search"
-              aria-label="Search settings"
+              placeholder={t('searchSettings')}
+              aria-label={t('searchSettings')}
             />
             {query && (
               <button type="button" onClick={() => setQuery('')} aria-label="Clear search">
@@ -1122,7 +1157,7 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
           </div>
 
           <nav className="zs-nav" aria-label="Settings sections">
-            {SECTIONS.map((section) => {
+            {sectionsList.map((section) => {
               const Icon = section.icon;
               return (
                 <button
@@ -1787,6 +1822,7 @@ function SettingsEditor({
         discoveryPhase={discoveryPhase}
         updateWorkspace={updateWorkspace}
         makeActive={() => update('activeWorkspaceIndex', index)}
+        language={config.language}
         /**
          * The same delete as the list's, and it was not before. This branch filtered the array
          * inline and skipped `withPositionalHotkeys`, so removing anything but the last workspace
@@ -2164,6 +2200,7 @@ function WorkspaceManager({
   showToast,
   selectionMode,
   discoveryPhase,
+  language,
 }: {
   workspace: Workspace;
   workspaceIndex: number;
@@ -2179,11 +2216,21 @@ function WorkspaceManager({
   /** Direction vs pointer changes what a crowded wheel actually costs, so the warning needs it. */
   selectionMode: UIConfig['radialSelectionMode'];
   discoveryPhase: 'idle' | 'waiting' | 'scanning';
+  language?: string;
 }) {
+  const { t } = useTranslation(language);
   const [addMode, setAddMode] = useState<WorkspaceAddMode>(null);
+  const [isMultiSelect, setIsMultiSelect] = useState(false);
+  const [isAddingSelected, setIsAddingSelected] = useState(false);
+  const [selectedAppPaths, setSelectedAppPaths] = useState<Set<string>>(() => new Set());
   const { apps: installedApps, loading: loadingApps, error: appsError, reload: loadInstalledApps } =
     useInstalledApps(addMode === 'app');
   const [appSearch, setAppSearch] = useState('');
+
+  useEffect(() => {
+    setSelectedAppPaths(new Set());
+    setIsMultiSelect(false);
+  }, [addMode]);
   const [url, setUrl] = useState('');
   const [urlLabel, setUrlLabel] = useState('');
   /** Once a name has been typed, the page's own title stops overwriting it. */
@@ -2193,34 +2240,29 @@ function WorkspaceManager({
   const [folderLabel, setFolderLabel] = useState('');
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [isIconPickerOpen, setIsIconPickerOpen] = useState(false);
-  const itemRefs = useRef(new Map<string, HTMLDivElement>());
+  const [editingIconForIndex, setEditingIconForIndex] = useState<number | null>(null);
+  const itemRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const nameInputRef = useRef<HTMLInputElement>(null);
 
-  /**
-   * The row a failed launch asked for: expanded, and scrolled to.
-   *
-   * By id, because the index is not stable — the card can sit on screen while the list is
-   * reordered. If the id is gone (deleted between the failure and the click) the workspace simply
-   * stays open, which is still where the user needs to be.
-   */
+  /** Failed-launch rescue: scroll the row in and flash its editor open. */
   useEffect(() => {
     if (!focusAppId) return;
-    const index = workspace.apps.findIndex((item) => item.id === focusAppId);
-    if (index >= 0) {
-      setEditingIndex(index);
-      /** After paint: the row is only tall enough to be worth centring once its editor is in it. */
-      requestAnimationFrame(() => {
-        itemRefs.current.get(focusAppId)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
-      });
-    }
-    onFocusApplied?.();
-  }, [focusAppId, workspace.apps, onFocusApplied]);
+    const matchIndex = workspace.apps.findIndex((app) => app.id === focusAppId);
+    if (matchIndex === -1) return;
+    setEditingIndex(matchIndex);
+    const timer = window.setTimeout(() => {
+      itemRefs.current.get(focusAppId)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      onFocusApplied?.();
+    }, 60);
+    return () => window.clearTimeout(timer);
+  }, [focusAppId, onFocusApplied, workspace.apps]);
 
   /** A modal that only closes with the mouse is a modal that traps whoever uses the keyboard. */
   useEffect(() => {
     if (!isIconPickerOpen) return;
     const onKey = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
-      /** Do not let Escape bubble up and close the workspace editor underneath. */
+      event.preventDefault();
       event.stopPropagation();
       setIsIconPickerOpen(false);
     };
@@ -2249,8 +2291,12 @@ function WorkspaceManager({
     const displayName = label?.trim() || cleanPath.split(/[/\\]/).filter(Boolean).pop()?.replace(/\.(exe|lnk|bat|cmd)$/i, '') || 'Application';
     let customIconUrl: string | undefined;
     try { customIconUrl = (await window.electron?.getFileIcon?.(cleanPath)) || undefined; } catch { /* use fallback */ }
+    const safeId = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+      ? crypto.randomUUID()
+      : `${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 9)}`;
+
     const nextItem: AppItem = {
-      id: crypto.randomUUID(), type: 'app', label: displayName,
+      id: safeId, type: 'app', label: displayName,
       iconName: 'AppWindow', iconSource: customIconUrl ? 'native' : 'lucide', customIconUrl,
       command: cleanPath, commandType: 'app', description: 'Application',
     };
@@ -2264,6 +2310,69 @@ function WorkspaceManager({
       }
     }
     addItem(isIde ? { ...nextItem, hasRecents: true, terminalCommands: [] } : nextItem, isIde);
+  };
+
+  const addSelectedApps = async () => {
+    if (selectedAppPaths.size === 0 || isAddingSelected) return;
+    const selectedList = installedApps.filter((item) => item.Path && selectedAppPaths.has(item.Path));
+    if (selectedList.length === 0) return;
+
+    setIsAddingSelected(true);
+    try {
+      const newItems: AppItem[] = await Promise.all(
+        selectedList.map(async (item) => {
+          const rawPath = item.Path!;
+          const cleanPath = startMenuAppIdToLaunchCommand(rawPath).trim();
+          const displayName = item.DisplayName || item.Name || 'Application';
+          let customIconUrl: string | undefined;
+          try {
+            // Check iconCache by trying rawPath first (fastest cache hit from list view), then cleanPath
+            customIconUrl =
+              (await window.electron?.getFileIcon?.(rawPath)) ||
+              (await window.electron?.getFileIcon?.(cleanPath)) ||
+              undefined;
+          } catch {
+            /* fallback */
+          }
+          const safeId = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+            ? crypto.randomUUID()
+            : `${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 9)}`;
+
+          const nextItem: AppItem = {
+            id: safeId,
+            type: 'app',
+            label: displayName,
+            iconName: 'AppWindow',
+            iconSource: customIconUrl ? 'native' : 'lucide',
+            customIconUrl,
+            command: cleanPath,
+            commandType: 'app',
+            description: 'Application',
+          };
+
+          let isIde = isIdeApp(nextItem);
+          if (window.electron?.appSupportsRecents) {
+            try {
+              isIde = await window.electron.appSupportsRecents(nextItem.label, nextItem.command);
+            } catch {
+              /* keep */
+            }
+          }
+          return isIde ? { ...nextItem, hasRecents: true, terminalCommands: [] } : nextItem;
+        })
+      );
+
+      updateWorkspace(workspaceIndex, { apps: [...workspace.apps, ...newItems] });
+      setSelectedAppPaths(new Set());
+      setIsMultiSelect(false);
+      setAddMode(null);
+      setAppSearch('');
+      showToast(newItems.length === 1 ? (t('shortcutsTitle') + ': +1') : `${t('shortcutsTitle')}: +${newItems.length}`);
+    } catch (e) {
+      console.error('Failed to add selected applications:', e);
+    } finally {
+      setIsAddingSelected(false);
+    }
   };
 
   const chooseAppFile = async () => {
@@ -2638,42 +2747,113 @@ function WorkspaceManager({
                   <div className="zs-add-panel-head">
                     <label className="zs-search is-manager-search">
                       <Search size={14} />
-                      <input value={appSearch} onChange={(event) => setAppSearch(event.target.value)} placeholder="Search installed applications" />
+                      <input value={appSearch} onChange={(event) => setAppSearch(event.target.value)} placeholder={t('searchApps')} />
                     </label>
-                    <button type="button" className="zs-btn" onClick={chooseAppFile}><FilePlus2 size={14} /> Choose file</button>
+                    <button
+                      type="button"
+                      className={`zs-btn${isMultiSelect ? ' is-primary' : ''}`}
+                      onClick={() => {
+                        setIsMultiSelect(!isMultiSelect);
+                        if (isMultiSelect) setSelectedAppPaths(new Set());
+                      }}
+                      title={t('multiSelect')}
+                    >
+                      {isMultiSelect ? <CheckSquare size={14} /> : <Square size={14} />}
+                      <span>{t('multiSelect')}</span>
+                    </button>
+                    {isMultiSelect && (
+                      <button
+                        type="button"
+                        className="zs-btn"
+                        onClick={() => {
+                          if (selectedAppPaths.size === filteredApps.length && filteredApps.length > 0) {
+                            setSelectedAppPaths(new Set());
+                          } else {
+                            setSelectedAppPaths(new Set(filteredApps.map((a) => a.Path).filter(Boolean) as string[]));
+                          }
+                        }}
+                        title={selectedAppPaths.size === filteredApps.length ? t('clearSelection') : t('selectAll')}
+                      >
+                        {selectedAppPaths.size === filteredApps.length ? <Square size={13} /> : <CheckSquare size={13} />}
+                        <span>{selectedAppPaths.size === filteredApps.length ? t('clearSelection') : t('selectAll')}</span>
+                      </button>
+                    )}
+                    <button type="button" className="zs-btn" onClick={chooseAppFile}><FilePlus2 size={14} /> {t('chooseFile')}</button>
                   </div>
                   <div className="zs-installed-apps" onScroll={handleAppsScroll}>
                     {loadingApps ? (
-                      <div className="zs-manager-empty"><Loader2 className="zs-spin" size={18} /> Loading applications…</div>
+                      <div className="zs-manager-empty"><Loader2 className="zs-spin" size={18} /> {t('loadingApps')}</div>
                     ) : visibleApps.length ? (
-                      visibleApps.map((item, index) => (
-                        <button
-                          type="button"
-                          key={`${item.Path}-${index}`}
-                          /**
-                           * The listed `Path` is an AppID, so it is wrapped as a launch line rather
-                           * than stored as one — see `startMenuAppIdToLaunchCommand`.
-                           */
-                          onClick={() => addAppPath(startMenuAppIdToLaunchCommand(item.Path!), item.DisplayName || item.Name)}
-                        >
-                          <NativeAppIcon path={item.Path} size={28} className="zs-installed-app-icon" fallback={<Monitor size={15} />} />
-                          <div><b>{item.DisplayName || item.Name}</b><small>{item.Path}</small></div>
-                          <Plus size={14} />
-                        </button>
-                      ))
+                      visibleApps.map((item, index) => {
+                        const isSelected = item.Path ? selectedAppPaths.has(item.Path) : false;
+                        if (isMultiSelect) {
+                          return (
+                            <button
+                              type="button"
+                              key={`${item.Path}-${index}`}
+                              className={isSelected ? 'is-selected' : ''}
+                              onClick={() => {
+                                if (!item.Path) return;
+                                setSelectedAppPaths((prev) => {
+                                  const next = new Set(prev);
+                                  if (next.has(item.Path!)) next.delete(item.Path!);
+                                  else next.add(item.Path!);
+                                  return next;
+                                });
+                              }}
+                            >
+                              <NativeAppIcon path={item.Path} size={28} className="zs-installed-app-icon" fallback={<Monitor size={15} />} />
+                              <div><b>{item.DisplayName || item.Name}</b><small>{item.Path}</small></div>
+                              {isSelected ? (
+                                <CheckSquare size={16} style={{ color: 'var(--zn-focus, #3b82f6)', flex: 'none' }} />
+                              ) : (
+                                <Square size={16} style={{ opacity: 0.45, flex: 'none' }} />
+                              )}
+                            </button>
+                          );
+                        }
+                        return (
+                          <button
+                            type="button"
+                            key={`${item.Path}-${index}`}
+                            onClick={() => addAppPath(startMenuAppIdToLaunchCommand(item.Path!), item.DisplayName || item.Name)}
+                          >
+                            <NativeAppIcon path={item.Path} size={28} className="zs-installed-app-icon" fallback={<Monitor size={15} />} />
+                            <div><b>{item.DisplayName || item.Name}</b><small>{item.Path}</small></div>
+                            <Plus size={14} />
+                          </button>
+                        );
+                      })
                     ) : appsError ? (
                       <div className="zs-manager-empty">
                         Could not list applications.
-                        <button type="button" className="zs-btn" onClick={() => loadInstalledApps(true)}>Try again</button>
+                        <button type="button" className="zs-btn" onClick={() => loadInstalledApps(true)}>{t('tryAgain')}</button>
                       </div>
                     ) : (
-                      <div className="zs-manager-empty">No applications found. Use “Choose file”.</div>
+                      <div className="zs-manager-empty">{t('noAppsFound')} {t('chooseFile')}</div>
                     )}
                   </div>
                   {!loadingApps && installedApps.length > 0 && (
                     <div className="zs-add-panel-foot">
-                      <span>{visibleApps.length} of {filteredApps.length} applications</span>
-                      <button type="button" onClick={() => loadInstalledApps(true)}>Reload list</button>
+                      <span>
+                        {isMultiSelect && selectedAppPaths.size > 0
+                          ? `${selectedAppPaths.size} ${t('selectedCount')}`
+                          : `${visibleApps.length} / ${filteredApps.length} ${t('appsCount')}`}
+                      </span>
+                      <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                        {isMultiSelect && selectedAppPaths.size > 0 && (
+                          <button
+                            type="button"
+                            className="zs-btn is-primary"
+                            disabled={isAddingSelected}
+                            onClick={() => void addSelectedApps()}
+                          >
+                            {isAddingSelected ? <Loader2 size={13} className="zs-spin" /> : <Plus size={13} />}
+                            <span>{t('addSelected')} ({selectedAppPaths.size})</span>
+                          </button>
+                        )}
+                        <button type="button" onClick={() => loadInstalledApps(true)}>{t('reloadList')}</button>
+                      </div>
                     </div>
                   )}
                 </>

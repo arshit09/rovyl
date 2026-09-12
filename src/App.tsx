@@ -330,6 +330,12 @@ export default function App() {
   useEffect(() => {
     if (!isDashboardOpen && !isSettingsOpen) {
       setPanelChromeDismissedForIsland(false);
+      import('./components/installedApps').then((m) => m.clearInstalledAppsMemory?.()).catch(() => {});
+      if (typeof (window as any).gc === 'function') {
+        try {
+          (window as any).gc();
+        } catch (_) {}
+      }
     }
   }, [isDashboardOpen, isSettingsOpen]);
 
@@ -2075,6 +2081,17 @@ export default function App() {
         lastWindowState.current = m;
       });
 
+    const cleanupCleanMemory = window.electron?.onCleanMemory?.(() => {
+      import('./components/installedApps').then((m) => m.clearInstalledAppsMemory?.()).catch(() => {});
+      if (typeof (window as any).gc === 'function') {
+        try {
+          (window as any).gc();
+        } catch (_) {
+          /* ignore */
+        }
+      }
+    });
+
     return () => {
       cleanupMenu?.();
       cleanupPrepareRadial?.();
@@ -2086,6 +2103,7 @@ export default function App() {
       cleanupWindowHidToTray?.();
       cleanupMainWindowMinimized?.();
       cleanupNativeDisplayRestored?.();
+      cleanupCleanMemory?.();
     };
   }, []);
 

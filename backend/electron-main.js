@@ -563,6 +563,7 @@ function normalizeRecentlyOpenedPathsList(raw) {
 }
 
 async function loadRecentlyOpenedPathsFromVscdb(vscdbPath) {
+  let db = null;
   try {
     const initSqlJs = require("sql.js");
     const distDir = path.dirname(require.resolve("sql.js"));
@@ -573,7 +574,7 @@ async function loadRecentlyOpenedPathsFromVscdb(vscdbPath) {
         : distDir;
     const SQL = await initSqlJs({ locateFile: (f) => path.join(wasmDir, f) });
     const buf = fs.readFileSync(vscdbPath);
-    const db = new SQL.Database(buf);
+    db = new SQL.Database(buf);
     const res = db.exec(
       "SELECT value FROM ItemTable WHERE key = 'history.recentlyOpenedPathsList'",
     );
@@ -583,6 +584,14 @@ async function loadRecentlyOpenedPathsFromVscdb(vscdbPath) {
   } catch (e) {
     diagLog(`[Recents] state.vscdb read failed (${vscdbPath}): ${e.message}`);
     return [];
+  } finally {
+    if (db && typeof db.close === "function") {
+      try {
+        db.close();
+      } catch (_) {
+        /* ignore */
+      }
+    }
   }
 }
 
@@ -597,6 +606,16 @@ diagLog("Rovyl Main Process Started");
 process.on("SIGINT", () => {
   diagLog("[Signal] SIGINT received — routing through app.quit() for clean persistence flush");
   app.quit();
+});
+
+process.on("uncaughtException", (error) => {
+  diagLog(`[FATAL UNCAUGHT EXCEPTION] ${error?.stack || error?.message || error}`);
+  console.error("[FATAL UNCAUGHT EXCEPTION]", error);
+});
+
+process.on("unhandledRejection", (reason) => {
+  diagLog(`[UNHANDLED PROMISE REJECTION] ${reason?.stack || reason?.message || reason}`);
+  console.error("[UNHANDLED PROMISE REJECTION]", reason);
 });
 
 /** Sum bytes of config-v2.json.broken-*.json (after quarantine) so the renderer can block destructive saves. */
@@ -670,6 +689,18 @@ if (process.env.ZENITH_AGGRESSIVE_GPU !== "1") {
   );
 }
 diagLog("[Perf] Background throttling dynamically controlled by window visibility.");
+
+// Memory optimization: prioritize low working set for an idle background launcher.
+// --optimize_for_size reduces V8 bytecode & code cache footprint.
+// --max-old-space-size=128 ensures GC triggers well before heap reaches multiple hundreds of MB.
+// --expose-gc exposes global.gc() for cleanups when returning to idle.
+app.commandLine.appendSwitch(
+  "js-flags",
+  "--optimize_for_size --max-old-space-size=128 --expose-gc",
+);
+// Cap disk and media cache sizes so Chromium does not hold tens of megabytes of offline buffers
+app.commandLine.appendSwitch("disk-cache-size", "10485760");
+app.commandLine.appendSwitch("media-cache-size", "10485760");
 
 // Fix Taskbar Icon Grouping
 app.setName("Rovyl");
@@ -1043,7 +1074,8 @@ async function createWindow() {
       preload: path.join(__dirname, "electron-preload.js"),
       nodeIntegration: false,
       contextIsolation: true,
-      devTools: true,
+      devTools: isDev,
+      spellcheck: false,
       // Let Chromium fully suspend animation/timers while the transparent window is hidden.
       // Keeping an invisible renderer at full frame rate can contend with high-polling-rate mice.
       backgroundThrottling: true,
@@ -1085,6 +1117,7 @@ async function createWindow() {
       // Chromium on Windows often needs a few frames to stabilize the transparent compositor
       setTimeout(() => {
         console.log("Main window ready (stabilized)");
+        scheduleIdleMemoryCleanup(3500);
         resolve(newWindow);
       }, 200);
     });
@@ -1292,6 +1325,7 @@ let radialOpenPaintSequence = 0;
 /* zenith-verify:radial-handshake-main — prepare → radial-prep-paint-done → open-menu → radial-open-paint-done → show; see scripts/verify-radial-windowing.mjs */
 function showMenuAtCursor(source = "shortcut") {
   if (!mainWindow || mainWindow.isDestroyed()) return;
+  cancelIdleMemoryCleanup();
   const radialOpenStartedAt = Date.now();
 
   /** A fixed position means truly fixed: neither the position nor the monitor follows the cursor. */
@@ -2013,7 +2047,8 @@ function radialModeBounds(displayBounds, point) {
  * disagreeing about the target is a visible DWM flash.
  */
 function radialOpenBounds(displayBounds, point) {
-  if (!radialFullBleed) return radialModeBounds(displayBounds, point);
+  const needsFull = radialFullBleed;
+  if (!needsFull) return radialModeBounds(displayBounds, point);
   return {
     x: Math.round(displayBounds.x),
     y: Math.round(displayBounds.y),
@@ -2127,6 +2162,7 @@ function updateWindowSize(mode, anchorScreenPoint) {
   const b = targetDisplay.bounds;
 
   if (mode === "fullscreen") {
+    cancelIdleMemoryCleanup();
     lastWindowHitShapeKey = "__empty__";
     if (!rendererPanelVisible) {
       panelOverlayActive = false;
@@ -2180,6 +2216,7 @@ function updateWindowSize(mode, anchorScreenPoint) {
       /* ignore */
     }
   } else if (mode === "windowed") {
+    cancelIdleMemoryCleanup();
     clearRadialMouseBlocking();
     releaseRadialCursor();
     panelOverlayActive = false;
@@ -2252,6 +2289,7 @@ function updateWindowSize(mode, anchorScreenPoint) {
   } else if (mode === "small") {
     clearRadialMouseBlocking();
     releaseRadialCursor();
+    scheduleIdleMemoryCleanup(2500);
     panelOverlayActive = false;
     panelOverlayKeptWindow = false;
     lastWindowHitShapeKey = "__empty__";
@@ -2982,6 +3020,7 @@ app.whenReady().then(async () => {
   const settingsPath = path.join(app.getPath("userData"), "settings.json");
   let currentSettings = {
     globalShortcut: "Alt+Z",
+    shortcutTriggerMode: "toggle",
     enableMouseTrigger: true,
     mouseTriggerMode: "click",
     mouseTriggerButton: "middle",
@@ -3023,6 +3062,10 @@ app.whenReady().then(async () => {
     if (!ui || typeof ui !== "object") return;
     if (typeof ui.globalShortcut === "string" && ui.globalShortcut.trim()) {
       currentSettings.globalShortcut = ui.globalShortcut.trim();
+    }
+    if (ui.shortcutTriggerMode === "click" || ui.shortcutTriggerMode === "hold" || ui.shortcutTriggerMode === "toggle") {
+      currentSettings.shortcutTriggerMode = ui.shortcutTriggerMode;
+      if (cachedRadialFlags) cachedRadialFlags.shortcutTriggerMode = ui.shortcutTriggerMode;
     }
     if (typeof ui.enableMouseTrigger === "boolean") {
       currentSettings.enableMouseTrigger = ui.enableMouseTrigger;
@@ -3158,6 +3201,8 @@ app.whenReady().then(async () => {
     enableMouseTrigger: currentSettings.enableMouseTrigger !== false,
     mouseTriggerMode:
       currentSettings.mouseTriggerMode === "hold" ? "hold" : "click",
+    shortcutTriggerMode:
+      currentSettings.shortcutTriggerMode === "hold" ? "hold" : "toggle",
     mouseTriggerButton: MOUSE_TRIGGER_BUTTONS.includes(currentSettings.mouseTriggerButton)
       ? currentSettings.mouseTriggerButton
       : "middle",
@@ -3176,6 +3221,9 @@ app.whenReady().then(async () => {
       if (fc.mouseTriggerMode === "click" || fc.mouseTriggerMode === "hold") {
         cachedRadialFlags.mouseTriggerMode = fc.mouseTriggerMode;
       }
+      if (fc.shortcutTriggerMode === "click" || fc.shortcutTriggerMode === "hold" || fc.shortcutTriggerMode === "toggle") {
+        cachedRadialFlags.shortcutTriggerMode = fc.shortcutTriggerMode;
+      }
       if (MOUSE_TRIGGER_BUTTONS.includes(fc.mouseTriggerButton)) {
         cachedRadialFlags.mouseTriggerButton = fc.mouseTriggerButton;
       }
@@ -3191,6 +3239,9 @@ app.whenReady().then(async () => {
         }
         if (ui.mouseTriggerMode === "click" || ui.mouseTriggerMode === "hold") {
           cachedRadialFlags.mouseTriggerMode = ui.mouseTriggerMode;
+        }
+        if (ui.shortcutTriggerMode === "click" || ui.shortcutTriggerMode === "hold" || ui.shortcutTriggerMode === "toggle") {
+          cachedRadialFlags.shortcutTriggerMode = ui.shortcutTriggerMode;
         }
         mergeGameModeConfig(ui.gameMode);
       }
@@ -3525,82 +3576,80 @@ app.whenReady().then(async () => {
   };
 
   ipcMain.handle("get-full-config", () => {
-    const configPath = path.join(app.getPath("userData"), "config-v2.json");
-    const bakPath = `${configPath}.bak`;
+    try {
+      const configPath = path.join(app.getPath("userData"), "config-v2.json");
+      const bakPath = `${configPath}.bak`;
 
-    migrateConfigIconsToStore(configPath);
+      migrateConfigIconsToStore(configPath);
 
-    const quarantineUnreadablePrimary = (err) => {
+      const quarantineUnreadablePrimary = (err) => {
+        try {
+          if (fs.existsSync(configPath)) {
+            const bad = `${configPath}.broken-${Date.now()}.json`;
+            fs.renameSync(configPath, bad);
+            diagLog(
+              `[Persist] Quarantined unreadable config-v2.json → ${path.basename(bad)} (${err.message})`,
+            );
+          }
+        } catch (e) {
+          diagLog(`[Persist] Quarantine primary failed: ${e.message}`);
+        }
+      };
+
+      const loadShapeAndWin32 = (filePath, label) => {
+        const data = fs.readFileSync(filePath, "utf-8");
+        const parsed = JSON.parse(data);
+        const shaped = normalizeFullPersistenceBlob(parsed);
+        if (!shaped) {
+          diagLog(
+            `[Persist] get-full-config ${label}: JSON ok but shape invalid (missing workspaces?) path=${filePath}`,
+          );
+          return null;
+        }
+        return shaped;
+      };
+
       try {
         if (fs.existsSync(configPath)) {
-          const bad = `${configPath}.broken-${Date.now()}.json`;
-          fs.renameSync(configPath, bad);
-          diagLog(
-            `[Persist] Quarantined unreadable config-v2.json → ${path.basename(bad)} (${err.message})`,
-          );
+          const st = fs.statSync(configPath);
+          const loaded = loadShapeAndWin32(configPath, "primary");
+          if (loaded) {
+            diagLog(
+              `[Persist] load ok source=primary path=${configPath} bytes=${st.size}`,
+            );
+            return loaded;
+          }
         }
       } catch (e) {
-        diagLog(`[Persist] Quarantine primary failed: ${e.message}`);
-      }
-    };
-
-    const loadShapeAndWin32 = (filePath, label) => {
-      const data = fs.readFileSync(filePath, "utf-8");
-      const parsed = JSON.parse(data);
-      const shaped = normalizeFullPersistenceBlob(parsed);
-      if (!shaped) {
+        console.error("Failed to load primary config:", e);
         diagLog(
-          `[Persist] get-full-config ${label}: JSON ok but shape invalid (missing workspaces?) path=${filePath}`,
+          `[Persist] get-full-config primary unreadable (${e.message}) — attempting quarantine`,
         );
-        return null;
+        quarantineUnreadablePrimary(e);
       }
-      if (process.platform === "win32") {
-        try {
-          const copy = JSON.parse(JSON.stringify(shaped));
-          win32Launch.normalizePersistedPayloadWin32(copy);
-          return copy;
-        } catch (e) {
-          diagLog(`[Persist] get-full-config win32 normalize (${label}): ${e.message}`);
+      try {
+        if (fs.existsSync(bakPath)) {
+          const st = fs.statSync(bakPath);
+          const loaded = loadShapeAndWin32(bakPath, "bak");
+          if (loaded) {
+            diagLog(
+              `[Persist] load ok source=bak path=${bakPath} bytes=${st.size}`,
+            );
+            return loaded;
+          }
         }
+      } catch (e2) {
+        console.error("Failed to load backup config:", e2);
+        diagLog(`[Persist] get-full-config bak failed: ${e2.message}`);
       }
-      return shaped;
-    };
-
-    try {
-      if (fs.existsSync(configPath)) {
-        const st = fs.statSync(configPath);
-        const loaded = loadShapeAndWin32(configPath, "primary");
-        if (loaded) {
-          diagLog(
-            `[Persist] load ok source=primary path=${configPath} bytes=${st.size}`,
-          );
-          return loaded;
-        }
-      }
-    } catch (e) {
-      console.error("Failed to load full config:", e);
-      diagLog(`[Persist] get-full-config primary failed: ${e.message}`);
-      quarantineUnreadablePrimary(e);
+      diagLog(
+        `[Persist] load miss: no readable v2 config (primaryExists=${fs.existsSync(configPath)} bakExists=${fs.existsSync(bakPath)} quarantineBytes=${sumQuarantinedConfigBytes(path.dirname(configPath))})`,
+      );
+      return null;
+    } catch (criticalErr) {
+      diagLog(`[Persist] get-full-config critical error: ${criticalErr.message}`);
+      return null;
     }
-    try {
-      if (fs.existsSync(bakPath)) {
-        const st = fs.statSync(bakPath);
-        const loaded = loadShapeAndWin32(bakPath, "bak");
-        if (loaded) {
-          diagLog(
-            `[Persist] load ok source=bak path=${bakPath} bytes=${st.size}`,
-          );
-          return loaded;
-        }
-      }
-    } catch (e2) {
-      console.error("Failed to load backup config:", e2);
-      diagLog(`[Persist] get-full-config bak failed: ${e2.message}`);
-    }
-    diagLog(
-      `[Persist] load miss: no readable v2 config (primaryExists=${fs.existsSync(configPath)} bakExists=${fs.existsSync(bakPath)} quarantineBytes=${sumQuarantinedConfigBytes(path.dirname(configPath))})`,
-    );
-    return null;
   });
 
   ipcMain.handle("get-config-persistence-meta", () => {
@@ -3685,15 +3734,16 @@ app.whenReady().then(async () => {
   });
 
   ipcMain.handle("export-config", async () => {
-    const result = await dialog.showSaveDialog(mainWindow, {
-      title: "Export Rovyl Backup",
-      defaultPath: path.join(app.getPath("downloads"), "rovyl-backup.json"),
-      filters: [{ name: "JSON", extensions: ["json"] }],
-    });
-
-    if (result.canceled || !result.filePath) return { success: false };
-
     try {
+      if (!mainWindow || mainWindow.isDestroyed()) return { success: false, error: "Window is unavailable" };
+      const result = await dialog.showSaveDialog(mainWindow, {
+        title: "Export Rovyl Backup",
+        defaultPath: path.join(app.getPath("downloads"), "rovyl-backup.json"),
+        filters: [{ name: "JSON", extensions: ["json"] }],
+      });
+
+      if (result.canceled || !result.filePath) return { success: false };
+
       const configPath = path.join(app.getPath("userData"), "config-v2.json");
       const settingsPath = path.join(app.getPath("userData"), "settings.json");
       const iconCachePath = path.join(app.getPath("userData"), "icon-cache.json");
@@ -3754,15 +3804,16 @@ app.whenReady().then(async () => {
   });
 
   ipcMain.handle("import-config", async () => {
-    const result = await dialog.showOpenDialog(mainWindow, {
-      title: "Import Rovyl Backup",
-      filters: [{ name: "JSON", extensions: ["json"] }],
-      properties: ["openFile"],
-    });
-
-    if (result.canceled || result.filePaths.length === 0) return { success: false };
-
     try {
+      if (!mainWindow || mainWindow.isDestroyed()) return { success: false, error: "Window is unavailable" };
+      const result = await dialog.showOpenDialog(mainWindow, {
+        title: "Import Rovyl Backup",
+        filters: [{ name: "JSON", extensions: ["json"] }],
+        properties: ["openFile"],
+      });
+
+      if (result.canceled || result.filePaths.length === 0) return { success: false };
+
       const data = JSON.parse(fs.readFileSync(result.filePaths[0], "utf-8"));
       
       if (!data.config && !data.settings) {
@@ -3897,38 +3948,42 @@ app.whenReady().then(async () => {
    * uses. The renderer guessed by keyword, and `electron.app.Antigravity` (the agent) matched
    * "antigravity" — it passed as an IDE and offered recents that do not exist.
    */
-  ipcMain.handle("app-supports-recents", (event, appName, appCommand) =>
-    Boolean(resolveIdeGlobalStorage(appName, appCommand)),
-  );
+  ipcMain.handle("app-supports-recents", (event, appName, appCommand) => {
+    try {
+      return Boolean(resolveIdeGlobalStorage(appName, appCommand));
+    } catch (_) {
+      return false;
+    }
+  });
 
   ipcMain.handle("get-app-recents", async (event, appName, appCommand) => {
-    diagLog(`[Recents] Fetching for appName: "${appName}", appCommand: "${appCommand}"`);
-
-    /** Used further down, when turning each MRU entry into the command that opens the folder. */
-    const lowerName = appName ? appName.toLowerCase() : "";
-    const lowerCommand = appCommand ? appCommand.toLowerCase() : "";
-
-    /** Discovery instead of a fixed path — see `resolveIdeGlobalStorage`. */
-    const globalStorageDir = resolveIdeGlobalStorage(appName, appCommand);
-    if (!globalStorageDir) {
-      diagLog(`[Recents] No IDE profile matches "${appName}" / "${appCommand}"`);
-      return [];
-    }
-
-    const storageJsonPath = path.join(globalStorageDir, "storage.json");
-    const vscdbPath = path.join(globalStorageDir, "state.vscdb");
-    const hasJson = fs.existsSync(storageJsonPath);
-    const hasVscdb = fs.existsSync(vscdbPath);
-
-    diagLog(
-      `[Recents] globalStorage="${globalStorageDir}" storage.json=${hasJson} state.vscdb=${hasVscdb}`,
-    );
-
-    if (!hasJson && !hasVscdb) {
-      return [];
-    }
-
     try {
+      diagLog(`[Recents] Fetching for appName: "${appName}", appCommand: "${appCommand}"`);
+
+      /** Used further down, when turning each MRU entry into the command that opens the folder. */
+      const lowerName = appName ? appName.toLowerCase() : "";
+      const lowerCommand = appCommand ? appCommand.toLowerCase() : "";
+
+      /** Discovery instead of a fixed path — see `resolveIdeGlobalStorage`. */
+      const globalStorageDir = resolveIdeGlobalStorage(appName, appCommand);
+      if (!globalStorageDir) {
+        diagLog(`[Recents] No IDE profile matches "${appName}" / "${appCommand}"`);
+        return [];
+      }
+
+      const storageJsonPath = path.join(globalStorageDir, "storage.json");
+      const vscdbPath = path.join(globalStorageDir, "state.vscdb");
+      const hasJson = fs.existsSync(storageJsonPath);
+      const hasVscdb = fs.existsSync(vscdbPath);
+
+      diagLog(
+        `[Recents] globalStorage="${globalStorageDir}" storage.json=${hasJson} state.vscdb=${hasVscdb}`,
+      );
+
+      if (!hasJson && !hasVscdb) {
+        return [];
+      }
+
       let json = {};
       if (hasJson) {
         try {
@@ -4309,6 +4364,51 @@ app.whenReady().then(async () => {
       : "";
 
   let lastShortcutRegistrationSignature = null;
+  let lastShortcutTriggerAt = 0;
+  let shortcutHoldActive = false;
+  let keyboardListener = null;
+
+  function ensureKeyboardListener() {
+    if (keyboardListener) return keyboardListener;
+    try {
+      const keyServerPath = app.isPackaged
+        ? path.join(
+            process.resourcesPath,
+            "app.asar.unpacked",
+            "node_modules",
+            "node-global-key-listener",
+            "bin",
+            "WinKeyServer.exe",
+          )
+        : path.join(
+            __dirname,
+            "..",
+            "node_modules",
+            "node-global-key-listener",
+            "bin",
+            "WinKeyServer.exe",
+          );
+
+      keyboardListener = new GlobalKeyboardListener({
+        windows: { serverPath: keyServerPath },
+      });
+
+      keyboardListener.addListener((event) => {
+        if (!shortcutHoldActive) return;
+        if (event.state !== "UP") return;
+
+        shortcutHoldActive = false;
+        diagLog(`[ShortcutHold] Key released (${event.name}), sending shortcut-release`);
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send("shortcut-release");
+        }
+      });
+    } catch (e) {
+      diagLog(`[ShortcutHold] Failed to initialize GlobalKeyboardListener: ${e.message}`);
+    }
+    return keyboardListener;
+  }
+
   const shortcutRegistrationSignature = () => {
     const entries = [String(currentSettings.globalShortcut || "Alt+Z")];
     const visit = (apps) => {
@@ -4334,19 +4434,35 @@ app.whenReady().then(async () => {
     let shortcut = currentSettings.globalShortcut || "Alt+Z";
     const openRadialFromShortcut = async (sourceShortcut) => {
       diagLog(`${sourceShortcut} shortcut triggered`);
-      /**
-       * Closing directly avoids going through the show/resize flow again and, above all, stops the
-       * key that fired the toggle from confirming the app/workspace currently pointed at.
-       */
+      const isHoldMode = cachedRadialFlags.shortcutTriggerMode === "hold";
+      const now = Date.now();
+
       if (workspaceShortcutsMenuOpen && mainWindow && !mainWindow.isDestroyed()) {
+        if (isHoldMode) {
+          // While in hold mode, OS auto-repeat events must NEVER close or toggle the menu!
+          return;
+        }
+        // In toggle mode, debounce rapid repeat triggers (< 350ms) to avoid flickering
+        if (now - lastShortcutTriggerAt < 350) {
+          return;
+        }
+        lastShortcutTriggerAt = now;
         mainWindow.webContents.send("open-menu", {
           source: "shortcut",
           closeOnly: true,
         });
         return;
       }
+
+      lastShortcutTriggerAt = now;
       const allowed = await shouldOpenMenu();
       if (!allowed) return;
+
+      if (isHoldMode) {
+        shortcutHoldActive = true;
+        ensureKeyboardListener();
+      }
+
       showMenuAtCursor("shortcut");
     };
 
@@ -4494,6 +4610,9 @@ app.whenReady().then(async () => {
     if (settings.mouseTriggerMode === "click" || settings.mouseTriggerMode === "hold") {
       patch.mouseTriggerMode = settings.mouseTriggerMode;
     }
+    if (settings.shortcutTriggerMode === "click" || settings.shortcutTriggerMode === "hold" || settings.shortcutTriggerMode === "toggle") {
+      patch.shortcutTriggerMode = settings.shortcutTriggerMode;
+    }
     if (MOUSE_TRIGGER_BUTTONS.includes(settings.mouseTriggerButton)) {
       patch.mouseTriggerButton = settings.mouseTriggerButton;
     }
@@ -4508,6 +4627,10 @@ app.whenReady().then(async () => {
     }
     if (patch.mouseTriggerMode !== undefined) {
       cachedRadialFlags.mouseTriggerMode = patch.mouseTriggerMode;
+    }
+    if (patch.shortcutTriggerMode !== undefined) {
+      cachedRadialFlags.shortcutTriggerMode = patch.shortcutTriggerMode;
+      currentSettings.shortcutTriggerMode = patch.shortcutTriggerMode;
     }
     if (patch.mouseTriggerButton !== undefined) {
       cachedRadialFlags.mouseTriggerButton = patch.mouseTriggerButton;
@@ -4541,14 +4664,14 @@ app.whenReady().then(async () => {
   });
 
   ipcMain.handle("open-external-url", async (event, url) => {
-    if (typeof url !== "string") {
-      return { ok: false, error: "Invalid URL" };
-    }
-    const trimmed = url.trim();
-    if (!/^https?:\/\//i.test(trimmed)) {
-      return { ok: false, error: "Only http(s) URLs are allowed" };
-    }
     try {
+      if (typeof url !== "string") {
+        return { ok: false, error: "Invalid URL" };
+      }
+      const trimmed = url.trim();
+      if (!/^https?:\/\//i.test(trimmed)) {
+        return { ok: false, error: "Only http(s) URLs are allowed" };
+      }
       await shell.openExternal(trimmed);
       return { ok: true };
     } catch (e) {
@@ -5238,6 +5361,9 @@ app.whenReady().then(async () => {
     }
     workspaceShortcutsMenuOpen = isOpen;
     workspaceShortcutsUseNumeric = useNumeric;
+    if (!isOpen) {
+      shortcutHoldActive = false;
+    }
     if (isOpen && useNumeric) {
       registerWorkspaceShortcuts();
     } else {
@@ -5847,9 +5973,9 @@ function removeIdeNewWindowFlag(cmd) {
   return cmd.replace(/\s+(?:-n|--new-window)(?=\s|$)/i, "");
 }
 
-/** A small working set kept in RAM; Windows also keeps these pages in the file cache. */
-const prewarmedExecutableBuffers = new Map();
+/** Touching files to warm OS filesystem cache without holding heavy buffers in Node's heap */
 let prewarmAppsSignature = "";
+const prewarmScratchBuffer = Buffer.alloc(4096);
 ipcMain.on("prewarm-apps", async (_event, rawCommands) => {
   const commands = Array.isArray(rawCommands)
     ? [...new Set(rawCommands.filter((value) => typeof value === "string" && value.trim()).map((value) => value.trim()))]
@@ -5857,10 +5983,8 @@ ipcMain.on("prewarm-apps", async (_event, rawCommands) => {
   const signature = commands.slice().sort().join("\u0000");
   if (signature === prewarmAppsSignature) return;
   prewarmAppsSignature = signature;
-  prewarmedExecutableBuffers.clear();
 
   const MAX_APPS = 8;
-  const MAX_BYTES_PER_APP = 8 * 1024 * 1024;
   for (const original of commands.slice(0, MAX_APPS)) {
     try {
       let launch = normalizeAumidIdeCommands(resolveShellPath(original));
@@ -5875,13 +5999,9 @@ ipcMain.on("prewarm-apps", async (_event, rawCommands) => {
       const { exe } = win32Launch.splitWin32SpawnExeAndArgs(launch);
       const stat = await fs.promises.stat(exe);
       if (!stat.isFile()) continue;
-      const length = Math.min(stat.size, MAX_BYTES_PER_APP);
       const handle = await fs.promises.open(exe, "r");
       try {
-        const buffer = Buffer.allocUnsafe(length);
-        const { bytesRead } = await handle.read(buffer, 0, length, 0);
-        prewarmedExecutableBuffers.set(exe.toLowerCase(), buffer.subarray(0, bytesRead));
-        diagLog(`[Prewarm] Cached ${(bytesRead / 1024 / 1024).toFixed(1)} MB from ${exe}`);
+        await handle.read(prewarmScratchBuffer, 0, 4096, 0);
       } finally {
         await handle.close();
       }
@@ -6801,6 +6921,7 @@ ipcMain.on("hide-window", () => {
     } catch (e) {
       /* ignore */
     }
+    scheduleIdleMemoryCleanup(2000);
     return;
   }
 
@@ -6815,6 +6936,7 @@ ipcMain.on("hide-window", () => {
   } catch (e) {
     /* ignore */
   }
+  scheduleIdleMemoryCleanup(1500);
 });
 
 // IPC: Show Window explicitly
@@ -6858,6 +6980,10 @@ function ensureForegroundFocusHelper() {
       }
       return;
     }
+    if (text.startsWith("TRIM|")) {
+      diagLog(`[Memory] ${text}`);
+      return;
+    }
     if (text.startsWith("FG|")) {
       const waiter = foregroundSnapshotWaiters.shift();
       if (waiter) waiter(parseForegroundSnapshot(text.slice(3)));
@@ -6887,6 +7013,130 @@ function writeForegroundFocus(hwnd) {
     foregroundFocusHelper.stdin.write(`FOCUS ${hwnd}\n`);
   } catch (e) {
     diagLog(`[Foreground] write failed: ${e.message}`);
+  }
+}
+
+let idleMemoryCleanupTimer = null;
+
+function cancelIdleMemoryCleanup() {
+  if (idleMemoryCleanupTimer) {
+    clearTimeout(idleMemoryCleanupTimer);
+    idleMemoryCleanupTimer = null;
+  }
+}
+
+function scheduleIdleMemoryCleanup(delayMs = 2500) {
+  cancelIdleMemoryCleanup();
+  idleMemoryCleanupTimer = setTimeout(() => {
+    idleMemoryCleanupTimer = null;
+    performIdleMemoryCleanup();
+  }, delayMs);
+  idleMemoryCleanupTimer.unref?.();
+}
+
+function performIdleMemoryCleanup() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  // Never perform cleanup while settings or radial menu is visibly active
+  if (rendererPanelVisible) return;
+  if (nativeWindowSizeMode !== "small" && !mainWindow.isMinimized() && mainWindow.isVisible()) {
+    return;
+  }
+
+  diagLog("[Memory] Executing idle memory cleanup & working set trim");
+
+  // 1. Force V8 garbage collection in Main Process
+  if (typeof global.gc === "function") {
+    try {
+      global.gc();
+    } catch (_) {
+      /* ignore */
+    }
+  }
+
+  // 2. Clear Chromium caches
+  try {
+    session.defaultSession.clearCache();
+    session.defaultSession.clearHostResolverCache();
+  } catch (_) {
+    /* ignore */
+  }
+
+  // 3. Notify renderer to run GC & clear unnecessary transient allocations
+  try {
+    if (mainWindow.webContents && !mainWindow.webContents.isDestroyed()) {
+      mainWindow.webContents.send("zenith-clean-memory");
+    }
+  } catch (_) {
+    /* ignore */
+  }
+
+  // 4. Release heavy installedAppsCache array if lingering in memory
+  if (installedAppsCache && installedAppsCache.length > 0) {
+    installedAppsCache = null;
+    diagLog("[Memory] Released installedAppsCache array from RAM");
+  }
+
+  // 4b. Trim metadata caches (favicons, titles, detected games) to a lean idle footprint
+  try {
+    if (typeof faviconDataUrlCache !== "undefined" && faviconDataUrlCache.size > 16) {
+      while (faviconDataUrlCache.size > 16) {
+        const oldest = faviconDataUrlCache.keys().next().value;
+        if (!oldest) break;
+        faviconDataUrlCache.delete(oldest);
+      }
+      diagLog(`[Memory] Trimmed faviconDataUrlCache to ${faviconDataUrlCache.size} entries`);
+    }
+    if (typeof pageTitleCache !== "undefined" && pageTitleCache.size > 16) {
+      while (pageTitleCache.size > 16) {
+        const oldest = pageTitleCache.keys().next().value;
+        if (oldest === undefined) break;
+        pageTitleCache.delete(oldest);
+      }
+      diagLog(`[Memory] Trimmed pageTitleCache to ${pageTitleCache.size} entries`);
+    }
+    if (typeof autoDetectedGameCache !== "undefined" && autoDetectedGameCache.size > 32) {
+      while (autoDetectedGameCache.size > 32) {
+        const oldest = autoDetectedGameCache.keys().next().value;
+        if (!oldest) break;
+        autoDetectedGameCache.delete(oldest);
+      }
+    }
+  } catch (_) {
+    /* ignore */
+  }
+
+  // 5. Trim Win32 working set across all Rovyl processes
+  try {
+    ensureForegroundFocusHelper();
+    if (foregroundFocusHelper && foregroundFocusHelperReady && foregroundFocusHelper.stdin?.writable) {
+      const pids = new Set();
+      pids.add(process.pid);
+      if (mainWindow.webContents && !mainWindow.webContents.isDestroyed()) {
+        try {
+          const rPid = mainWindow.webContents.getOSProcessId();
+          if (rPid) pids.add(rPid);
+        } catch (_) {}
+      }
+      if (typeof app.getAppMetrics === "function") {
+        try {
+          const metrics = app.getAppMetrics();
+          for (const m of metrics) {
+            if (m && m.pid) pids.add(m.pid);
+          }
+        } catch (_) {}
+      }
+      if (radialMouseBlocker && radialMouseBlocker.pid) {
+        pids.add(radialMouseBlocker.pid);
+      }
+      if (foregroundFocusHelper && foregroundFocusHelper.pid) {
+        pids.add(foregroundFocusHelper.pid);
+      }
+
+      const pidList = Array.from(pids).join(",");
+      foregroundFocusHelper.stdin.write(`TRIM ${pidList}\n`);
+    }
+  } catch (e) {
+    diagLog(`[Memory] Working set trim error: ${e.message}`);
   }
 }
 
@@ -7343,13 +7593,22 @@ ipcMain.handle("get-startup-apps", async () => {
 
 // IPC: Toggle Window Size
 ipcMain.on("set-window-size", (event, mode, anchorScreenPoint) => {
-  updateWindowSize(mode, anchorScreenPoint);
+  try {
+    updateWindowSize(mode, anchorScreenPoint);
+  } catch (e) {
+    diagLog(`[set-window-size] ${e.message}`);
+  }
 });
 
 /** Same as set-window-size but invoke() so the renderer can await before painting (avoids one frame at windowed bounds). */
 ipcMain.handle("apply-window-size", (event, mode, anchorScreenPoint) => {
-  updateWindowSize(mode, anchorScreenPoint);
-  return true;
+  try {
+    updateWindowSize(mode, anchorScreenPoint);
+    return true;
+  } catch (e) {
+    diagLog(`[apply-window-size] ${e.message}`);
+    return false;
+  }
 });
 
 /** Guarantees clicks reach the renderer after opening a widget/radial — clears the `small` island's passthrough. */
@@ -7432,6 +7691,7 @@ ipcMain.handle("collapse-idle-overlay", () => {
   }
   windowBuriedPassive = false;
   diagLog("[Overlay] Stable idle: transparent radial surface and mouse passthrough.");
+  scheduleIdleMemoryCleanup(2500);
   return true;
 });
 
@@ -7720,44 +7980,57 @@ ipcMain.on("quit-app", () => {
 
 // IPC: Select File (Executable)
 ipcMain.handle("select-file", async () => {
-  const result = await dialog.showOpenDialog(mainWindow, {
-    properties: ["openFile"],
-    filters: [
-      { name: "Executables", extensions: ["exe", "lnk", "bat", "cmd"] },
-      { name: "All Files", extensions: ["*"] },
-    ],
-  });
-  if (!result.canceled && result.filePaths.length > 0) {
-    return result.filePaths[0];
+  try {
+    const targetWin = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
+    const result = await dialog.showOpenDialog(targetWin, {
+      properties: ["openFile"],
+      filters: [
+        { name: "Executables", extensions: ["exe", "lnk", "bat", "cmd"] },
+        { name: "All Files", extensions: ["*"] },
+      ],
+    });
+    if (!result.canceled && result.filePaths.length > 0) {
+      return result.filePaths[0];
+    }
+    return null;
+  } catch (e) {
+    diagLog(`[select-file] ${e.message}`);
+    return null;
   }
-  return null;
 });
 
 // IPC: Select Folder (Directory)
 ipcMain.handle("select-folder", async () => {
-  const result = await dialog.showOpenDialog(mainWindow, {
-    properties: ["openDirectory"],
-  });
-  if (!result.canceled && result.filePaths.length > 0) {
-    return result.filePaths[0];
+  try {
+    const targetWin = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
+    const result = await dialog.showOpenDialog(targetWin, {
+      properties: ["openDirectory"],
+    });
+    if (!result.canceled && result.filePaths.length > 0) {
+      return result.filePaths[0];
+    }
+    return null;
+  } catch (e) {
+    diagLog(`[select-folder] ${e.message}`);
+    return null;
   }
-  return null;
 });
 
 // IPC: Select Image (Custom Icon)
 // Copy into userData so the icon survives if the original file is deleted/moved.
 ipcMain.handle("select-image", async () => {
-  const result = await dialog.showOpenDialog(mainWindow, {
-    properties: ["openFile"],
-    filters: [
-      { name: "Images", extensions: ["png", "jpg", "jpeg", "ico", "svg"] },
-      { name: "All Files", extensions: ["*"] },
-    ],
-  });
-  if (result.canceled || result.filePaths.length === 0) return null;
-
-  const srcPath = result.filePaths[0];
   try {
+    const targetWin = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
+    const result = await dialog.showOpenDialog(targetWin, {
+      properties: ["openFile"],
+      filters: [
+        { name: "Images", extensions: ["png", "jpg", "jpeg", "ico", "svg"] },
+        { name: "All Files", extensions: ["*"] },
+      ],
+    });
+    if (result.canceled || result.filePaths.length === 0) return null;
+
+    const srcPath = result.filePaths[0];
     const customIconsDir = path.join(app.getPath("userData"), "custom-icons");
     if (!fs.existsSync(customIconsDir)) {
       fs.mkdirSync(customIconsDir, { recursive: true });
@@ -7770,7 +8043,7 @@ ipcMain.handle("select-image", async () => {
     fs.copyFileSync(srcPath, destPath);
     return destPath;
   } catch (e) {
-    diagLog(`[select-image] Failed to copy into app data: ${e.message}`);
+    diagLog(`[select-image] ${e.message}`);
     return null;
   }
 });
@@ -8589,12 +8862,17 @@ function scanInstalledApps() {
 }
 
 ipcMain.handle("get-installed-apps", async (event, forceRefresh = false) => {
-  if (installedAppsCache && !forceRefresh) {
-    return installedAppsCache;
+  try {
+    if (installedAppsCache && !forceRefresh) {
+      return installedAppsCache;
+    }
+    /** An empty scan is not worth remembering as the answer — leave the cache cold so the next ask retries. */
+    const list = await scanInstalledApps();
+    return list.length ? rememberInstalledApps(list) : list;
+  } catch (e) {
+    diagLog(`[get-installed-apps] ${e.message}`);
+    return [];
   }
-  /** An empty scan is not worth remembering as the answer — leave the cache cold so the next ask retries. */
-  const list = await scanInstalledApps();
-  return list.length ? rememberInstalledApps(list) : list;
 });
 
 app.on("window-all-closed", (e) => {
@@ -8612,4 +8890,10 @@ app.on("will-quit", () => {
   stopForegroundFocusHelper();
   saveIconCache({ sync: true });
   globalShortcut.unregisterAll();
+  if (keyboardListener) {
+    try {
+      keyboardListener.kill();
+    } catch (_) {}
+    keyboardListener = null;
+  }
 });

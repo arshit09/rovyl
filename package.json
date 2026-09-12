@@ -83,7 +83,8 @@
     "asarUnpack": [
       "backend/*.ps1",
       "resources/bin/**/*",
-      "node_modules/sql.js/dist/sql-wasm.wasm"
+      "node_modules/sql.js/dist/sql-wasm.wasm",
+      "node_modules/node-global-key-listener/bin/**/*"
     ],
     "directories": {
       "output": "build-out"

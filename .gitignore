@@ -50,6 +50,7 @@ backend/debug_*.json
 .codex-video-review-current/
 .openai/
 .agents/
+.agent/
 
 # Local build verification runs
 build-out-update-validation/

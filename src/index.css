@@ -821,8 +821,8 @@
 }
 
 .zs-add-panel { margin-bottom: var(--zn-3); padding: var(--zn-3); border: 1px solid var(--zn-line); border-radius: var(--zn-r-control); background: var(--zn-sunken); }
-.zs-add-panel-head { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--zn-2); margin-bottom: var(--zn-2); }
-.zs-search.is-manager-search { min-width: 0; background: var(--zn-surface); }
+.zs-add-panel-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--zn-2); margin-bottom: var(--zn-2); }
+.zs-search.is-manager-search { flex: 1 1 180px; min-width: 140px; background: var(--zn-surface); }
 .zs-search.is-manager-search input:focus,
 .zs-search.is-manager-search input:focus-visible { outline: 0; box-shadow: none; }
 .zs-installed-apps { min-height: 132px; max-height: min(320px, 38vh); overflow-y: auto; padding-right: 2px; scrollbar-gutter: stable; overscroll-behavior: contain; }
@@ -846,8 +846,26 @@
   margin-top: var(--zn-2); padding-top: var(--zn-2); border-top: 1px solid var(--zn-line);
   color: var(--zn-text-3); font-size: 9.5px;
 }
-.zs-add-panel-foot button { padding: 0; color: var(--zn-text-2); border: 0; background: transparent; cursor: pointer; font-size: 9.5px; }
-.zs-add-panel-foot button:hover { color: var(--zn-text); text-decoration: underline; }
+.zs-installed-apps > button.is-selected {
+  background: var(--zn-hover);
+  box-shadow: inset 0 0 0 1px var(--zn-line-strong);
+  color: var(--zn-text);
+}
+.zs-add-panel-foot button.zs-btn {
+  padding: 4px 10px;
+  font-size: 11px;
+}
+.zs-shell[dir="rtl"] {
+  direction: rtl;
+}
+.zs-shell[dir="rtl"] .zs-installed-apps > button,
+.zs-shell[dir="rtl"] .zs-nav button,
+.zs-shell[dir="rtl"] .zs-folder-picker {
+  text-align: right;
+}
+.zs-shell[dir="rtl"] .zs-search input {
+  text-align: right;
+}
 
 .zs-add-form { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, .8fr) auto; align-items: end; gap: var(--zn-3); }
 .zs-folder-picker { min-width: 0; min-height: 54px; display: grid; grid-template-columns: 28px minmax(0, 1fr) 18px; align-items: center; gap: var(--zn-2); padding: var(--zn-2); color: var(--zn-text-2); border: 1px dashed var(--zn-line-strong); border-radius: var(--zn-r-control); background: var(--zn-surface); cursor: pointer; text-align: left; }
@@ -1309,13 +1327,20 @@
 .zn-radial-slice,
 .zn-radial-hub,
 .zn-radial-label,
-.zn-radial-pill,
-.zn-radial-scrim {
+.zn-radial-pill {
   transform: var(--zn-tf, none);
   opacity: var(--zn-op, 1);
   transition:
     transform var(--zn-dur, 220ms) var(--zn-ease, cubic-bezier(.2, .82, .28, 1)),
     opacity var(--zn-dur-op, 175ms) ease-out;
+}
+
+.zn-radial-scrim {
+  transform: var(--zn-tf, none);
+  opacity: var(--zn-op, 1);
+  transition:
+    transform var(--zn-dur, 220ms) var(--zn-ease, cubic-bezier(.2, .82, .28, 1)),
+    opacity var(--zn-dur-op, 200ms) cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 /* The hub also swaps colour/ring when it goes active — it comes after the shared

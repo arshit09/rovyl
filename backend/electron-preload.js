@@ -96,6 +96,16 @@ contextBridge.exposeInMainWorld("electron", {
     return () =>
       ipcRenderer.removeListener("window-native-display-restored", listener);
   },
+  onCleanMemory: (callback) => {
+    const listener = () => callback();
+    ipcRenderer.on("zenith-clean-memory", listener);
+    return () => ipcRenderer.removeListener("zenith-clean-memory", listener);
+  },
+  onShortcutRelease: (callback) => {
+    const listener = () => callback();
+    ipcRenderer.on("shortcut-release", listener);
+    return () => ipcRenderer.removeListener("shortcut-release", listener);
+  },
   setWindowSize: (mode, anchorScreenPoint) =>
     ipcRenderer.send("set-window-size", mode, anchorScreenPoint),
   applyWindowSize: (mode, anchorScreenPoint) =>
