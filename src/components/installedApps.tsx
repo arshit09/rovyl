@@ -81,6 +81,13 @@ export function useInstalledApps(enabled: boolean) {
   return { apps, loading, error, reload: load };
 }
 
+/** Purges in-memory apps array and icon strings during idle cleanup */
+export function clearInstalledAppsMemory() {
+  appsCache = null;
+  inFlight = null;
+  iconMemo.clear();
+}
+
 // ─── Native icon, fetched only once the row is actually on screen ──────────────
 const iconMemo = new Map<string, string | null>();
 const ICON_MEMO_LIMIT = 200;

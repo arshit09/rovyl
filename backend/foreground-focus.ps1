@@ -55,8 +55,31 @@ public static class RovylSnapshot {
   [DllImport("kernel32.dll")] public static extern bool CloseHandle(IntPtr h);
   [DllImport("kernel32.dll", CharSet = CharSet.Unicode)]
   public static extern bool QueryFullProcessImageNameW(IntPtr h, int flags, StringBuilder buf, ref int size);
+  [DllImport("kernel32.dll", SetLastError = true)]
+  public static extern bool SetProcessWorkingSetSize(IntPtr hProcess, IntPtr min, IntPtr max);
 
   const int PROCESS_QUERY_LIMITED_INFORMATION = 0x1000;
+  const int PROCESS_SET_QUOTA = 0x0100;
+
+  public static bool TrimProcessMemory(int pid) {
+    if (pid <= 0) return false;
+    IntPtr h = OpenProcess(PROCESS_SET_QUOTA | PROCESS_QUERY_LIMITED_INFORMATION, false, pid);
+    if (h == IntPtr.Zero) return false;
+    try {
+      return SetProcessWorkingSetSize(h, (IntPtr)(-1), (IntPtr)(-1));
+    } finally {
+      CloseHandle(h);
+    }
+  }
+
+  public static int TrimProcesses(int[] pids) {
+    int count = 0;
+    if (pids == null) return 0;
+    for (int i = 0; i < pids.Length; i++) {
+      if (TrimProcessMemory(pids[i])) count++;
+    }
+    return count;
+  }
 
   /**
    * GetWindowRect answers in physical pixels only for a per-monitor-aware process. Electron's main
@@ -204,6 +227,20 @@ while ($true) {
     continue
   }
   $parts = $line.Split(' ')
+  if ($parts[0] -eq 'TRIM') {
+    try {
+      $pids = @()
+      if ($parts.Length -gt 1 -and $parts[1] -ne '') {
+        $pids = $parts[1].Split(',') | ForEach-Object { [int]$_ }
+      }
+      $trimmed = [RovylSnapshot]::TrimProcesses($pids)
+      [void][RovylSnapshot]::TrimProcessMemory([System.Diagnostics.Process]::GetCurrentProcess().Id)
+      Write-Output "TRIM|OK|$trimmed"
+    } catch {
+      Write-Output "TRIM|ERR|$($_.Exception.Message)"
+    }
+    continue
+  }
   if ($parts[0] -ne 'FOCUS' -or $parts.Length -lt 2) { continue }
   try {
     Write-Output (Invoke-ForegroundSteal $parts[1])

@@ -264,6 +264,7 @@ export const DEFAULT_UI_CONFIG: UIConfig = {
   enableMouseTrigger: true,
   mouseTriggerMode: 'click',
   mouseTriggerButton: 'middle',
+  shortcutTriggerMode: 'toggle',
   language: "en",
   performanceMode: false,
   mainStartMenuDiscoveryDone: false,

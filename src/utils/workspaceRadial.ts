@@ -67,19 +67,29 @@ export function parseWorkspacePickIndex(id: string): number {
  * Nothing else is normalised; this runs on every keystroke while a wheel is on screen.
  */
 export function filterRadialApps(apps: AppItem[], query: string): AppItem[] {
+  if (!query || !query.trim()) return apps;
   const needle = query.replace(/\s+/g, '').toLowerCase();
   if (!needle) return apps;
   const useContains = needle.length >= 2;
 
   const prefix: AppItem[] = [];
   const contains: AppItem[] = [];
-  for (const app of apps) {
-    const label = (app.label || '').replace(/\s+/g, '').toLowerCase();
-    if (!label) continue;
-    if (label.startsWith(needle)) prefix.push(app);
-    else if (useContains && label.includes(needle)) contains.push(app);
+  for (let i = 0; i < apps.length; i++) {
+    const app = apps[i];
+    const raw = app.label || '';
+    if (!raw) continue;
+    const label = raw.indexOf(' ') >= 0 ? raw.replace(/\s+/g, '').toLowerCase() : raw.toLowerCase();
+    if (label.startsWith(needle)) {
+      prefix.push(app);
+    } else if (useContains && label.includes(needle)) {
+      contains.push(app);
+    }
   }
-  return prefix.concat(contains);
+  if (contains.length === 0) return prefix;
+  for (let i = 0; i < contains.length; i++) {
+    prefix.push(contains[i]);
+  }
+  return prefix;
 }
 
 /**

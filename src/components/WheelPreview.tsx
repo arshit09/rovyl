@@ -150,7 +150,10 @@ export const WheelPreview: React.FC<{ config: UIConfig; apps: AppItem[] }> = ({ 
         {/* Stand-in for the desktop. Neutral on purpose: the dimming has to be readable against
             something, and a mock wallpaper with character would be judged instead of the setting. */}
         <div className="zs-wheel-desk" />
-        <div className="zs-wheel-scrim" style={{ backgroundImage: scrim }} />
+        <div
+          className="zs-wheel-scrim"
+          style={{ backgroundImage: scrim }}
+        />
 
         <div className="zs-wheel-layer" style={{ transform: `translate(-50%, -50%) scale(${scale})` }}>
           <div
