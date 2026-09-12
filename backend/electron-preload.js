@@ -132,6 +132,10 @@ contextBridge.exposeInMainWorld("electron", {
   getMainWindowContentBounds: () =>
     ipcRenderer.invoke("get-main-window-content-bounds"),
   setGameMode: (config) => ipcRenderer.send("set-game-mode", config),
+  /** Main owns the taskbar helper; the renderer only ever states what the switches say. */
+  setTaskbarOverlay: (config) => ipcRenderer.send("set-taskbar-overlay", config),
+  /** 'classic' | 'mixed' | 'xaml' | 'none' — what this machine's taskbar lets anyone touch. */
+  getTaskbarCapability: () => ipcRenderer.invoke("get-taskbar-capability"),
   prewarmApps: (commands) => ipcRenderer.send("prewarm-apps", commands),
   setLoginItemSettings: (settings) =>
     ipcRenderer.send("set-login-item-settings", settings),

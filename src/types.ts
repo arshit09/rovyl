@@ -67,6 +67,13 @@ export interface GameModeConfig {
   autoDetectGames: boolean;
 }
 
+/**
+ * What the taskbar does while the wheel is open. Shape and defaults live in
+ * `src/utils/taskbarOverlay.ts`, because the main process needs the same answers and a second copy
+ * of that reasoning is how the two drift.
+ */
+export type { TaskbarOverlayFlags } from "./utils/taskbarOverlay";
+
 export interface Workspace {
   id: string;
   name: string;
@@ -124,6 +131,17 @@ export interface UIConfig {
    * dimming looks exactly as it did before the upgrade.
    */
   backdropDimScale?: number;
+  /**
+   * What happens to the Windows taskbar while the wheel is up, on the wheel's monitor only.
+   *
+   * ABSENT means off, which is what every config written before this feature says. Read it through
+   * `normalizeTaskbarOverlay`, never field by field: a blob from disk may be missing any of them.
+   *
+   * Only the elements are reliably undoable. `transparent` repaints the bar's background, and
+   * Windows offers no way to read back what explorer had there, so it is opt-in and says so in the
+   * settings row. See docs/ARCHITECTURE.md, "The taskbar while the wheel is open".
+   */
+  taskbarOverlay?: import("./utils/taskbarOverlay").TaskbarOverlayFlags;
   menuBackgroundStyle: "circle" | "fullscreen";
   appSpacing: number; // New: spacing between apps in radial menu
   activationThreshold: number;
@@ -388,6 +406,18 @@ export interface ElectronAPI {
     height: number;
   } | null>;
   setGameMode: (config: GameModeConfig) => void;
+  /**
+   * Main enacts this one, so it has to hold the flags BEFORE a wheel opens -- the global shortcut
+   * is registered before React has committed anything, so main also seeds them from disk at boot.
+   */
+  setTaskbarOverlay?: (config: import("./utils/taskbarOverlay").TaskbarOverlayFlags) => void;
+  /**
+   * Which taskbar this machine has: 'classic' | 'mixed' | 'xaml' | 'none'.
+   *
+   * Answering costs a helper process, so it is asked for only when the settings section that needs
+   * it is on screen, and the answer is cached for the session.
+   */
+  getTaskbarCapability?: () => Promise<string>;
   prewarmApps?: (commands: string[]) => void;
   getVolume: () => Promise<number>;
   setVolume: (value: number) => void;

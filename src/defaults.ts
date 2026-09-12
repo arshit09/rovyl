@@ -1,5 +1,6 @@
 import { AppItem, UIConfig, Workspace } from "./types";
 import { BACKDROP_DIM_SCALE } from "./utils/radialScrim";
+import { DEFAULT_TASKBAR_OVERLAY } from "./utils/taskbarOverlay";
 
 export const DEFAULT_APPS: AppItem[] = [
   {
@@ -231,6 +232,12 @@ export const DEFAULT_UI_CONFIG: UIConfig = {
    */
   backdropOpacity: 0.6,
   backdropDimScale: BACKDROP_DIM_SCALE,
+  /**
+   * Off, and for the same reason `radialInstantActivate` is off: this one reaches outside the app.
+   * Everything else here changes how Rovyl looks; this changes the user's desktop, and a taskbar
+   * that started disappearing because someone updated is not a setting, it is a fault report.
+   */
+  taskbarOverlay: DEFAULT_TASKBAR_OVERLAY,
   menuBackgroundStyle: "circle",
   appSpacing: 10, // Default spacing between apps
   activationThreshold: 60,

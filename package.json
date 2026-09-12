@@ -25,6 +25,7 @@
     "test:tray-menu": "node scripts/tray-menu-smoke.mjs",
     "test:radial-filter": "node scripts/radial-filter-smoke.mjs",
     "test:backdrop-dim": "node scripts/backdrop-dim-smoke.mjs",
+    "test:taskbar-overlay": "node scripts/taskbar-overlay-smoke.mjs",
     "test:icon-store": "node scripts/icon-store-smoke.mjs",
     "test:persistence-mirror": "node scripts/persistence-mirror-smoke.mjs",
     "test:foreground-snapshot": "node scripts/foreground-snapshot-smoke.mjs",

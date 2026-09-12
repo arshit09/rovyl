@@ -11,10 +11,12 @@ backend/          Electron main, preload, and the PowerShell helpers
   electron-preload.js   the entire renderer-facing API surface
   mouse-blocker.ps1     captures the trigger button and blocks input outside the wheel
   foreground-focus.ps1  steals foreground when Windows refuses focus
+  taskbar-control.ps1   hides parts of the taskbar while the wheel is up, and puts them back
   extract-icon.ps1      the icon pipeline
   game-detection.cjs    fullscreen/game detection for focus protection
   win32-launch.js       command parsing and quoting for launching targets
   persistence-normalize.cjs   disk-blob → renderer shape
+  taskbar-overlay.cjs   the taskbar switches as main needs them (twin of src/utils/taskbarOverlay.ts)
 src/              Renderer
   App.tsx               orchestration: state, persistence, IPC wiring, window modes
   components/
@@ -231,6 +233,99 @@ regardless of this setting — because the same process's `SetCursorPos` is fed 
 Note also that `TRIGGER_PASSTHROUGH_SLOP_PX` and `MMB_CLICK_DRAG_PX` are main-authored numbers the
 hook compares against deltas in its own space, so they move with it.
 
+## The taskbar while the wheel is open
+
+`taskbarOverlay` hides parts of the Windows taskbar for as long as the wheel is up and puts them
+back when it closes. It is off by default, and every switch under it is off within that, because
+this is the only thing Rovyl does that reaches outside its own window and changes the desktop.
+
+`backend/taskbar-control.ps1` is a second long-lived helper, spoken to over stdin exactly like the
+mouse hook: `APPLY <monitor rect> <flags>`, `RESTORE`, `PROBE`, `EXIT`, with `READY` on stdout. It
+is a **separate process from `mouse-blocker.ps1` and must stay one.** That helper drains its command
+queue on the thread serving its `WH_MOUSE_LL` hook, and Windows silently unhooks a low-level hook
+that overruns `LowLevelHooksTimeout`. Enumerating the taskbar and hiding a dozen windows on that
+thread would stall the pump every mouse event in the system passes through, during the gesture.
+
+Five findings shaped the rest, and each is a thing the obvious version gets wrong. All were measured
+on Windows 10 19045 with two monitors.
+
+1. **Find the windows by enumerating, never with a `FindWindowEx` chain.** `FindWindowExW` returns
+   NULL for `Start` and for `TrayClockWClass` on this machine while both are plainly present and
+   hideable — `TrayNotifyWnd`, `ReBarWindow32` and `SysPager` are found by the same call. Nearly
+   every published "hide the taskbar clock" snippet uses the chain, so it silently does nothing.
+   `ChildrenOf` walks `EnumChildWindows` and compares `GetClassName`.
+2. **Never `ShowWindow(SW_HIDE)` on `Shell_TrayWnd` itself.** Hiding the bar hands its 40px back to
+   the desktop work area — every maximised window reflows — and `SW_SHOW` does **not** take it
+   back: measured, the work area stayed 1920x1079 after the bar returned. Only children are
+   touched. `scripts/taskbar-overlay-smoke.mjs` fails the build if that ever changes.
+3. **Transparency is `SetWindowCompositionAttribute`, not layered-window alpha.**
+   `WS_EX_LAYERED` + `SetLayeredWindowAttributes` fades the window *and its children together*, so
+   "transparent bar with the clock still on it" is unreachable that way.
+   `ACCENT_ENABLE_TRANSPARENTGRADIENT` affects only the background and leaves whatever stayed
+   visible painting on top.
+4. **The background cannot be restored exactly, and that is why it is opt-in.**
+   `GetWindowCompositionAttribute` reports `ACCENT_DISABLED` even on a bar that is visibly
+   translucent, so explorer's original is not legible. Restoring `ACCENT_DISABLED` leaves the bar
+   flat: the wallpaper tint bleeding through it (green channel 4.5 above the other two) drops to
+   exactly 0. `ACCENT_ENABLE_BLURBEHIND` with a dark tint lands near the original instead, so that
+   is what goes back, and the settings row says so in as many words.
+5. **Do not make explorer re-apply its own accent.** Toggling `EnableTransparency` and broadcasting
+   `ImmersiveColorSet` does restore the look — and it also wedged the taskbar into a 1px-tall strip
+   that neither `ABM_SETPOS` nor `SetWindowPos` would undo. Only restarting explorer fixed it. The
+   registry is never touched; it is read for `EnableTransparency` and nothing else.
+
+The primary and secondary bars are **not the same tree**, which is easy to miss with one monitor:
+the clock is `TrayClockWClass` inside `TrayNotifyWnd` on the primary and a bare `ClockButton` on a
+secondary, and the task buttons are `ReBarWindow32 > MSTaskSwWClass` against a plain `WorkerW`. Code
+written against the primary fails silently on the second monitor. Only the bar on the wheel's
+monitor is touched — `applyTaskbarOverlay(targetDisplay)` — because the scrim dims one screen, and a
+bar on a screen nobody is looking at is not part of the gesture.
+
+Whole groups are never hidden where a group holds two switches: `TrayNotifyWnd` contains the clock,
+so hiding the container would make "hide the tray icons, keep the clock" impossible. The parts go
+one at a time, and `TrayShowDesktopButtonWClass` is left alone — it is the sliver at the end of the
+bar, not a tray icon.
+
+### Windows 11
+
+On 22H2 and later the Start button, the clock, the tray and the task buttons are XAML visuals
+inside a single `Windows.UI.Composition.DesktopWindowContentBridge`. **They have no HWNDs, so no
+outside process can hide them** — TranslucentTB, Windhawk, StartAllBack and ExplorerPatcher all do
+it by running code inside `explorer.exe`, which is not available to a Store-submitted app.
+`Shell_TrayWnd` itself *does* still exist on every Win11 build; the claim that it was removed is
+false, and the bar is still found. `PROBE` answers `classic` / `mixed` / `xaml` / `none` by counting
+legacy anchors against composition islands, and Settings withdraws the four element switches
+entirely on `xaml` rather than offering controls that would do nothing.
+
+### Putting it back
+
+The restore has to survive more than a close, and each path was tested by causing it:
+
+- **Any close** — `clearTaskbarOverlay()` sits on every path that already calls
+  `clearRadialMouseBlocking()`: both `updateWindowSize` branches that end a radial, `hide-window`,
+  the updater restart and `will-quit`. That set is the choke point; adding a sixth close path means
+  adding it there too.
+- **The renderer dies** — nothing downstream closes the wheel, because the renderer owned that. The
+  `render-process-gone` handler is the only place left, and it releases all three global effects.
+- **Rovyl is killed** — the helper holds a `SYNCHRONIZE` handle on its parent and restores the
+  instant it signals. Measured at 17ms from kill to `WAIT_OBJECT_0`. Same mechanism as the mouse
+  hook's, for the same reason: polling `Process.GetProcessById` costs a whole-process-table snapshot.
+- **The helper itself is killed** — `TerminateProcess` runs no `finally`, so neither the parent
+  watch nor stdin EOF helps. Before hiding anything the helper writes the class names it is about
+  to hide to `%TEMP%\rovyl-taskbar-restore.txt` and deletes the file once they are back; the next
+  start replays whatever it finds. It stores class names rather than handles because the replay
+  happens in a new process, and after an explorer restart the handles are dead anyway. Only windows
+  that were *visible when we hid them* are ever recorded, so a replay cannot reveal something the
+  user keeps switched off.
+- **Explorer restarts** — every handle dies and the elements come back shown on their own. The
+  journal replay is then a no-op because the classes it names are already visible.
+
+`src/utils/taskbarOverlay.ts` and `backend/taskbar-overlay.cjs` are the same rules twice, because
+main is CommonJS and cannot import the module the settings panel needs for its types.
+`scripts/taskbar-overlay-smoke.mjs` loads both and asserts they agree across all 64 flag
+combinations, and reads the `.ps1` to pin the field order of the `APPLY` line. Get that order wrong
+and "hide the clock" hides the Start button — the most confusing failure this feature has.
+
 ## Icons
 
 `extract-icon.ps1` produces a normalised 256px PNG data URL. Order matters:
@@ -294,10 +389,13 @@ period, is the fix.
 
 ## Conventions
 
-- **Comments explain *why*, and are written in Portuguese.** A comment that restates the
-  code is noise; the ones here carry the reason a line exists, usually a bug that
-  motivated it. That is the single most useful thing in this codebase — read them before
-  changing behaviour that looks arbitrary.
+- **Comments explain *why*, in English.** A comment that restates the code is noise; the
+  ones here carry the reason a line exists, usually a bug that motivated it. That is the
+  single most useful thing in this codebase — read them before changing behaviour that
+  looks arbitrary. (They were written in Portuguese until `5b273eb`, which translated all
+  ~1,760 lines of them. Three kinds stay Portuguese because they are data and not prose:
+  the Windows error patterns in `launchFailure.ts`, the `pt` block in `translations.ts`,
+  and the glyph samples in `verify-renderer-budget.mjs`.)
 - **Design tokens live in `src/index.css`.** The radial is monochrome — white and black,
   plus the user's hover colour. Don't introduce new hues; the update badge is the single
   deliberate exception.
