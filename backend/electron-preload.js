@@ -34,9 +34,15 @@ contextBridge.exposeInMainWorld("electron", {
     ipcRenderer.on("open-menu", listener);
     return () => ipcRenderer.removeListener("open-menu", listener);
   },
-  /** zenith-verify:radial-handshake-preload — Main is about to show the radial — paint a neutral cover and confirm before `open-menu` (avoids a flash after minimize). */
+  /**
+   * zenith-verify:radial-handshake-preload — Main is about to show the radial — paint a neutral
+   * cover and confirm before `open-menu` (avoids a flash after minimize).
+   *
+   * The payload carries `vacatePanel` when the panel has to leave the surface rather than just be
+   * covered: main is about to MOVE the window out from under it (see `panelVacatingForRadial`).
+   */
   onPrepareRadialShow: (callback) => {
-    const listener = () => callback();
+    const listener = (_event, payload) => callback(payload || {});
     ipcRenderer.on("prepare-radial-show", listener);
     return () => ipcRenderer.removeListener("prepare-radial-show", listener);
   },

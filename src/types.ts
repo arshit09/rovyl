@@ -299,8 +299,15 @@ export interface ElectronAPI {
       paintToken?: number;
     }) => void,
   ) => () => void;
-  /** Before opening the radial from the main — cover the old frame (e.g. the dashboard on restore). */
-  onPrepareRadialShow?: (callback: () => void) => () => void;
+  /**
+   * Before opening the radial from the main — cover the old frame (e.g. the dashboard on restore).
+   *
+   * `vacatePanel`: the panel must instead LEAVE the window's surface, because main is about to move
+   * the window out from under it. See `panelVacatingForRadial` in App.tsx.
+   */
+  onPrepareRadialShow?: (
+    callback: (payload: { vacatePanel?: boolean }) => void,
+  ) => () => void;
   notifyRadialPrepPaintDone?: () => void;
   notifyRadialOpenPaintDone?: (paintToken: number) => void;
   /** The native window is already visible; releases the animation of the radial prepped at zero alpha. */

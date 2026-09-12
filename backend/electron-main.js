@@ -1289,8 +1289,49 @@ function setupMainWindow(window) {
 
 let radialOpenPaintSequence = 0;
 
+/**
+ * True between `prepare-radial-show {vacatePanel}` and the reopen it schedules. A second trigger
+ * inside that window must not start a second vacate — the renderer would be asked to empty a
+ * surface it has already emptied, and the two passes would race to open the same wheel.
+ */
+let radialPanelVacateInFlight = false;
+
+/**
+ * Get the panel off the window's surface, then open the radial for real.
+ *
+ * The wait is capped: a renderer that never acknowledges must not swallow the gesture, and opening
+ * with the old glitch is still better than not opening. `PANEL_VACATE_TIMEOUT_MS` is two frames
+ * plus the IPC — long enough for the ack on a busy frame, short enough not to read as lag.
+ */
+const PANEL_VACATE_TIMEOUT_MS = 90;
+function vacatePanelSurfaceThenOpen(source) {
+  radialPanelVacateInFlight = true;
+  const proceed = () => {
+    if (!radialPanelVacateInFlight) return;
+    radialPanelVacateInFlight = false;
+    ipcMain.removeListener("radial-prep-paint-done", onVacated);
+    clearTimeout(timer);
+    if (!mainWindow || mainWindow.isDestroyed()) return;
+    showMenuAtCursor(source, true);
+  };
+  const onVacated = () => proceed();
+  const timer = setTimeout(proceed, PANEL_VACATE_TIMEOUT_MS);
+  timer.unref?.();
+  ipcMain.once("radial-prep-paint-done", onVacated);
+  try {
+    mainWindow.webContents.send("prepare-radial-show", { vacatePanel: true });
+  } catch (e) {
+    proceed();
+  }
+}
+
 /* zenith-verify:radial-handshake-main — prepare → radial-prep-paint-done → open-menu → radial-open-paint-done → show; see scripts/verify-radial-windowing.mjs */
-function showMenuAtCursor(source = "shortcut") {
+/**
+ * @param {string} source
+ * @param {boolean} panelAlreadyVacated — second pass, after the panel left the window's surface.
+ *   See the handshake below for why that has to happen before the window moves.
+ */
+function showMenuAtCursor(source = "shortcut", panelAlreadyVacated = false) {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   const radialOpenStartedAt = Date.now();
 
@@ -1386,6 +1427,36 @@ function showMenuAtCursor(source = "shortcut") {
       nativeResizeRisk = true;
     }
   }
+  /**
+   * The panel has to LEAVE the surface before the window moves, not just be covered.
+   *
+   * `hide()` below does not empty the compositor: the last frame Chromium composited is still the
+   * one the DWM owns, and it is the panel drawn at `inset-0` of the 880×600 windowed rect. Showing
+   * the window again at the radial's bounds presents that surface at the NEW origin — so Settings
+   * appears in the monitor's top-left corner, at its old size, until the renderer's first real
+   * frame lands a beat later and it snaps back to where it always was. That jump is the whole bug;
+   * it is not the resize, and the panel's rect (`lastWindowedBounds`) was never wrong.
+   *
+   * `radial-open-paint-done` cannot cover this: it is acknowledged from a `requestAnimationFrame`
+   * in a window that is already HIDDEN, and a hidden window paints nothing the DWM will ever
+   * present. The only frame that can clear the surface is one drawn while the window is still on
+   * screen — which is why this handshake runs BEFORE the hide, and why the reopen is a second pass
+   * through this function rather than a branch inside it.
+   *
+   * Costs one frame plus an IPC, and only on this path. Idle opens (`small`) never reach it: their
+   * surface is already transparent, which is exactly why they were never seen to glitch.
+   */
+  if (
+    !panelAlreadyVacated &&
+    nativeResizeRisk &&
+    rendererPanelVisible &&
+    !radialPanelVacateInFlight &&
+    isMainWindowOnScreen()
+  ) {
+    vacatePanelSurfaceThenOpen(source);
+    return;
+  }
+
   if (nativeResizeRisk) {
     diagLog(
       `[RadialOpen] Native bounds differ from centered radial; hiding before resize (mode=${nativeWindowSizeMode}, panel=${rendererPanelVisible})`,

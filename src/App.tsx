@@ -286,6 +286,12 @@ export default function App() {
   const [minimizeNeutralCoverActive, setMinimizeNeutralCoverActive] = useState(false);
   /** Main: `prepare-radial-show` — paint before `show()` so no old texture is exposed (minimized/dashboard). */
   const [radialPreShowSolidCover, setRadialPreShowSolidCover] = useState(false);
+  /**
+   * The panel is off the surface so main can move the window without the DWM re-presenting it at
+   * the new origin (`prepare-radial-show { vacatePanel }`). It lasts one frame in the normal case:
+   * the `open-menu` that follows draws the panel again, positioned for the widened window.
+   */
+  const [panelVacatingForRadial, setPanelVacatingForRadial] = useState(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState(true);
   /**
    * Where Settings was open. Up here because the panel does not survive using the app.
@@ -1746,6 +1752,8 @@ export default function App() {
       setRadialOpenAwaitingFullscreen(false);
       setRadialAwaitCoverOpaque(false);
       setRadialPreShowSolidCover(false);
+      /** The move it was emptied for has happened; from here the panel is drawn where it belongs. */
+      setPanelVacatingForRadial(false);
       setPanelKeptUnderRadial(keepPanel);
       setPanelOverlayScreenRect(panelRect);
       /** We only close the panel when it is not going to survive under the radial. */
@@ -1975,6 +1983,21 @@ export default function App() {
     setPanelOverlayClientRect((prev) => (prev === null ? prev : null));
   }, [isMenuOpen, radialOpenAwaitingFullscreen]);
 
+  /**
+   * Nothing may leave the panel emptied for good.
+   *
+   * The vacate is a promise from main that an `open-menu` is one IPC away, and that message is what
+   * normally clears it. If it never arrives — the open was refused after the handshake, main went
+   * away mid-gesture — the user is left looking at a window with nothing in it, and no gesture
+   * brings the panel back because the app believes it is still open. The window is generous: it
+   * only has to outlast a round trip that is measured in single frames.
+   */
+  useEffect(() => {
+    if (!panelVacatingForRadial) return;
+    const t = window.setTimeout(() => setPanelVacatingForRadial(false), 1000);
+    return () => clearTimeout(t);
+  }, [panelVacatingForRadial]);
+
   /** Repaint only when the radial closes — invalidating on open flashed the frame (dashboard→fullscreen) on Windows. */
   const prevIsMenuOpenForPaintRef = useRef(isMenuOpen);
   useEffect(() => {
@@ -2022,8 +2045,20 @@ export default function App() {
       });
     });
 
-    const cleanupPrepareRadial = window.electron?.onPrepareRadialShow?.(() => {
-      flushSync(() => setRadialPreShowSolidCover(true));
+    const cleanupPrepareRadial = window.electron?.onPrepareRadialShow?.((payload) => {
+      /**
+       * `vacatePanel`: main is about to MOVE the window out from under the panel, and what it hides
+       * is not what the DWM keeps — the last composited frame is. Emptying the surface here, while
+       * the window is still on screen, is the only way that frame stops being "Settings at
+       * inset-0"; otherwise it is presented again at the radial's origin and the panel is seen in
+       * the monitor's corner for a beat. The neutral cover is the minimized path's answer and does
+       * the opposite of what is needed here — it paints something rather than nothing.
+       */
+      if (payload?.vacatePanel) {
+        flushSync(() => setPanelVacatingForRadial(true));
+      } else {
+        flushSync(() => setRadialPreShowSolidCover(true));
+      }
       requestAnimationFrame(() => {
         window.electron?.notifyRadialPrepPaintDone?.();
       });
@@ -2040,6 +2075,7 @@ export default function App() {
         setPanelChromeDismissedForIsland(false);
         setMinimizeNeutralCoverActive(false);
         setRadialPreShowSolidCover(false);
+        setPanelVacatingForRadial(false);
         setIsDashboardOpen(false);
         setIsSettingsOpen(true);
       });
@@ -2054,6 +2090,7 @@ export default function App() {
         // pre-minimize neutral cover is still up, and only `main-window-minimized` clears it.
         setMinimizeNeutralCoverActive(false);
         setRadialPreShowSolidCover(false);
+        setPanelVacatingForRadial(false);
         setIsMenuOpen(false);
         setIsSettingsOpen(true);
         setIsDashboardOpen(false);
@@ -2621,7 +2658,7 @@ export default function App() {
         className={`
         overflow-hidden [--zenith-title-bar-h:38px]
         ${panelUnderRadial ? '' : 'absolute inset-0'}
-        ${panelNeutralizingClose
+        ${panelNeutralizingClose || panelVacatingForRadial
           ? 'opacity-0 invisible !transition-none pointer-events-none'
           : panelStaysUnderRadial
           ? 'zenith-panel-surface pointer-events-none !transition-none'
