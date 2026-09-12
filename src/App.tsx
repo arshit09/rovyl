@@ -390,6 +390,16 @@ export default function App() {
     width: window.innerWidth,
     height: window.innerHeight,
   }));
+  /**
+   * This window's top-left corner on screen, as main reported it in `open-menu`.
+   *
+   * The hold gesture's cursor samples arrive as absolute screen points and something has to turn
+   * them into client ones. `window.screenX/Y` is the wrong instrument, for the reason spelled out in
+   * `openMenu` below — and `radialMonitor: 'cursor'` sharpens it, because the window may have just
+   * crossed to another monitor, which makes a stale origin wrong by a whole screen instead of by the
+   * difference between two rects. `null` leaves `RadialMenu` on the fallback.
+   */
+  const [radialWindowOrigin, setRadialWindowOrigin] = useState<Coordinates | null>(null);
   /** Absolute centre chosen by main; it is the monitor's centre, never the cursor position. */
   const radialCenterScreenRef = useRef<Coordinates | null>(null);
   /** Bounds sent by main are authoritative while window.screenX/Y still reflect Settings. */
@@ -635,8 +645,15 @@ export default function App() {
        * It is the setting that decides, so the decision travels with the size, well before an open.
        */
       fullBleed: radialScrimNeedsFullBleed(config.backdropOpacity),
+      /**
+       * Which monitor the wheel is born on. It travels with the size for the same reason the
+       * full-bleed flag does: main needs it BEFORE an open, and the renderer is what holds the
+       * config. Main also seeds it from disk at boot, because the global shortcut can fire before
+       * this effect has ever run.
+       */
+      monitor: config.radialMonitor === 'cursor' ? 'cursor' : 'primary',
     });
-  }, [config.menuRadius, config.iconSize, config.backdropOpacity]);
+  }, [config.menuRadius, config.iconSize, config.backdropOpacity, config.radialMonitor]);
 
   /**
    * Click-free execution: the renderer is the one that knows it is on, but the one that has to park
@@ -1746,6 +1763,19 @@ export default function App() {
       setRadialClientSize(
         opts?.clientSize ?? { width: window.innerWidth, height: window.innerHeight },
       );
+      /**
+       * Main's value first; failing that, the origin implied by the pair we just settled on
+       * (absolute centre minus client centre), which is the same arithmetic from the other end.
+       */
+      setRadialWindowOrigin(
+        opts?.windowOrigin ??
+          (coordSpace === 'screen'
+            ? {
+                x: x - authoritativeClientPosition.x,
+                y: y - authoritativeClientPosition.y,
+              }
+            : null),
+      );
     });
 
     /**
@@ -2786,6 +2816,7 @@ export default function App() {
             apps={radialApps}
             config={radialMenuConfig}
             triggerSource={triggerSource}
+            windowOrigin={radialWindowOrigin}
             updateReady={updateReady}
             discoveryPhase={discoveryPhase}
             onWorkspaceSwitch={handleWorkspaceSwitch}

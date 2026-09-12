@@ -1294,8 +1294,12 @@ function showMenuAtCursor(source = "shortcut") {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   const radialOpenStartedAt = Date.now();
 
-  /** A fixed position means truly fixed: neither the position nor the monitor follows the cursor. */
-  const targetDisplay = screen.getPrimaryDisplay();
+  /**
+   * Which monitor comes from the setting; the point inside it is its centre either way. `primary`
+   * is truly fixed — same screen every time, whatever the hand is doing. `cursor` moves the screen
+   * and nothing else: this still does not follow the pointer to a position.
+   */
+  const targetDisplay = radialTargetDisplay();
   let radialCenter = {
     x: Math.round(targetDisplay.bounds.x + targetDisplay.bounds.width / 2),
     y: Math.round(targetDisplay.bounds.y + targetDisplay.bounds.height / 2),
@@ -1305,7 +1309,7 @@ function showMenuAtCursor(source = "shortcut") {
    * (no DWM flash) and draw the wheel at that point in client coordinates. This path used to
    * replace `radialCenter` with SETTINGS' centre — (906,345) in the video — and looked like it was
    * following the cursor. If the panel is on another monitor / off centre, the safe hide+resize
-   * path below is used to honour the primary monitor's centre.
+   * path below is used to honour the target monitor's centre.
    */
   let keepExistingPanelWindow = false;
   if (
@@ -1681,6 +1685,21 @@ let radialViewportSize = 988;
  * still has no monitor-sized layered surface to compose for the 99.9% of the time nothing is open.
  */
 let radialFullBleed = false;
+/**
+ * Does the wheel follow the pointer's monitor, or is it always born on the primary one?
+ *
+ * It rides the same channel as the size and the full-bleed flag because it is the same kind of
+ * fact: geometry main has to know BEFORE an open, never while one is running.
+ */
+let radialFollowsCursorMonitor = false;
+/**
+ * Only the two known values write. An absent one leaves the current setting alone — which is what
+ * lets the value seeded from disk at boot survive a renderer that does not send it.
+ */
+function applyRadialMonitorSetting(value) {
+  if (value === "cursor") radialFollowsCursorMonitor = true;
+  else if (value === "primary") radialFollowsCursorMonitor = false;
+}
 ipcMain.on("set-radial-viewport", (_event, payload) => {
   if (!payload || typeof payload !== "object") return;
   const n = Number(payload.size);
@@ -1688,7 +1707,38 @@ ipcMain.on("set-radial-viewport", (_event, payload) => {
     radialViewportSize = Math.round(n);
   }
   radialFullBleed = !!payload.fullBleed;
+  applyRadialMonitorSetting(payload.monitor);
 });
+
+/**
+ * The monitor the wheel is born on.
+ *
+ * `primary` is what shipped and stays the default. `cursor` exists for the case that made this a
+ * setting: a second monitor, the hand on it, and the wheel blooming on the primary one — behind the
+ * window the user had just left, so the app they picked opened on a screen they were not looking at.
+ *
+ * It chooses a SCREEN, not a point. The box is still centred on whichever monitor it names
+ * (`radialModeBounds`): free positioning is gone for reasons that have nothing to do with which
+ * screen the wheel is on, and this must not quietly bring it back.
+ *
+ * @param {{ x: number, y: number } | undefined} anchorScreenPoint — a point already known to be the
+ *   one that matters (the collapse anchor). Absent, the live cursor is asked.
+ */
+function radialTargetDisplay(anchorScreenPoint) {
+  if (!radialFollowsCursorMonitor) return screen.getPrimaryDisplay();
+  try {
+    const point =
+      anchorScreenPoint &&
+      Number.isFinite(anchorScreenPoint.x) &&
+      Number.isFinite(anchorScreenPoint.y)
+        ? anchorScreenPoint
+        : screen.getCursorScreenPoint();
+    return screen.getDisplayNearestPoint(point);
+  } catch (e) {
+    /** A display list that will not be read is not a reason to refuse to open. */
+    return screen.getPrimaryDisplay();
+  }
+}
 
 /**
  * A transparent window the size of the monitor makes Windows mark videos/apps underneath as hidden
@@ -1959,6 +2009,40 @@ function isMainWindowOnScreen() {
   }
 }
 
+/**
+ * Is the window's own frame sitting on this display?
+ *
+ * Asked before the wheel reuses a visible Settings frame instead of composing its own. Those two
+ * have to be on the SAME monitor, because the reuse path hands the hook Settings' rect as the only
+ * clickable region while telling it to block the monitor the wheel was aimed at. On one monitor
+ * those are the same place. On two they need not be, and then the allowed rect does not intersect the
+ * blocked monitor at all — the hook swallows every click on it, the one that launches included,
+ * while the wheel is drawn on the other screen entirely.
+ *
+ * `radialMonitor: 'cursor'` is what makes this reachable in one gesture, but it is not the only way
+ * in: Settings dragged to the second monitor could already do it, and `flushPendingWindowSizeIfNeeded`
+ * reaches the reuse branch on restore without ever taking `showMenuAtCursor`'s containment test.
+ */
+function isMainWindowOnDisplay(displayBounds) {
+  if (!displayBounds) return false;
+  try {
+    if (!mainWindow || mainWindow.isDestroyed()) return false;
+    const frame = mainWindow.getBounds();
+    const centre = {
+      x: frame.x + frame.width / 2,
+      y: frame.y + frame.height / 2,
+    };
+    return (
+      centre.x >= displayBounds.x &&
+      centre.x < displayBounds.x + displayBounds.width &&
+      centre.y >= displayBounds.y &&
+      centre.y < displayBounds.y + displayBounds.height
+    );
+  } catch (e) {
+    return false;
+  }
+}
+
 function radialBoundsUnionWithPanel(radialRect, displayBounds) {
   if (!panelOverlayActive) return radialRect;
   const panel = lastWindowedBounds;
@@ -1982,7 +2066,11 @@ function radialBoundsUnionWithPanel(radialRect, displayBounds) {
   };
 }
 
-/** The radial's box is always centred on the monitor being pointed at. Free positioning is gone. */
+/**
+ * The radial's box is always centred on the display it is HANDED. WHICH display that is belongs to
+ * the caller — `radialTargetDisplay`, driven by the `radialMonitor` setting — never to this function.
+ * Free positioning at an arbitrary point is gone; `point` is still taken and still ignored.
+ */
 function radialModeBounds(displayBounds, point) {
   const side = Math.min(
     radialViewportSize,
@@ -2035,8 +2123,14 @@ function smallModeBounds(displayBounds) {
 
 function applySmallModeCollapsedBounds(anchorScreenPoint) {
   if (!mainWindow || mainWindow.isDestroyed()) return;
-  /** The radial is fixed on the primary monitor; idle never follows the cursor. */
-  const targetDisplay = screen.getPrimaryDisplay();
+  /**
+   * Idle parks on the monitor the next wheel will be born on, so opening there costs no resize —
+   * and on this transparent window every resize is a flash risk. With `cursor` that is a bet on
+   * where the hand will still be; when it loses, `showMenuAtCursor` sees the mismatch through
+   * `nativeResizeRisk` and hides the window before moving it, which is the same safe path a
+   * panel→radial transition already takes.
+   */
+  const targetDisplay = radialTargetDisplay(anchorScreenPoint);
   const nextBounds = smallModeBounds(targetDisplay.bounds);
   if (!boundsApproxEqual(mainWindow.getBounds(), nextBounds)) {
     mainWindow.setBounds(nextBounds);
@@ -2137,12 +2231,22 @@ function updateWindowSize(mode, anchorScreenPoint) {
      * so the window has to keep covering it. The flag is the state, not `previousMode` — reopening
      * the radial while already fullscreen must not lose the panel.
      */
+    /**
+     * A panel on ANOTHER monitor is not a panel this radial can keep covered, and it must not be
+     * allowed to stretch the box towards it either: one HWND cannot span two screens, so moving it to
+     * the target monitor necessarily takes Settings off the screen it was on. That is the only thing
+     * it can do — what it must NOT do is keep the frame over there and block this monitor instead.
+     */
+    const panelIsOnTargetDisplay = isMainWindowOnDisplay(b);
+    if (!panelIsOnTargetDisplay) panelOverlayActive = false;
+
     const keepPanelWindow =
       /** Same reason as `keepExistingPanelWindow`: a flat scrim must not be cut to the panel's rect. */
       !radialFullBleed &&
       previousMode === "windowed" &&
       rendererPanelVisible &&
-      isMainWindowOnScreen();
+      isMainWindowOnScreen() &&
+      panelIsOnTargetDisplay;
     if (keepPanelWindow) {
       panelOverlayActive = true;
     }
@@ -3179,6 +3283,13 @@ app.whenReady().then(async () => {
       if (MOUSE_TRIGGER_BUTTONS.includes(fc.mouseTriggerButton)) {
         cachedRadialFlags.mouseTriggerButton = fc.mouseTriggerButton;
       }
+      /**
+       * Seeded from disk, not awaited from the renderer. The global shortcut is registered before
+       * React has committed anything, and on a cold start pressing it is the FIRST thing that
+       * happens — without this the first wheel of every session would open on the primary monitor
+       * no matter what the user chose.
+       */
+      applyRadialMonitorSetting(fc.radialMonitor);
       const ui = extractUiConfigFromPersistenceBlob(fc);
       if (ui) {
         // Authoritative UI state lives in config-v2.json — win over stale settings.json (fixes shortcut/sync races).
@@ -3192,6 +3303,7 @@ app.whenReady().then(async () => {
         if (ui.mouseTriggerMode === "click" || ui.mouseTriggerMode === "hold") {
           cachedRadialFlags.mouseTriggerMode = ui.mouseTriggerMode;
         }
+        applyRadialMonitorSetting(ui.radialMonitor);
         mergeGameModeConfig(ui.gameMode);
       }
     }
@@ -3437,6 +3549,7 @@ app.whenReady().then(async () => {
     if (MOUSE_TRIGGER_BUTTONS.includes(payload.mouseTriggerButton)) {
       cachedRadialFlags.mouseTriggerButton = payload.mouseTriggerButton;
     }
+    applyRadialMonitorSetting(payload.radialMonitor);
     const ui = extractUiConfigFromPersistenceBlob(payload);
     if (ui) {
       applyUiConfigToCurrentSettings(ui);
@@ -3456,6 +3569,11 @@ app.whenReady().then(async () => {
       if (MOUSE_TRIGGER_BUTTONS.includes(ui.mouseTriggerButton)) {
         cachedRadialFlags.mouseTriggerButton = ui.mouseTriggerButton;
       }
+      /**
+       * Belt and braces with `set-radial-viewport`: that effect only fires on the keys it depends
+       * on, and a save is the one event guaranteed to carry the whole config.
+       */
+      applyRadialMonitorSetting(ui.radialMonitor);
       mergeGameModeConfig(ui.gameMode);
     }
     syncMouseHookState();
@@ -7406,10 +7524,21 @@ ipcMain.handle("collapse-idle-overlay", () => {
   if (nativeWindowSizeMode !== "small") return false;
 
   const cur = mainWindow.getBounds();
-  const disp = screen.getPrimaryDisplay();
+  /** Same monitor the next open will use — see `applySmallModeCollapsedBounds`. */
+  const disp = radialTargetDisplay();
   const nb = smallModeBounds(disp.bounds);
-  const key = JSON.stringify(nb);
-  lastWindowHitShapeKey = key;
+  /**
+   * A PASSTHROUGH answer, not a rect. This key means one thing only — ""/"__empty__" is "let the
+   * mouse through", anything else is "there are HUD regions to click" (see its declaration and
+   * `applyMousePolicyAfterReveal`) — and a bounds blob went in here, which reads as the second.
+   * Any reveal that does not come through renderer IPC then took the interactive branch:
+   * `second-instance` is the one a user can reach, by launching Rovyl again from the Start menu
+   * while it sits idle, and it left this fully transparent square swallowing every click on the
+   * monitor the wheel is parked on — the exact failure `applyMousePolicyAfterReveal` was written to
+   * prevent. The rect needs no home here; `getBounds()` already has it, and the sibling in
+   * `updateWindowSize`’s `small` branch has always written the constant.
+   */
+  lastWindowHitShapeKey = "__empty__";
   try {
     if (typeof mainWindow.setShape === "function") mainWindow.setShape([]);
   } catch (e) {

@@ -19,6 +19,13 @@ const checks = [
       "radial-open-paint-done",
       "radial-native-revealed",
       "Stable idle: transparent radial surface",
+      /**
+       * One resolver decides which monitor the wheel is born on, and `showMenuAtCursor`,
+       * `applySmallModeCollapsedBounds` and `collapse-idle-overlay` all have to ask it. Inlining
+       * `screen.getPrimaryDisplay()` back into any one of them is silent: idle would park on one
+       * screen while the open targeted another, and the resize between them is a DWM flash.
+       */
+      "radialTargetDisplay",
     ],
     mustNotInclude: [
       "mainWindow.setOpacity(0.01)",

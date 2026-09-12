@@ -799,6 +799,25 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
           choices: [{ value: 'click', label: 'Click' }, { value: 'hold', label: 'Hold' }],
           onChange: (value) => update('mouseTriggerMode', value as UIConfig['mouseTriggerMode']),
         },
+        {
+          key: 'radialMonitor', configKey: 'radialMonitor', group: 'Position', title: 'Monitor',
+          /**
+           * The consequence, not the mechanism. Nobody opens this panel wanting to know which
+           * `Display` object main asks for — they want to know which screen the thing they are about
+           * to launch will be sitting on.
+           */
+          description:
+            config.radialMonitor === 'cursor'
+              ? 'The wheel opens on the screen the pointer is already on, so what you launch lands where you are working.'
+              : 'The wheel always opens on the main screen, wherever the pointer happens to be.',
+          kind: 'segmented',
+          choices: [
+            { value: 'primary', label: 'Main screen' },
+            { value: 'cursor', label: 'Follow pointer' },
+          ],
+          current: config.radialMonitor === 'cursor' ? 'cursor' : 'primary',
+          onChange: (value) => update('radialMonitor', value as UIConfig['radialMonitor']),
+        },
         range('threshold', 'Position', 'Activation zone', 'Cursor distance required to confirm a target.',
           config.activationThreshold, 20, 120, (value) => update('activationThreshold', value), (value) => `${Math.round(value)} px`,
           1, 'activationThreshold'),

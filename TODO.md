@@ -11,14 +11,20 @@ its section, and a retired one keeps its number rather than being reused.
 
 ## 1. Product promise vs. actual behaviour
 
-- [ ] **1.1** **The wheel does not open at the cursor.** `showMenuAtCursor` hardcodes the centre of
-  `screen.getPrimaryDisplay()` (`backend/electron-main.js:1267`). On multi-monitor setups the wheel
-  always lands on monitor 1 regardless of where you are working. Single biggest usability defect.
-- [ ] **1.2** **`fixedPosition` is unreachable.** Default `true` (`src/defaults.ts:219`), toggle exists only
-  in dead `SettingsModal.tsx`. Users cannot turn it off. Wire it into `PrecisionSettings` or drop
-  the config key.
-- [ ] **1.3** **README claims cursor-centred opening** ("appears centred on your cursor") — currently false.
-  Fix the behaviour or fix the copy.
+- [x] **1.1** **The wheel does not open on the cursor's MONITOR.** Was: `showMenuAtCursor` hardcoded the
+  centre of `screen.getPrimaryDisplay()`, so on multi-monitor setups the wheel always landed on
+  monitor 1 regardless of where you were working. Now the `radialMonitor` setting (`'primary'` — the
+  default and the old behaviour — or `'cursor'`) chooses the screen, and every caller that decides the
+  wheel's geometry resolves it through one helper, `radialTargetDisplay`. Opening at the cursor's
+  POINT rather than its screen is still not done and still belongs to §1.5.
+- [ ] **1.2** **Drop the dead `fixedPosition` key.** Default `true` (`src/defaults.ts`), forced back to
+  `true` on hydration (`src/App.tsx`), read by nothing. Do **not** wire it into `PrecisionSettings`:
+  it chose a free POSITION, which is gone, and `src/types.ts` marks it `@deprecated` for that reason.
+  Choosing a monitor is `radialMonitor` and is already exposed. What is left here is deleting the key
+  and the hydration clamp once no config in the wild still needs reading.
+- [x] **1.3** **README claimed cursor-centred opening** ("appears centred on your cursor") — was false in
+  two places (the `## Why` prose and the `## How it works` → Hold cell). Copy now says the wheel is
+  centred on a screen and points at Activation → Monitor for which one.
 - [ ] **1.4** **README claims "nothing leaves your machine"** — false. Live network calls: license API
   (`rovyl-red.vercel.app`), `unavatar.io` + `google.com/s2/favicons` on every web shortcut
   (`src/siteFavicon.ts`), `wttr.in` weather (`RadialMenu.tsx:1723`), GitHub update checks.
@@ -27,6 +33,16 @@ its section, and a retired one keeps its number rather than being reused.
   (`electron-main.js:~1598`) exists to avoid DWM flash — that is what forced fixed positioning.
   Right fix: a dedicated lightweight overlay `BrowserWindow` (warm, pre-painted, repositioned per
   display) separate from the settings window.
+
+  §1.1 took the cheap half of this: which MONITOR is now a setting, because idle can park its box on
+  the monitor the next open will use and the mismatch that remains is an ordinary resize the
+  `nativeResizeRisk` path already hides the window for. The expensive half is untouched — opening at
+  an arbitrary POINT still means the box can straddle a screen edge, which is what one window serving
+  both Settings and the wheel cannot do. Two things found while doing §1.1 belong to whoever picks
+  this up: one HWND cannot span two monitors, so a wheel on monitor B necessarily pulls a visible
+  Settings off monitor A (`isMainWindowOnDisplay` now refuses the frame-reuse path rather than
+  blocking the wrong screen); and anything converting screen→client must use main's `windowOrigin`,
+  never `window.screenX/Y`, which lags a window that has just changed monitors.
 
 ## 2. Dead code and orphaned features
 
@@ -251,3 +267,19 @@ Pointers into the sections above, not items in their own right — each line nam
 - [ ] **8.5** Raise `--zn-text-3` contrast. → **5.3**.
 - [x] **8.6** Make `execute-command` return a result and toast on failure. → **4.1** (done).
 - [ ] **8.7** Correct the two false claims in `README.md`. → **1.3**, **1.4**.
+
+## 9. Multi-monitor coordinate spaces
+
+- [ ] **9.1** **The mouse hook's coordinate space is wrong on mixed-DPI layouts.** `setRadialMouseBlocking`
+  sends `BLOCK` rects and `captureRadialCursor`/`releaseRadialCursor` send `WARP` points in Electron
+  DIP, but `mouse-blocker.ps1` runs DPI-unaware (measured: `GetProcessDpiAwareness` == 0), so it is
+  virtualised by the **system** DPI uniformly while Electron derives DIP **per display**. The two
+  agree only where a monitor's scale factor equals the primary's — so on any uniform setup they agree
+  everywhere, and nothing is wrong today. They diverge when scale factors differ, and §1.1's
+  `radialMonitor: 'cursor'` is what makes a non-primary monitor reachable at all. Symptom there: the
+  confirming click swallowed (selection never fires) and a band of the monitor left unblocked.
+  Three coupled parts, one commit — convert the rects (`dipToScreenRect`), convert the points
+  (`dipToScreenPoint`), and add the `MatchElectronDpiAwareness()` call `foreground-focus.ps1` already
+  has. Doing only the last regresses clickless cursor parking for every user on a scaled *primary*.
+  `TRIGGER_PASSTHROUGH_SLOP_PX` and `MMB_CLICK_DRAG_PX` are compared in the hook's space and move with
+  it. Needs a real mixed-DPI machine to verify; see `docs/ARCHITECTURE.md` for the worked example.

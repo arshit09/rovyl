@@ -188,6 +188,12 @@ interface RadialMenuProps {
   apps: AppItem[];
   config: UIConfig;
   triggerSource?: 'mmb' | 'mmb-click' | 'shortcut';
+  /**
+   * Where this window's top-left corner is on screen, as main reported it when it opened the wheel.
+   * Only the hold gesture needs it — see the `mmb-cursor` replay — and `null` means fall back to
+   * `window.screenX/Y`.
+   */
+  windowOrigin?: Coordinates | null;
   onWorkspaceSwitch?: (workspaceIndex: number) => void;
   currentWorkspace?: Workspace;
   /** False while the hidden HWND takes its first transparent paint. */
@@ -870,6 +876,7 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
   apps,
   config,
   triggerSource = 'shortcut',
+  windowOrigin = null,
   onWorkspaceSwitch,
   onDirectionHintSeen,
   currentWorkspace,
@@ -2077,10 +2084,19 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
     if (!isOpen || triggerSource !== 'mmb' || !window.electron?.onMmbCursor) return;
 
     const cleanup = window.electron.onMmbCursor(({ x, y }) => {
+      /**
+       * Main's origin, never `window.screenX/Y`. Those metrics describe the window one frame late —
+       * the same trap `openMenu` calls out for the first paint — and with `radialMonitor: 'cursor'`
+       * the window may have just moved to a different monitor, so the stale value is a whole screen
+       * out rather than a few pixels. This feeds the AIM: an origin that is wrong does not smudge a
+       * pixel, it confirms a slice the hand never pointed at.
+       */
+      const originX = windowOrigin ? windowOrigin.x : window.screenX;
+      const originY = windowOrigin ? windowOrigin.y : window.screenY;
       window.dispatchEvent(
         new MouseEvent('mousemove', {
-          clientX: x - window.screenX,
-          clientY: y - window.screenY,
+          clientX: x - originX,
+          clientY: y - originY,
         }),
       );
     });
@@ -2088,7 +2104,7 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
     return () => {
       if (cleanup) cleanup();
     };
-  }, [isOpen, triggerSource]);
+  }, [isOpen, triggerSource, windowOrigin]);
 
   // MMB Release Logic (Hold to Open -> Release to Execute)
   // Uses stateRef so the native listener is not torn down on every hover (activeIndex) update.

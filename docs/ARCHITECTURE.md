@@ -155,10 +155,81 @@ exists to prevent.
 
 `'swipe'` is declared in the union and implemented nowhere; every read coerces it to `'off'`. The
 gesture needs the pointer to start at the wheel centre, and it does not: the wheel opens at the
-centre of the primary display while the cursor stays where it was, and the radial window is a box
-(~988 px), so a cursor in a screen corner produces no `mousemove` at all. Making it work means
-warping the cursor from the main process — that is, editing the mouse hook, which has already
-stopped all system input once.
+centre of a monitor while the cursor stays where it was, and the radial window is a box
+(~988 px), so a cursor in a screen corner produces no `mousemove` at all. `radialMonitor: 'cursor'`
+does not change this — it picks the screen the pointer is on, which shortens the gap without
+closing it. Making it work means warping the cursor from the main process — that is, editing the
+mouse hook, which has already stopped all system input once.
+
+## Which monitor the wheel opens on
+
+`radialMonitor` chooses the screen: `'primary'` (the default, and what shipped) or `'cursor'`, the
+one the pointer is on. It picks a SCREEN and never a point — `radialModeBounds` still centres the
+box on whatever monitor it is handed, and that is deliberate: free positioning was removed for
+reasons unrelated to which display is involved.
+
+`radialTargetDisplay()` is the single answer to "which monitor", and every caller that decides the
+wheel's geometry goes through it — `showMenuAtCursor`, `applySmallModeCollapsedBounds` and
+`collapse-idle-overlay`. They have to agree: idle parks the transparent box on the monitor the next
+open will use precisely so that opening costs no resize, and a resize on this window is a DWM flash.
+When the pointer has moved to another screen since the collapse, `showMenuAtCursor` catches it
+through `nativeResizeRisk` and hides the window before moving it.
+
+`windowedBoundsForWorkArea` is NOT one of those callers and must not become one: it is the Settings
+panel's default rect, which belongs on the main screen.
+
+The setting reaches main twice over, and both paths are load-bearing. `set-radial-viewport` carries
+it from the renderer, which owns the config — the same channel as the box size and the full-bleed
+flag, because all three are geometry needed *before* an open. But the global shortcut is registered
+before React has committed anything, so on a cold start the first press can beat that message; main
+therefore also seeds the flag from `config-v2.json` at boot. `applyRadialMonitorSetting` ignores any
+value that is not one of the two, so a renderer that sends nothing cannot wipe what disk supplied.
+
+Two rules came out of making this work, and both are load-bearing for anything that moves the wheel
+between screens:
+
+1. **One HWND cannot span two monitors.** Settings and the wheel share a single window, so opening
+   the wheel on monitor B necessarily takes a visible Settings off monitor A. That is fine. What is
+   not fine is the frame-reuse path doing the opposite: it hands the hook Settings' rect as the only
+   clickable region *and* tells it to block the monitor the wheel was aimed at. On one screen those
+   are the same place; on two they need not be, and then the allowed rect does not intersect the
+   blocked monitor at all and every click on it is swallowed — the launch click included — while the
+   wheel is drawn somewhere else entirely. `isMainWindowOnDisplay` is the guard, and it also clears
+   `panelOverlayActive` so the box is not stretched toward a panel on another screen.
+2. **Screen→client conversion uses main's `windowOrigin`, never `window.screenX/Y`.** Those metrics
+   describe the window one frame late — the trap `openMenu` already calls out for the first paint —
+   and a window that has just changed monitors makes the stale value wrong by a whole screen instead
+   of by the difference between two rects. The hold gesture's `mmb-cursor` replay feeds the AIM, so
+   an origin that is wrong does not smudge a pixel: it confirms a slice the hand never pointed at.
+
+### Known limitation: the hook's coordinate space on mixed-DPI layouts
+
+`setRadialMouseBlocking` hands the hook DIP rects, and `WARP` hands it DIP points, while the hook
+reads `MSLLHOOKSTRUCT.pt` and calls `SetCursorPos`. **This is correct only while every monitor shares
+the primary's scale factor, and it is a real defect when they do not.** It has not been fixed, and the
+reasoning matters more than the symptom, because the obvious half-fix is worse than leaving it.
+
+The helper runs under `powershell.exe`, which is DPI-unaware — measured, not assumed:
+`GetProcessDpiAwareness` returns 0 (`DPI_AWARENESS_UNAWARE`) for the exact invocation
+`ensureRadialMouseBlocker` uses. An unaware process is virtualised by the **system** DPI, uniformly
+across the whole virtual desktop; Electron derives DIP **per display**. Those two spaces agree on any
+monitor whose scale factor equals the primary's — so on an all-100% or otherwise uniform setup they
+agree everywhere, which is why this has never been seen. Worked example of when they do not: primary
+2560×1440 @150%, secondary 1920×1080 @100% to its right. Origins still match, but the secondary's
+1920 DIP width reaches the hook as 1280 of its virtualised units. The allowed box then lands partly
+off the wheel, so the confirming click can be swallowed — a selection that never fires — and a band of
+the monitor is left unblocked, so a click meant for the scrim reaches the app underneath.
+
+`radialMonitor: 'cursor'` is what makes this reachable, since it is the only way the wheel lands on a
+non-primary monitor.
+
+The fix is three coupled parts and must land as one change: convert the `BLOCK` rects
+(`dipToScreenRect`), convert the `WARP` points (`dipToScreenPoint`), **and** give `mouse-blocker.ps1`
+the `MatchElectronDpiAwareness()` call that `foreground-focus.ps1` already carries. Doing only the
+last one breaks clickless cursor parking for everyone on a scaled *primary* monitor — current users,
+regardless of this setting — because the same process's `SetCursorPos` is fed those same DIP points.
+Note also that `TRIGGER_PASSTHROUGH_SLOP_PX` and `MMB_CLICK_DRAG_PX` are main-authored numbers the
+hook compares against deltas in its own space, so they move with it.
 
 ## Icons
 

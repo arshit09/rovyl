@@ -219,6 +219,12 @@ export const DEFAULT_UI_CONFIG: UIConfig = {
   iconSize: 64,
   fixedPosition: true,
   /**
+   * The main screen, which is where every wheel has opened until now. Following the pointer is a
+   * better default for two monitors and a worse one for the person who put the wheel somewhere on
+   * purpose — so it is offered, not imposed.
+   */
+  radialMonitor: 'primary',
+  /**
    * Not 1 any more, and not a weaker default either: 0.6 on the scale that reaches a black screen
    * paints the same alpha (0.5) that 1 painted on the scale that topped out at half. The slider
    * simply has somewhere to go above the shipped look now. See `radialScrimAlphas`.

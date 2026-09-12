@@ -99,8 +99,19 @@ export interface UIConfig {
   /**
    * @deprecated No longer configurable — the wheel is always born at the center. Kept only to read
    * old configs (normalized to `true` on hydration). Do not expose it in settings again.
+   *
+   * Not to be confused with `radialMonitor`: that one is live, and it chooses a SCREEN. This one
+   * chose a POINT, which is the part that is gone.
    */
   fixedPosition: boolean;
+  /**
+   * Which monitor the wheel is born on.
+   * 'primary' — always the main screen, wherever the hand is (default, and what shipped).
+   * 'cursor'  — the screen the pointer is on, so what gets launched lands in front of the user.
+   *
+   * It picks a screen, not a position: the box is still centred on whichever monitor it names.
+   */
+  radialMonitor?: 'primary' | 'cursor';
   /**
    * "Background dimming", 0..1. At 1 the desktop is gone: an opaque fill over the whole monitor.
    * Read it through `radialScrimAlphas` — the number is not an alpha, and how it maps to one
@@ -334,7 +345,13 @@ export interface ElectronAPI {
    * with this. `fullBleed` overrides the box entirely: the dimming reaches the edge, so the window
    * has to be the monitor (see `radialScrimNeedsFullBleed`).
    */
-  setRadialViewport?: (payload: { size: number; fixed: boolean; fullBleed?: boolean }) => void;
+  setRadialViewport?: (payload: {
+    size: number;
+    fixed: boolean;
+    fullBleed?: boolean;
+    /** Which monitor the wheel is born on — see `UIConfig.radialMonitor`. */
+    monitor?: 'primary' | 'cursor';
+  }) => void;
   /**
    * Click-free launching on: when the radial opens, the main stores where the cursor was, puts it
    * at the center of the wheel and returns it on close. This is what makes the pointer hideable (it

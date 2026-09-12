@@ -25,9 +25,9 @@ read a list, pick a row. It is fast, but it is still an interruption — and you
 leaves the mouse.
 
 Rovyl takes a different bet: **you already know where your things are.** Hold the middle
-mouse button and a wheel blooms under your cursor. Move toward what you want. Release.
-The whole thing takes less than a second, happens wherever you already were, and never
-puts a window between you and your work.
+mouse button and a wheel blooms in the middle of your screen. Move toward what you want.
+Release. The whole thing takes less than a second, happens wherever you already were, and
+never puts a window between you and your work.
 
 <div align="center">
 <img src="docs/media/wheel.png" alt="The Rovyl wheel open over the desktop" width="620">
@@ -35,7 +35,8 @@ puts a window between you and your work.
 
 ## Features
 
-- **Opens under your cursor** — over any window, including fullscreen apps
+- **Opens over anything** — any window, including fullscreen apps
+- **Your monitor** — always the main screen, or the one your pointer is already on
 - **Launch anything** — applications, folders, files, websites, custom commands
 - **Automatic discovery** — reads your Start Menu and extracts real app icons
 - **Workspaces** — separate wheels for work, games, streaming; switch with a number key
@@ -77,7 +78,8 @@ steps:
 **Hold**
 
 Press and hold the middle mouse button anywhere in Windows. The wheel appears centred on
-your cursor — you never move to reach it.
+your screen — one throw in any direction reaches every shortcut. Two monitors? Activation →
+**Monitor** picks between **Main screen** and **Follow pointer**.
 
 </td>
 <td width="50%" valign="top">
