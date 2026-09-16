@@ -235,7 +235,7 @@ that closed it. The section stays because §8 points into it and because a later
 - [x] **6.1** **i18n is live again, on the (b) terms below.** `PrecisionSettings` calls a real `t()`
   from `src/i18n/useTranslation`, and that hook is the only importer of the tables.
 - [x] **6.2** **Language selector is in the live UI** — General › Language, a custom dropdown
-  (seven entries do not fit a segmented control, and a native `<select>` draws its popup from the
+  (eight entries do not fit a segmented control, and a native `<select>` draws its popup from the
   OS theme, which looked nothing like the panel around it). Options are labelled with each
   language's endonym over its English name; the group name stays the English "Language" and the
   row carries every endonym and every locale's own word for "language" as search keywords, so the
@@ -247,9 +247,14 @@ that closed it. The section stays because §8 points into it and because a later
   `Record<SupportedLanguage, Record<TranslationKey, string>>` annotation, so a missing key or a
   declared-but-untabled language fails `tsc`; `npm run test:i18n` covers what a type cannot see
   (empty values, keys leaking through as text, a table cloned from English, fallback for the
-  `fr`/`it`/`ja`/`ko` still in the `UIConfig` union).
+  `fr`/`it`/`ko` still in the `UIConfig` union). `npm run test:i18n-packs` and
+  `npm run test:backend-i18n` do the same for the three tables that are not the settings ones, and
+  add the check a type cannot express at all: placeholder parity, so a translation cannot quietly
+  drop the `{version}` that names a release or the `%s` that holds a key name.
 - [x] **6.4** Decided (a) — delete the table, ship English-only — and then reversed to (b) once the
-  bundle half made (b) cheap. Shipped: en, es, zh, pt, ru, de, ar at 107 keys each.
+  bundle half made (b) cheap. Shipped: en, es, zh, **ja**, pt, ru, de, ar at 333 keys each — the
+  count tripled when the panel's remaining English literals went through `t()`, which is what made
+  picking a language translate the settings rather than only the navigation.
   **The constraint that made (a) right is the one that now keeps (b) honest**: the tables must never
   reach the chunk the wheel waits on. `src/i18n/languages.ts` holds codes and metadata only, so
   `App.tsx` can validate a hydrated `config.language` without importing a translated string, and the
@@ -257,14 +262,39 @@ that closed it. The section stays because §8 points into it and because a later
   (296.3 → 296.9 kB critical JS). `scripts/verify-renderer-budget.mjs` fails the build if a locale
   reaches the critical path — or if one stops shipping at all, which would leave the picker
   offering a language it cannot render.
-- [ ] **6.5** **Only the settings panel translates.** The wheel itself still reads from
-  `src/strings.ts` (six English strings) and `IconPicker` is English. Both are in the critical
-  chunk, which is why they were left: reaching them means a per-language chunk fetched on demand,
-  not another static import.
-- [ ] **6.6** **No Cyrillic/Arabic/CJK webfont subset** — Russian, Arabic and Chinese settings text
-  falls down the stack to the Windows system face (Segoe UI, Microsoft YaHei). It reads natively;
-  it is not Inter. Shipping those subsets is 92 kB on every user in every language, so the fix, if
-  it is ever worth it, is a subset loaded when the language is picked.
+- [x] **6.5** **Everything translates now, on exactly the terms this item set.** `src/strings.ts`
+  is gone. The wheel's twelve strings live in `src/i18n/wheel/`: English static and synchronous,
+  the other seven behind one literal `import()` each, fetched once `RadialApp` knows the language.
+  The fault card's 44 sentences work the same way (`src/i18n/faults/`) and are *injected* into
+  `launchFailure.ts`, which stays React-free and node-runnable. `IconPicker`, `FirstRun` and
+  `ErrorOverlays` turned out never to have been in the wheel's chunk at all — `radial.html` loads
+  `RadialApp` and `ErrorBoundary` and nothing else — so they simply call `t()`.
+  Cost to first paint: **1.4 kB** (273.9 → 275.3 kB critical JS against the 300 kB budget).
+  The loaders are spelled out one `import()` per language on purpose: a template specifier makes
+  rollup emit every pack beside the entry, which undoes the whole thing while still passing the
+  byte budget. `verify-renderer-budget` holds both halves — the seven must ship and must not be
+  critical, and English must BE critical, because a first frame with no text is the failure this
+  split exists to prevent.
+- [ ] **6.6** **No Cyrillic/Arabic/CJK webfont subset** — Russian, Arabic, Chinese and Japanese
+  settings text falls down the stack to the Windows system face (Segoe UI, Microsoft YaHei, Yu
+  Gothic UI). It reads natively; it is not Inter. Shipping those subsets is 92 kB on every user in
+  every language, so the fix, if it is ever worth it, is a subset loaded when the language is picked.
+  Both windows now set `document.documentElement.lang`, which costs nothing and fixes the half of
+  this that was a bug rather than a trade: without it the fallback resolves 漢字 through whatever
+  face Windows offers first — usually a Chinese one — so Japanese rendered with Chinese glyph forms
+  for the characters the two scripts share. If a Windows test still shows them, the next step is a
+  `:lang(ja)` font stack in `src/index.css`, not a webfont.
+
+- [ ] **6.7** **What is still English, and why.** Each for a reason that is not oversight:
+  - two IPC error literals in `backend/electron-main.js` (`Empty or invalid command`,
+    `Failed to start key simulator`). `src/launchFailure.ts` classifies them by whole-string
+    equality, so translating them would drop the fault card to its generic answer in every language
+    but English. `scripts/backend-i18n-smoke.mjs` asserts they are not in the table;
+  - the wheel's document is pinned to `dir="ltr"` in every language, Arabic included. Its geometry
+    is absolute pixels and `dir="rtl"` mirrors the HUD. An RTL wheel is its own piece of work;
+  - a new shortcut's `description` field (`Application`, `Web link`, …), which is written into
+    `config-v2.json` as data: translating it freezes one language into the user's file;
+  - the OAuth setup error, which names environment variables in a file only a developer edits.
 
 ## 7. Engineering hygiene
 

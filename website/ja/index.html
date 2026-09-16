@@ -1,0 +1,290 @@
+<!doctype html>
+<html lang="ja" data-zn-theme="black">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Rovyl - ひと振りで、どこへでも。</title>
+<meta name="description" content="Windows のためのラジアルランチャー。どこでもマウスの中ボタンを長押しし、狙って、離すだけ。">
+<meta name="theme-color" content="#151515">
+<link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+<meta property="og:title" content="Rovyl - ひと振りで、どこへでも。">
+<meta property="og:description" content="Windows のためのラジアルランチャー。ひと振りで、どこへでも。">
+<meta property="og:type" content="website">
+<meta property="og:image" content="https://rovyl-red.vercel.app/assets/og.png">
+<meta property="og:url" content="https://rovyl-red.vercel.app/ja">
+<meta name="twitter:card" content="summary_large_image">
+<link rel="alternate" hreflang="en" href="https://rovyl-red.vercel.app/">
+<link rel="alternate" hreflang="ja" href="https://rovyl-red.vercel.app/ja">
+<link rel="alternate" hreflang="x-default" href="https://rovyl-red.vercel.app/">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&family=Instrument+Sans:wght@400..700&family=Space+Grotesk:wght@300..700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+
+<!-- ══ Icon sprite. Lucide geometry - the same set the app draws with. ════ -->
+<svg class="sprite" aria-hidden="true" focusable="false"><defs>
+  <symbol id="i-monitor" viewBox="0 0 24 24"><rect width="20" height="14" x="2" y="3" rx="2"/><path d="M8 21h8M12 17v4"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></symbol>
+  <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20M2 12h20"/></symbol>
+  <symbol id="i-sparkles" viewBox="0 0 24 24"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></symbol>
+  <symbol id="i-layers" viewBox="0 0 24 24"><path d="M12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65M22 12.65l-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/></symbol>
+  <symbol id="i-mouse" viewBox="0 0 24 24"><rect x="5" y="2" width="14" height="20" rx="7"/><path d="M12 6v4"/></symbol>
+  <symbol id="i-crosshair" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="M22 12h-4M6 12H2M12 6V2M12 22v-4"/></symbol>
+  <symbol id="i-zap" viewBox="0 0 24 24"><path d="M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z"/></symbol>
+  <symbol id="i-gamepad" viewBox="0 0 24 24"><path d="M6 11h4M8 9v4M15 12h.01M18 10h.01"/><path d="M17.32 5H6.68a4 4 0 0 0-3.98 3.59c-.01.05-.01.1-.02.15C2.6 9.42 2 14.46 2 16a3 3 0 0 0 3 3c1 0 1.5-.5 2-1l1.41-1.41A2 2 0 0 1 9.83 16h4.34a2 2 0 0 1 1.41.59L17 18c.5.5 1 1 2 1a3 3 0 0 0 3-3c0-1.54-.6-6.58-.69-7.26 0-.05-.01-.1-.01-.15A4 4 0 0 0 17.32 5z"/></symbol>
+  <symbol id="i-wifi-off" viewBox="0 0 24 24"><path d="M12 20h.01M8.5 16.43a5 5 0 0 1 7 0M5 12.86a10 10 0 0 1 5.17-2.69M19 12.86a10 10 0 0 0-2.01-1.52M2 8.82a15 15 0 0 1 4.18-2.64M22 8.82a15 15 0 0 0-11.29-3.76M2 2l20 20"/></symbol>
+  <symbol id="i-terminal" viewBox="0 0 24 24"><path d="m4 17 6-6-6-6M12 19h8"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5M12 15V3"/></symbol>
+  <symbol id="i-maximize" viewBox="0 0 24 24"><path d="M8 3H5a2 2 0 0 0-2 2v3M21 8V5a2 2 0 0 0-2-2h-3M3 16v3a2 2 0 0 0 2 2h3M16 21h3a2 2 0 0 0 2-2v-3"/></symbol>
+  <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M21 4h-7M10 4H3M21 12h-9M8 12H3M21 20h-5M12 20H3M14 2v4M8 10v4M16 18v4"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></symbol>
+  <symbol id="i-music" viewBox="0 0 24 24"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></symbol>
+  <symbol id="i-chat" viewBox="0 0 24 24"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/></symbol>
+  <symbol id="i-code" viewBox="0 0 24 24"><path d="m16 18 6-6-6-6M8 6l-6 6 6 6"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 24 24"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/></symbol>
+  <symbol id="i-cog" viewBox="0 0 24 24"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></symbol>
+  <symbol id="i-github" viewBox="0 0 24 24"><path d="M15 22v-4a4.8 4.8 0 0 0-1-3.5c3 0 6-2 6-5.5.08-1.25-.27-2.48-1-3.5.28-1.15.28-2.35 0-3.5 0 0-1 0-3 1.5-2.64-.5-5.36-.5-8 0C6 2 5 2 5 2c-.3 1.15-.3 2.35 0 3.5A5.4 5.4 0 0 0 4 9c0 3.5 3 5.5 6 5.5-.39.49-.68 1.05-.85 1.65-.17.6-.22 1.23-.15 1.85v4"/><path d="M9 18c-4.51 2-5-2-7-2"/></symbol>
+  <symbol id="i-eye-off" viewBox="0 0 24 24"><path d="M10.73 5.08A10.43 10.43 0 0 1 12 5c7 0 10 7 10 7a13.16 13.16 0 0 1-1.67 2.68M6.61 6.61A13.5 13.5 0 0 0 2 12s3 7 10 7a9.74 9.74 0 0 0 5.39-1.61"/><path d="M14.08 14.08a3 3 0 1 1-4.16-4.16M2 2l20 20"/></symbol>
+  <symbol id="i-chevron" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
+  <symbol id="i-grip" viewBox="0 0 24 24"><circle cx="9" cy="6" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="9" cy="18" r="1"/><circle cx="15" cy="6" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="18" r="1"/></symbol>
+  <symbol id="i-trash" viewBox="0 0 24 24"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+  <symbol id="i-revert" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></symbol>
+  <symbol id="i-alert" viewBox="0 0 24 24"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></symbol>
+  <symbol id="i-up" viewBox="0 0 24 24"><path d="M12 3v12M7 8l5-5 5 5M4 21h16"/></symbol>
+  <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 21V9M7 16l5 5 5-5M4 3h16"/></symbol>
+  <symbol id="i-back" viewBox="0 0 24 24"><path d="m9 14-5-5 5-5"/><path d="M20 20v-7a4 4 0 0 0-4-4H4"/></symbol>
+  <symbol id="i-app" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="5"/></symbol>
+  <symbol id="i-cursor" viewBox="0 0 24 24"><path d="M4.04 4.33a.5.5 0 0 1 .63-.63l14.5 5.1a.5.5 0 0 1-.05.96l-6.2 1.4a1 1 0 0 0-.76.76l-1.4 6.2a.5.5 0 0 1-.96.05z"/></symbol>
+</defs></svg>
+
+<!-- ══ Header ════════════════════════════════════════════════════════════ -->
+<header class="nav" id="nav">
+  <a class="nav-brand" href="#top" aria-label="Rovyl ホーム">
+    <img class="brand-icon" src="/assets/app-icon.svg" alt="" width="22" height="22">
+    <span class="brand-word">Rovyl</span>
+  </a>
+  <nav class="nav-links" aria-label="セクション">
+    <a href="#how">使い方</a>
+    <a href="#features">機能</a>
+    <a href="#privacy">プライバシー</a>
+  </nav>
+  <div class="nav-actions">
+    <a class="btn is-quiet" href="/" hreflang="en" lang="en">English</a>
+    <a class="btn is-quiet is-icon" href="https://github.com/arshit09/rovyl" aria-label="GitHub の Rovyl">
+      <svg class="ico" aria-hidden="true"><use href="#i-github"/></svg>
+    </a>
+    <a class="btn is-primary" href="https://github.com/arshit09/rovyl/releases/latest">
+      <svg class="ico" aria-hidden="true"><use href="#i-download"/></svg>ダウンロード
+    </a>
+  </div>
+</header>
+
+<main id="top">
+
+<!-- ══ Hero ══════════════════════════════════════════════════════════════ -->
+<section class="hero">
+  <div class="hero-copy">
+    <h1>ひと振りで。<br>どこへでも。</h1>
+    <p class="lede">Windows のためのラジアルランチャー。</p>
+    <div class="hero-cta">
+      <a class="btn is-primary is-lg" href="https://github.com/arshit09/rovyl/releases/latest">
+        <svg class="ico" aria-hidden="true"><use href="#i-download"/></svg>Windows 版をダウンロード
+      </a>
+      <a class="btn is-lg" href="https://github.com/arshit09/rovyl">
+        <svg class="ico" aria-hidden="true"><use href="#i-github"/></svg>ソース
+      </a>
+    </div>
+  </div>
+
+  <!-- The wheel, live. Point at it to aim it yourself. -->
+  <figure class="stage" id="stage" role="img"
+    aria-label="デスクトップの上に開いた Rovyl のホイール。まずワークスペースが並び、狙ったワークスペースが自分のショートカットの輪を開き、狙ったショートカットが起動します。">
+    <div class="desk" aria-hidden="true"></div>
+    <div class="scrim" id="scrim" aria-hidden="true"></div>
+    <div class="wheel" id="wheel" aria-hidden="true">
+      <div class="hub" id="hub">
+        <span class="hub-mark" aria-hidden="true"></span>
+        <svg class="ico hub-back" aria-hidden="true"><use href="#i-back"/></svg>
+      </div>
+    </div>
+    <div class="pill" id="pill" aria-hidden="true"><b id="pillName">Main</b><span id="pillChip">中央</span></div>
+    <figcaption class="stage-hint" id="stageHint" aria-hidden="true">動かして狙う</figcaption>
+    <button class="hf" id="handsFree" type="button" role="switch" aria-checked="false">
+      <span class="toggle" aria-hidden="true"></span>クリックなしで起動
+    </button>
+  </figure>
+</section>
+
+<!-- ══ Three beats ═══════════════════════════════════════════════════════ -->
+<section class="beats" id="how">
+  <ol class="beat-grid">
+    <li class="beat reveal">
+      <div class="beat-art" aria-hidden="true">
+        <svg viewBox="0 0 120 120" class="art">
+          <circle class="a-ping" cx="60" cy="40" r="17"/>
+          <circle class="a-ping a-ping2" cx="60" cy="40" r="17"/>
+          <rect class="a-mouse" x="42" y="22" width="36" height="60" rx="18"/>
+          <rect class="a-btn" x="56.5" y="31" width="7" height="17" rx="3.5"/>
+        </svg>
+      </div>
+      <h3>長押し</h3>
+      <p>どこでも、マウスの中ボタンで。</p>
+    </li>
+    <li class="beat reveal">
+      <div class="beat-art" aria-hidden="true">
+        <svg viewBox="0 0 120 120" class="art">
+          <circle class="a-ring" cx="60" cy="60" r="32"/>
+          <rect class="a-tile a-t1" x="47" y="2"  width="26" height="26" rx="9"/>
+          <rect class="a-tile a-t2" x="92" y="47" width="26" height="26" rx="9"/>
+          <rect class="a-tile a-t3" x="47" y="92" width="26" height="26" rx="9"/>
+          <rect class="a-tile a-t4" x="2"  y="47" width="26" height="26" rx="9"/>
+          <g class="a-sweep"><line class="a-vec" x1="60" y1="60" x2="60" y2="34"/></g>
+          <circle class="a-core" cx="60" cy="60" r="7"/>
+        </svg>
+      </div>
+      <h3>狙う</h3>
+      <p>どの向きにも、扇形が光る。</p>
+    </li>
+    <li class="beat reveal">
+      <div class="beat-art" aria-hidden="true">
+        <svg viewBox="0 0 120 120" class="art">
+          <rect class="a-wave" x="42" y="42" width="36" height="36" rx="12"/>
+          <rect class="a-wave a-wave2" x="42" y="42" width="36" height="36" rx="12"/>
+          <rect class="a-pop" x="42" y="42" width="36" height="36" rx="12"/>
+        </svg>
+      </div>
+      <h3>離す</h3>
+      <p>開く。1 秒もかからない。</p>
+    </li>
+  </ol>
+</section>
+
+<!-- ══ Features ══════════════════════════════════════════════════════════ -->
+<section class="section" id="features">
+  <h2 class="section-title reveal">できること、すべて</h2>
+  <ul class="cards">
+    <li class="card reveal"><svg class="ico" aria-hidden="true"><use href="#i-maximize"/></svg><b>どんな画面の上にも</b></li>
+    <li class="card reveal"><svg class="ico" aria-hidden="true"><use href="#i-monitor"/></svg><b>どのモニターでも</b></li>
+    <li class="card reveal"><svg class="ico" aria-hidden="true"><use href="#i-folder"/></svg><b>アプリ、フォルダー、ファイル</b></li>
+    <li class="card reveal"><svg class="ico" aria-hidden="true"><use href="#i-globe"/></svg><b>ウェブサイト</b></li>
+    <li class="card reveal"><svg class="ico" aria-hidden="true"><use href="#i-terminal"/></svg><b>自由なコマンド</b></li>
+    <li class="card reveal"><svg class="ico" aria-hidden="true"><use href="#i-sparkles"/></svg><b>アイコンは自動で</b></li>
+    <li class="card reveal"><svg class="ico" aria-hidden="true"><use href="#i-layers"/></svg><b>ワークスペース</b></li>
+    <li class="card reveal"><svg class="ico" aria-hidden="true"><use href="#i-mouse"/></svg><b>呼び出し方は自由</b></li>
+    <li class="card reveal"><svg class="ico" aria-hidden="true"><use href="#i-crosshair"/></svg><b>2 つの狙い方</b></li>
+    <li class="card reveal"><svg class="ico" aria-hidden="true"><use href="#i-zap"/></svg><b>クリックなしで起動</b></li>
+    <li class="card reveal"><svg class="ico" aria-hidden="true"><use href="#i-gamepad"/></svg><b>ゲーム中は邪魔しない</b></li>
+    <li class="card reveal"><svg class="ico" aria-hidden="true"><use href="#i-wifi-off"/></svg><b>完全オフライン</b></li>
+  </ul>
+</section>
+
+<!-- ══ Workspaces ════════════════════════════════════════════════════════ -->
+<section class="section split" id="workspaces">
+  <div class="split-copy reveal">
+    <span class="tag">ワークスペース</span>
+    <h2>文脈ごとに、ひとつの輪。</h2>
+    <p>数字キーひとつで切り替え。</p>
+  </div>
+  <div class="ws-strip reveal" id="wsStrip" role="img"
+    aria-label="3 つのワークスペース（Main、Streaming、Build）。それぞれのホイールをプレビューし、1〜3 の数字キーで切り替えます"></div>
+</section>
+
+<!-- ══ Aiming modes ══════════════════════════════════════════════════════ -->
+<section class="section split is-reverse" id="aim">
+  <div class="split-copy reveal">
+    <span class="tag">狙い方</span>
+    <h2>向きで狙うか、<br>ポインターで狙うか。</h2>
+    <p>速さか、正確さか。</p>
+  </div>
+  <div class="aim-pair reveal">
+    <figure class="aim-card">
+      <svg viewBox="0 0 160 124" class="art" aria-hidden="true">
+        <path class="m-cone" d="M80 62 L152 24 A81 81 0 0 1 152 100 Z"/>
+        <line class="m-vec" x1="80" y1="62" x2="136" y2="62"/>
+        <rect class="m-tile is-on" x="118" y="49" width="26" height="26" rx="9"/>
+        <rect class="m-tile" x="67" y="12" width="26" height="26" rx="9"/>
+        <rect class="m-tile" x="67" y="86" width="26" height="26" rx="9"/>
+        <rect class="m-tile" x="16" y="49" width="26" height="26" rx="9"/>
+        <circle class="m-ring" cx="80" cy="62" r="7"/>
+      </svg>
+      <figcaption>方向</figcaption>
+    </figure>
+    <figure class="aim-card">
+      <svg viewBox="0 0 160 124" class="art" aria-hidden="true">
+        <rect class="m-tile is-on" x="118" y="49" width="26" height="26" rx="9"/>
+        <rect class="m-tile" x="67" y="12" width="26" height="26" rx="9"/>
+        <rect class="m-tile" x="67" y="86" width="26" height="26" rx="9"/>
+        <rect class="m-tile" x="16" y="49" width="26" height="26" rx="9"/>
+        <circle class="m-ring" cx="80" cy="62" r="7"/>
+        <g class="m-cursor"><use href="#i-cursor" x="0" y="0" width="20" height="20"/></g>
+      </svg>
+      <figcaption>ポインター</figcaption>
+    </figure>
+  </div>
+</section>
+
+<!-- ══ Settings window ═══════════════════════════════════════════════════ -->
+<section class="section" id="settings">
+  <h2 class="section-title reveal">すみずみまで調整できる</h2>
+  <p class="section-note reveal">本物のパネルです。触ってみてください。</p>
+  <div class="win reveal" id="settingsWin" data-zn-theme="black">
+    <div class="win-bar">
+      <span class="win-bar-lead"><svg class="ico"><use href="#i-sliders"/></svg></span>
+      <span class="win-bar-title">Rovyl</span>
+      <span class="win-bar-ctl"><i></i><i></i><i class="is-close"></i></span>
+    </div>
+    <div class="win-body">
+      <aside class="win-side">
+        <h4>設定</h4>
+        <div class="win-search"><svg class="ico"><use href="#i-search"/></svg>検索</div>
+        <ul class="win-nav" id="winNav"></ul>
+        <div class="win-foot"><span class="win-foot-brand"><span class="brand-mark is-sm"></span>Rovyl</span><em id="setVersion">1.12.0</em></div>
+      </aside>
+      <div class="win-main" id="winMain"></div>
+    </div>
+  </div>
+</section>
+
+<!-- ══ Privacy ═══════════════════════════════════════════════════════════ -->
+<section class="section privacy" id="privacy">
+  <ul class="nots">
+    <li class="reveal"><svg class="ico" aria-hidden="true"><use href="#i-wifi-off"/></svg><b>通信なし</b></li>
+    <li class="reveal"><svg class="ico" aria-hidden="true"><use href="#i-eye-off"/></svg><b>計測なし</b></li>
+    <li class="reveal"><svg class="ico" aria-hidden="true"><use href="#i-shield"/></svg><b>アカウント不要</b></li>
+  </ul>
+  <p class="privacy-note reveal">あなたの PC から、何も出ていきません。</p>
+</section>
+
+<!-- ══ Download ══════════════════════════════════════════════════════════ -->
+<section class="section cta" id="get">
+  <div class="cta-inner reveal">
+    <span class="brand-mark is-xl" aria-hidden="true"></span>
+    <h2>Rovyl を使う</h2>
+    <a class="btn is-primary is-lg" href="https://github.com/arshit09/rovyl/releases/latest">
+      <svg class="ico" aria-hidden="true"><use href="#i-download"/></svg>Windows 版をダウンロード
+    </a>
+    <p class="cta-meta">無料 &middot; GPL-3.0 &middot; 自動で更新</p>
+  </div>
+</section>
+
+</main>
+
+<footer class="foot">
+  <a class="nav-brand" href="#top"><img class="brand-icon" src="/assets/app-icon.svg" alt="" width="22" height="22"><span class="brand-word">Rovyl</span></a>
+  <nav aria-label="フッター">
+    <a href="https://github.com/arshit09/rovyl">GitHub</a>
+    <a href="https://github.com/arshit09/rovyl/releases">リリース</a>
+    <a href="/ja/privacy">プライバシー</a>
+    <a href="https://github.com/arshit09/rovyl/blob/main/LICENSE">ライセンス</a>
+  </nav>
+</footer>
+
+<script src="/workspaces.js"></script>
+<script src="/settings.js"></script>
+<script src="/site.js"></script>
+</body>
+</html>

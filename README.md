@@ -6,6 +6,8 @@
 
 A radial launcher for Windows. Hold the middle mouse button anywhere, aim, release.
 
+**English** · [日本語](README.ja.md)
+
 [![Download Rovyl for Windows](https://img.shields.io/badge/Download%20for%20Windows-2ea44f?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/arshit09/rovyl/releases/latest)
 
 ![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078d4?style=flat-square)

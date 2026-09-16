@@ -440,9 +440,28 @@ period, is the fix.
   ones here carry the reason a line exists, usually a bug that motivated it. That is the
   single most useful thing in this codebase — read them before changing behaviour that
   looks arbitrary. (They were written in Portuguese until `5b273eb`, which translated all
-  ~1,760 lines of them. Three kinds stay Portuguese because they are data and not prose:
-  the Windows error patterns in `launchFailure.ts`, the `pt` block in `translations.ts`,
-  and the glyph samples in `verify-renderer-budget.mjs`.)
+  ~1,760 lines of them. Some non-English text stays because it is data and not prose: the
+  Windows error patterns in `launchFailure.ts`, which are Portuguese *and* Japanese because
+  Windows answers in the user's language; the non-English blocks in `translations.ts` and
+  the language packs; and the glyph samples in `verify-renderer-budget.mjs`.)
+
+- **Text lives in one of four places, decided by which chunk paints it.** The rule is the
+  same everywhere and it is about position, not preference: nothing that translates may sit
+  in front of the wheel's first frame.
+  - `src/i18n/translations.ts` — the settings window, 333 keys across eight locales, in a
+    lazy chunk. Reached through `useTranslation`, never imported by `App.tsx`.
+  - `src/i18n/wheel/` — the twelve strings `radial.html` paints. English is a static import
+    and MUST stay in the critical path, since it is what the first frame draws with; every
+    other language is a chunk fetched when `RadialApp` learns the configured language.
+  - `src/i18n/faults/` — the fault card's sentences, injected into `launchFailure.ts` so
+    that module stays React-free, DOM-free and runnable under plain `node`.
+  - `backend/i18n.cjs` — the tray, the native dialogs, the error boxes. A separate table
+    because `backend/` is CommonJS loaded off disk and cannot import the renderer's.
+
+  `scripts/verify-renderer-budget.mjs` enforces the placement half of this on every build,
+  and `test:i18n`, `test:i18n-packs` and `test:backend-i18n` enforce the content half. The
+  three things that stay English on purpose are listed in TODO §6.7 — read it before
+  "finishing" the job, because one of them silently breaks failure classification.
 - **Design tokens live in `src/index.css`.** The radial is monochrome — white and black,
   plus the user's hover colour. Don't introduce new hues; the update badge is the single
   deliberate exception.
