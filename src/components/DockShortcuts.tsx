@@ -62,6 +62,7 @@ function kindLabel(item: AppItem): string {
   if (item.commandType === 'url') return 'Web link';
   if (item.commandType === 'folder') return 'Folder';
   if (item.commandType === 'file') return 'File';
+  if (item.commandType === 'command') return 'Command';
   return 'Application';
 }
 
@@ -72,6 +73,7 @@ function fallbackIconName(item: AppItem): string {
   if (item.commandType === 'folder') return 'Folder';
   if (item.commandType === 'url') return 'Globe';
   if (item.commandType === 'file') return 'File';
+  if (item.commandType === 'command') return 'TerminalSquare';
   return 'AppWindow';
 }
 

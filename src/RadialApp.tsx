@@ -495,13 +495,15 @@ export default function RadialApp() {
 
   const executeAction = useCallback((
     command: string,
-    commandType: 'app' | 'url' | 'folder' | 'file',
+    commandType: 'app' | 'url' | 'folder' | 'file' | 'command',
     itemForFault?: AppItem,
     options?: {
       openTerminal?: boolean;
       terminalCommands?: string[];
       workingDirectory?: string;
       launchMode?: 'normal' | 'reuse' | 'prewarm';
+      commandShell?: 'powershell' | 'cmd';
+      commandWindow?: 'open' | 'hidden';
     },
   ) => {
     if (!command) return;
@@ -547,6 +549,8 @@ export default function RadialApp() {
           terminalCommands: targetApp?.terminalCommands,
           workingDirectory: targetApp?.workingDirectory,
           launchMode: targetApp?.launchMode,
+          commandShell: targetApp?.commandShell,
+          commandWindow: targetApp?.commandWindow,
         });
         return;
       }
@@ -563,6 +567,8 @@ export default function RadialApp() {
         terminalCommands: app.terminalCommands,
         workingDirectory: app.workingDirectory,
         launchMode: app.launchMode,
+        commandShell: app.commandShell,
+        commandWindow: app.commandWindow,
       });
     }
   }, [apps, executeAction]);

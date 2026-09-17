@@ -23,7 +23,7 @@
 export interface ExecutionErrorDetails {
   command?: string;
   resolvedCommand?: string;
-  commandType?: 'app' | 'url' | 'folder' | 'file';
+  commandType?: 'app' | 'url' | 'folder' | 'file' | 'command';
   /** Last rung of the ladder (`exec_direct`, `shell.openPath`, …) — the one that produced the error. */
   method?: string | null;
   /** Node's `err.code`: a string for `spawn` (`ENOENT`), a number (the exit code) for `exec`. */
@@ -46,6 +46,7 @@ export type LaunchFailureCode =
   | 'folder-missing'
   | 'file-missing'
   | 'file-no-handler'
+  | 'command-failed'
   | 'missing-file'
   | 'start-app-gone'
   | 'unlaunchable-app-id'
@@ -290,6 +291,33 @@ export function humanizeExecutionError(
       `Windows no longer lists ${subject}`,
       'This shortcut points at a Start menu entry that has gone — the app was uninstalled, or it changed its id when it updated.',
       'Remove the shortcut in Settings and add the app again from the list.',
+      raw,
+      details,
+    );
+  }
+
+  /**
+   * A typed command line is not a program to re-pick: whatever went wrong is in the line itself, or
+   * in the folder it runs from. Read before the URI test, since `git:status`-like text would pass it.
+   */
+  if (commandType === 'command') {
+    if (details?.method === 'command-cwd') {
+      return build(
+        'folder-missing',
+        'That working folder is gone',
+        'The folder this command runs in does not exist any more.',
+        'Edit the shortcut in Settings and pick the folder again, or clear it.',
+        raw,
+        details,
+      );
+    }
+    return build(
+      'command-failed',
+      notRecognised ? 'Command not recognised' : `${subject} did not run`,
+      notRecognised
+        ? 'The shell does not know the program this command starts.'
+        : 'The command ended with an error.',
+      'Run it with the window set to Open to read its output, then fix the command in Settings.',
       raw,
       details,
     );

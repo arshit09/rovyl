@@ -1002,6 +1002,11 @@
 }
 
 .zs-add-form { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, .8fr) auto; align-items: end; gap: var(--zn-3); }
+.zs-add-form.is-command { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.zs-add-form.is-command > .zs-field.is-wide,
+.zs-add-form.is-command > .zs-command-options { grid-column: 1 / -1; }
+.zs-add-form.is-command > .zs-btn { grid-column: 1 / -1; justify-self: end; }
+.zs-command-options { row-gap: var(--zn-2); }
 .zs-folder-picker { min-width: 0; min-height: 54px; display: grid; grid-template-columns: 28px minmax(0, 1fr) 18px; align-items: center; gap: var(--zn-2); padding: var(--zn-2); color: var(--zn-text-2); border: 1px dashed var(--zn-line-strong); border-radius: var(--zn-r-control); background: var(--zn-surface); cursor: pointer; text-align: left; }
 .zs-folder-picker:hover { color: var(--zn-text); background: var(--zn-hover); }
 .zs-folder-picker div { min-width: 0; }
@@ -1103,6 +1108,7 @@
 /* A file path is long and the button that swaps it has to fit beside it — this is the only
    field in the editor that wants the whole width. */
 .zs-workspace-item-editor > .zs-field.is-with-action { max-width: none; }
+.zs-workspace-item-editor > .zs-field.is-wide { max-width: none; }
 .zs-field-row { display: flex; align-items: center; gap: var(--zn-2); }
 .zs-field-row input { min-width: 0; flex: 1; }
 .zs-field-row .zs-btn { flex: none; }

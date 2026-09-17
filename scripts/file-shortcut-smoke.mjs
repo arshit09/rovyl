@@ -163,12 +163,12 @@ assert.ok(
 // ── 6. The type exists everywhere the value travels ─────────────────────────────────────────────
 assert.match(
   typesSource,
-  /commandType\?: "app" \| "url" \| "folder" \| "file";/,
+  /commandType\?: "app" \| "url" \| "folder" \| "file"(?: \| "[a-z]+")*;/,
   "AppItem must admit the file type.",
 );
 assert.match(
   typesSource,
-  /commandType: "app" \| "url" \| "folder" \| "file",/,
+  /commandType: "app" \| "url" \| "folder" \| "file"(?: \| "[a-z]+")*,/,
   "The executeCommand signature must admit it too, or the renderer cannot send it.",
 );
 

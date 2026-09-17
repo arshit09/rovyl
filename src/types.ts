@@ -38,7 +38,13 @@ export interface AppItem {
    * ladder builds `<terminal> /c <line>`, and a `.pdf` down that route opens a console window or
    * nothing at all.
    */
-  commandType?: "app" | "url" | "folder" | "file";
+  commandType?: "app" | "url" | "folder" | "file" | "command";
+  /**
+   * `command` only: which shell reads the line, and whether a console window shows it. Unset means
+   * PowerShell in a window that stays open, so the output of a typo can still be read.
+   */
+  commandShell?: "powershell" | "cmd";
+  commandWindow?: "open" | "hidden";
   description: string;
   shortcut?: string;
   children?: AppItem[];
@@ -411,8 +417,15 @@ export interface UpdateState {
 export interface ElectronAPI {
   executeCommand: (
     command: string,
-    commandType: "app" | "url" | "folder" | "file",
-    options?: { openTerminal?: boolean; terminalCommands?: string[]; workingDirectory?: string; launchMode?: "normal" | "reuse" | "prewarm" },
+    commandType: "app" | "url" | "folder" | "file" | "command",
+    options?: {
+      openTerminal?: boolean;
+      terminalCommands?: string[];
+      workingDirectory?: string;
+      launchMode?: "normal" | "reuse" | "prewarm";
+      commandShell?: "powershell" | "cmd";
+      commandWindow?: "open" | "hidden";
+    },
   ) => Promise<LaunchResult>;
   hideWindow: () => void;
   showWindow: () => void;

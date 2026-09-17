@@ -6943,6 +6943,144 @@ const warmInstalledAppsCache = () => {
   return installedAppsWarming;
 };
 
+/**
+ * A command line the user typed, run by the shell they picked.
+ *
+ * The line never becomes part of a `cmd` line that `cmd` itself parses. PowerShell gets it as
+ * `-EncodedCommand`, which no quoting rule can reach; `cmd` gets it through an environment
+ * variable read with delayed expansion (`!VAR!`), which is substituted AFTER the outer `cmd` has
+ * finished looking for `&`, `|` and quotes. Only the shell the user picked ever parses the text.
+ *
+ * An open window goes through `start`, and has to: Node's `detached` sets `DETACHED_PROCESS`, which
+ * leaves the child with no console at all (PowerShell then exits 0 having done nothing), and a
+ * plain child of a GUI process writes to the `stdio` it was handed rather than to its window.
+ * `start` gives it a console of its own — Windows Terminal, when that is the default — and it stays
+ * open (`-NoExit`, `/k`) so the output can be read.
+ *
+ * A hidden run is a plain child with no window, watched for a moment: a typo exits at once with a
+ * non-zero code, and that is worth a card, whereas a long-running job is simply left to run.
+ */
+const HIDDEN_COMMAND_WATCH_MS = 1500;
+const COMMAND_LINE_ENV = "ROVYL_COMMAND_LINE";
+
+const runTypedCommand = async (line, options = {}) => {
+  const shellKind = options?.commandShell === "cmd" ? "cmd" : "powershell";
+  const hidden = options?.commandWindow === "hidden";
+  const method = `command-${shellKind}`;
+  const shown = line.length > 50 ? `${line.substring(0, 50)}...` : line;
+  const failure = (message, extra) =>
+    launchFailed(`Failed to run "${shown}". Error: ${message}`, {
+      command: line,
+      resolvedCommand: line,
+      commandType: "command",
+      method,
+      errorCode: null,
+      exeExists: null,
+      raw: String(message || "").slice(0, 4000),
+      ...extra,
+    });
+
+  let cwd = os.homedir();
+  const wanted = String(options?.workingDirectory || "").trim().replace(/^"([\s\S]*)"$/, "$1");
+  if (wanted) {
+    let isDir = false;
+    try {
+      /** Same rule as `describeExecutionFailure`: a dead UNC share would freeze main on the probe. */
+      isDir = /^[A-Za-z]:[\\/]/.test(wanted) ? fs.statSync(wanted).isDirectory() : true;
+    } catch (e) {
+      isDir = false;
+    }
+    if (!isDir) {
+      return failure(`Working folder not found: ${wanted}`, {
+        method: "command-cwd",
+        errorCode: "ENOENT",
+        exeExists: false,
+      });
+    }
+    cwd = wanted;
+  }
+
+  const comspec = process.env.ComSpec || "cmd.exe";
+  const psArgs = (keepOpen) => [
+    "-NoLogo",
+    "-NoProfile",
+    "-ExecutionPolicy",
+    "Bypass",
+    ...(keepOpen ? ["-NoExit"] : []),
+    "-EncodedCommand",
+    Buffer.from(line, "utf16le").toString("base64"),
+  ];
+
+  let exe;
+  let args;
+  let verbatim = false;
+  let env = process.env;
+  if (hidden && shellKind === "cmd") {
+    exe = comspec;
+    args = ["/d", "/s", "/c", `"${line}"`];
+    verbatim = true;
+  } else if (hidden) {
+    exe = "powershell.exe";
+    args = psArgs(false);
+  } else {
+    /** Base64 and fixed switches only, so the PowerShell tail is safe to write inline. */
+    const inner = shellKind === "cmd"
+      ? `"${comspec}" /d /s /k !${COMMAND_LINE_ENV}!`
+      : `powershell.exe ${psArgs(true).join(" ")}`;
+    exe = comspec;
+    args = ["/d", "/v:on", "/s", "/c", `"start "" ${inner}"`];
+    verbatim = true;
+    env = { ...process.env, [COMMAND_LINE_ENV]: `"${line}"` };
+  }
+
+  diagLog(`[Command] ${shellKind}${hidden ? " (hidden)" : ""} in ${cwd}: ${line}`);
+
+  const outcome = await new Promise((resolve) => {
+    let settled = false;
+    const settle = (value) => {
+      if (settled) return;
+      settled = true;
+      resolve(value);
+    };
+    let child;
+    try {
+      child = spawn(exe, args, {
+        cwd,
+        env,
+        stdio: "ignore",
+        windowsHide: true,
+        windowsVerbatimArguments: verbatim,
+      });
+    } catch (err) {
+      settle({ error: err });
+      return;
+    }
+    child.on("error", (err) => settle({ error: err }));
+    /** `start` returns as soon as the window exists; its own exit code is the only one there is. */
+    const timer = hidden
+      ? setTimeout(() => {
+          child.unref();
+          settle({ ok: true });
+        }, HIDDEN_COMMAND_WATCH_MS)
+      : null;
+    child.on("exit", (code) => {
+      if (timer) clearTimeout(timer);
+      settle(code === 0 || code === null ? { ok: true } : { exitCode: code });
+    });
+  });
+
+  if (outcome.error) {
+    diagLog(`[Command] ✗ Failed to start: ${outcome.error.message}`);
+    return failure(outcome.error.message, { errorCode: outcome.error.code ?? null });
+  }
+  if (outcome.exitCode !== undefined) {
+    diagLog(`[Command] ✗ Exited with code ${outcome.exitCode}`);
+    return failure(`The command exited with code ${outcome.exitCode}.`, { errorCode: outcome.exitCode });
+  }
+  diagLog("[Command] ✓ Started");
+  return launchOk(method);
+};
+
 // IPC: receives a command from React to run an app
 const runExecuteCommand = async (command, commandType, options = {}) => {
   if (!command || typeof command !== "string" || command.trim() === "") {
@@ -6951,6 +7089,12 @@ const runExecuteCommand = async (command, commandType, options = {}) => {
   }
 
   const trimmedCommand = command.trim();
+
+  /**
+   * A typed command line is the user's own text, and everything below rewrites text: GUID
+   * expansion, IDE flags, requoting. It leaves before any of that.
+   */
+  if (commandType === "command") return await runTypedCommand(trimmedCommand, options);
 
   // CRITICAL: Resolve GUIDs to real paths FIRST, before any detection logic
   let resolvedCommand = resolveShellPath(trimmedCommand);

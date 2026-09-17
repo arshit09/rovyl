@@ -36,6 +36,7 @@ import {
   Shield,
   Square,
   SquareStack,
+  TerminalSquare,
   Trash2,
   Undo2,
   X,
@@ -2616,7 +2617,7 @@ function SettingsEditor({
 }
 
 
-type WorkspaceAddMode = 'app' | 'url' | 'folder' | 'file' | null;
+type WorkspaceAddMode = 'app' | 'url' | 'folder' | 'file' | 'command' | null;
 
 const APPS_PAGE_SIZE = 40;
 
@@ -2625,6 +2626,7 @@ function itemTypeLabel(item: AppItem) {
   if (item.commandType === 'url') return 'URL';
   if (item.commandType === 'folder') return 'Folder';
   if (item.commandType === 'file') return 'File';
+  if (item.commandType === 'command') return 'Command';
   return 'Application';
 }
 
@@ -2741,11 +2743,19 @@ function itemFallbackIcon(item: AppItem) {
   if (item.type === 'folder' || item.commandType === 'folder') return 'Folder';
   if (item.commandType === 'url') return 'Globe';
   if (item.commandType === 'file') return 'File';
+  if (item.commandType === 'command') return DEFAULT_COMMAND_ICON;
   return 'AppWindow';
 }
 
 /** The glyph a folder shortcut wears until somebody picks another one. */
 const DEFAULT_FOLDER_ICON = 'Folder';
+/** And a command's. A typed line has no file to pull a bitmap from either. */
+const DEFAULT_COMMAND_ICON = 'TerminalSquare';
+
+/** The glyph "Reset" goes back to for this kind of shortcut. */
+function itemDefaultGlyph(item: AppItem) {
+  return item.commandType === 'command' ? DEFAULT_COMMAND_ICON : DEFAULT_FOLDER_ICON;
+}
 
 /**
  * Whether a shortcut's glyph is the user's to choose.
@@ -2757,7 +2767,64 @@ const DEFAULT_FOLDER_ICON = 'Folder';
  * which is also why every folder looked identical before this.
  */
 function itemGlyphIsChoosable(item: AppItem): boolean {
-  return item.type === 'folder' || item.commandType === 'folder';
+  return item.type === 'folder' || item.commandType === 'folder' || item.commandType === 'command';
+}
+
+/**
+ * Which shell reads a command shortcut, and whether its window shows. Shared by the add form and the
+ * row editor so the two cannot drift apart.
+ */
+function CommandRunOptions({
+  shell,
+  windowMode,
+  onShell,
+  onWindow,
+}: {
+  shell: 'powershell' | 'cmd';
+  windowMode: 'open' | 'hidden';
+  onShell: (value: 'powershell' | 'cmd') => void;
+  onWindow: (value: 'open' | 'hidden') => void;
+}) {
+  return (
+    <div className="zs-launch-options zs-command-options">
+      <div>
+        <b>Shell</b>
+        <small>{shell === 'cmd' ? 'Runs with Command Prompt (cmd.exe).' : 'Runs with Windows PowerShell.'}</small>
+      </div>
+      <div className="zs-segmented" role="radiogroup" aria-label="Shell">
+        {([['powershell', 'PowerShell'], ['cmd', 'Command Prompt']] as const).map(([value, label]) => (
+          <button
+            key={value}
+            type="button"
+            role="radio"
+            aria-checked={shell === value}
+            className={shell === value ? 'is-selected' : ''}
+            onClick={() => onShell(value)}
+          >{label}</button>
+        ))}
+      </div>
+      <div>
+        <b>Window</b>
+        <small>
+          {windowMode === 'hidden'
+            ? 'Runs in the background with no window. Errors in the first moments still show a card.'
+            : 'Opens a console that stays open, so you can read the output.'}
+        </small>
+      </div>
+      <div className="zs-segmented" role="radiogroup" aria-label="Window">
+        {([['open', 'Open'], ['hidden', 'Hidden']] as const).map(([value, label]) => (
+          <button
+            key={value}
+            type="button"
+            role="radio"
+            aria-checked={windowMode === value}
+            className={windowMode === value ? 'is-selected' : ''}
+            onClick={() => onWindow(value)}
+          >{label}</button>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 /**
@@ -3128,6 +3195,11 @@ function WorkspaceManager({
   const [folderLabel, setFolderLabel] = useState('');
   const [filePath, setFilePath] = useState('');
   const [fileLabel, setFileLabel] = useState('');
+  const [commandLine, setCommandLine] = useState('');
+  const [commandLabel, setCommandLabel] = useState('');
+  const [commandDir, setCommandDir] = useState('');
+  const [commandShell, setCommandShell] = useState<'powershell' | 'cmd'>('powershell');
+  const [commandWindow, setCommandWindow] = useState<'open' | 'hidden'>('open');
   const [editingIndex, setEditingIndex] = useState<number | null>(null);
   const [isIconPickerOpen, setIsIconPickerOpen] = useState(false);
   /**
@@ -3166,6 +3238,11 @@ function WorkspaceManager({
     setFolderLabel('');
     setFilePath('');
     setFileLabel('');
+    setCommandLine('');
+    setCommandLabel('');
+    setCommandDir('');
+    setCommandShell('powershell');
+    setCommandWindow('open');
     setEditingIndex(openEditor ? newIndex : null);
   };
 
@@ -3355,6 +3432,35 @@ function WorkspaceManager({
       id: crypto.randomUUID(), type: 'app', label: fileLabel.trim() || fileNameLabel(cleanPath),
       iconName: 'File', iconSource: customIconUrl ? 'native' : 'lucide', customIconUrl,
       command: cleanPath, commandType: 'file', description: 'File shortcut',
+    });
+  };
+
+  /** `npm run dev -- --port 3000` → `npm run dev`: short enough for a wheel label. */
+  const commandNameLabel = (value: string) => {
+    const words = value.trim().split(/\s+/).filter(Boolean);
+    const head = words.slice(0, 3).join(' ');
+    return head.length > 24 ? `${head.slice(0, 23).trimEnd()}…` : head || 'Command';
+  };
+
+  const chooseCommandDir = async () => {
+    const path = await window.electron?.selectFolder?.();
+    if (path) setCommandDir(path);
+  };
+
+  /**
+   * A typed command line. Nothing is checked here beyond it being non-empty: the shell is the only
+   * judge of what the line means, and a failed run comes back as a launch card like any other.
+   */
+  const addCommand = () => {
+    const line = commandLine.trim();
+    if (!line) return;
+    const dir = commandDir.trim();
+    addItem({
+      id: crypto.randomUUID(), type: 'app', label: commandLabel.trim() || commandNameLabel(line),
+      iconName: DEFAULT_COMMAND_ICON, iconSource: 'lucide', command: line,
+      commandType: 'command', description: 'Command',
+      commandShell, commandWindow,
+      ...(dir ? { workingDirectory: dir } : {}),
     });
   };
 
@@ -3621,12 +3727,12 @@ function WorkspaceManager({
           <IconPickerModal
             key="item-icon"
             titleId="item-icon-modal-title"
-            title="Folder icon"
-            hint={`Shown on the wheel for “${iconEditItem.label || 'this folder'}”.`}
+            title={iconEditItem.commandType === 'command' ? 'Command icon' : 'Folder icon'}
+            hint={`Shown on the wheel for “${iconEditItem.label || 'this shortcut'}”.`}
             selectedIcon={itemFallbackIcon(iconEditItem)}
-            defaultIcon={DEFAULT_FOLDER_ICON}
+            defaultIcon={itemDefaultGlyph(iconEditItem)}
             onSelect={(iconName) => updateItem(iconEditIndex, { iconName })}
-            onReset={() => updateItem(iconEditIndex, { iconName: DEFAULT_FOLDER_ICON })}
+            onReset={() => updateItem(iconEditIndex, { iconName: itemDefaultGlyph(iconEditItem) })}
             onClose={() => setIconEditItemId(null)}
           />
         )}
@@ -3640,6 +3746,7 @@ function WorkspaceManager({
             <button type="button" className={addMode === 'url' ? 'is-active' : ''} onClick={() => setAddMode(addMode === 'url' ? null : 'url')}><Globe2 size={14} /> URL</button>
             <button type="button" className={addMode === 'folder' ? 'is-active' : ''} onClick={() => setAddMode(addMode === 'folder' ? null : 'folder')}><FolderOpen size={14} /> Folder</button>
             <button type="button" className={addMode === 'file' ? 'is-active' : ''} onClick={() => setAddMode(addMode === 'file' ? null : 'file')}><FileGlyph size={14} /> File</button>
+            <button type="button" className={addMode === 'command' ? 'is-active' : ''} onClick={() => setAddMode(addMode === 'command' ? null : 'command')}><TerminalSquare size={14} /> Command</button>
           </div>
         </div>
 
@@ -3803,6 +3910,36 @@ function WorkspaceManager({
                   <button type="button" className="zs-btn is-primary" disabled={!filePath} onClick={() => void addFile()}><Plus size={14} /> Add file</button>
                 </div>
               )}
+              {addMode === 'command' && (
+                <div className="zs-add-form is-command">
+                  <label className="zs-field is-wide">
+                    <span>Command line</span>
+                    <input
+                      autoFocus
+                      value={commandLine}
+                      spellCheck={false}
+                      onChange={(event) => setCommandLine(event.target.value)}
+                      placeholder={commandShell === 'cmd' ? 'ipconfig /flushdns && pause' : 'git pull; npm run dev'}
+                      onKeyDown={(event) => { if (event.key === 'Enter') addCommand(); }}
+                    />
+                  </label>
+                  <label className="zs-field"><span>Name</span><input value={commandLabel} onChange={(event) => setCommandLabel(event.target.value)} placeholder={commandLine.trim() ? commandNameLabel(commandLine) : 'Name shown on the wheel'} onKeyDown={(event) => { if (event.key === 'Enter') addCommand(); }} /></label>
+                  <div className="zs-field is-with-action">
+                    <span>Run in</span>
+                    <div className="zs-field-row">
+                      <input value={commandDir} spellCheck={false} onChange={(event) => setCommandDir(event.target.value)} placeholder="Your user folder" aria-label="Working folder" />
+                      <button type="button" className="zs-btn" onClick={() => void chooseCommandDir()}><FolderOpen size={13} /> Browse</button>
+                    </div>
+                  </div>
+                  <CommandRunOptions
+                    shell={commandShell}
+                    windowMode={commandWindow}
+                    onShell={setCommandShell}
+                    onWindow={setCommandWindow}
+                  />
+                  <button type="button" className="zs-btn is-primary" disabled={!commandLine.trim()} onClick={addCommand}><Plus size={14} /> Add command</button>
+                </div>
+              )}
             </motion.div>
           )}
         </AnimatePresence>
@@ -3920,7 +4057,45 @@ function WorkspaceManager({
                       tells nobody anything and only fills half a line. URL and folder stay editable
                       — there the value is readable and is the only way to fix the target.
                     */}
-                    {item.type !== 'folder' && item.commandType !== 'app' && item.commandType !== 'file' && (
+                    {item.type !== 'folder' && item.commandType === 'command' && (
+                      <>
+                        <label className="zs-field is-wide">
+                          <span>Command line</span>
+                          <input
+                            value={item.command}
+                            spellCheck={false}
+                            onChange={(event) => updateItem(index, { command: event.target.value })}
+                          />
+                        </label>
+                        <div className="zs-field is-with-action">
+                          <span>Run in</span>
+                          <div className="zs-field-row">
+                            <input
+                              value={item.workingDirectory || ''}
+                              spellCheck={false}
+                              placeholder="Your user folder"
+                              aria-label="Working folder"
+                              onChange={(event) => updateItem(index, { workingDirectory: event.target.value || undefined })}
+                            />
+                            <button
+                              type="button"
+                              className="zs-btn"
+                              onClick={async () => {
+                                const picked = await window.electron?.selectFolder?.();
+                                if (picked) updateItem(index, { workingDirectory: picked });
+                              }}
+                            ><FolderOpen size={13} /> Browse</button>
+                          </div>
+                        </div>
+                        <CommandRunOptions
+                          shell={item.commandShell ?? 'powershell'}
+                          windowMode={item.commandWindow ?? 'open'}
+                          onShell={(value) => updateItem(index, { commandShell: value })}
+                          onWindow={(value) => updateItem(index, { commandWindow: value })}
+                        />
+                      </>
+                    )}
+                    {item.type !== 'folder' && item.commandType !== 'app' && item.commandType !== 'file' && item.commandType !== 'command' && (
                       <label className="zs-field">
                         <span>{item.commandType === 'url' ? 'URL' : 'Folder path'}</span>
                         <input value={item.command} onChange={(event) => updateItem(index, { command: event.target.value })} />
@@ -3976,7 +4151,7 @@ function WorkspaceManager({
                       describes what to do with a PROCESS, and a document has none — Windows picks the
                       program, and `shell.openPath` is the only rung the launch ever gets.
                     */}
-                    {item.type !== 'folder' && item.commandType !== 'folder' && item.commandType !== 'file' && (
+                    {item.type !== 'folder' && item.commandType !== 'folder' && item.commandType !== 'file' && item.commandType !== 'command' && (
                       <div className="zs-launch-options">
                         <div>
                           <b>Launch mode</b>
@@ -4094,7 +4269,7 @@ function WorkspaceManager({
                 <span>Rovyl fills this workspace by itself. You can add more above at any time.</span>
               </div>
             ) : (
-              <div className="zs-manager-empty is-large"><SquareStack size={22} /><b>This workspace is empty</b><span>Add an application, URL, or folder above.</span></div>
+              <div className="zs-manager-empty is-large"><SquareStack size={22} /><b>This workspace is empty</b><span>Add an application, URL, folder, file, or command above.</span></div>
             )
           )}
         </div>
