@@ -751,6 +751,74 @@
 .zs-editor header > button { width: var(--zn-ctl-sm); height: var(--zn-ctl-sm); flex: none; display: grid; place-items: center; padding: 0; color: var(--zn-text-3); border: 0; border-radius: var(--zn-r-chip); background: transparent; cursor: pointer; }
 .zs-editor header > button:hover { color: var(--zn-text); background: var(--zn-raised); }
 .zs-editor-body { min-height: 0; overflow-y: auto; padding: 0 var(--zn-5) var(--zn-5); }
+
+/* The close button and, on a workspace, the Visual / File switch beside it. */
+.zs-editor-head-actions { flex: none; display: flex; align-items: center; gap: var(--zn-2); }
+.zs-editor .zs-editor-close { width: var(--zn-ctl-sm); height: var(--zn-ctl-sm); flex: none; display: grid; place-items: center; padding: 0; color: var(--zn-text-3); border: 0; border-radius: var(--zn-r-chip); background: transparent; cursor: pointer; }
+.zs-editor .zs-editor-close:hover { color: var(--zn-text); background: var(--zn-raised); }
+.zs-view-toggle { display: flex; gap: 2px; padding: 2px; border: 1px solid var(--zn-line); border-radius: var(--zn-r-control); background: var(--zn-sunken); }
+.zs-view-toggle button {
+  position: relative; display: grid; place-items: center; width: 28px; height: 24px; padding: 0;
+  border: 0; border-radius: calc(var(--zn-r-control) - 3px); background: transparent; color: var(--zn-text-3); cursor: pointer;
+  transition: color .15s var(--zn-ease), background .15s var(--zn-ease);
+}
+.zs-view-toggle button:hover { color: var(--zn-text); }
+.zs-view-toggle button.is-selected { color: var(--zn-text); background: var(--zn-raised); box-shadow: inset 0 0 0 1px var(--zn-line); }
+/* Tips hang below and to the LEFT: these sit at the right edge of a dialog that clips its overflow. */
+.zs-view-toggle button[data-tip]::after,
+.zs-file-icon-btn[data-tip]::after {
+  content: attr(data-tip); position: absolute; top: calc(100% + 6px); right: 0; z-index: 30;
+  width: max-content; max-width: 200px; padding: 5px 8px;
+  border: 1px solid var(--zn-line); border-radius: var(--zn-r-chip);
+  background: var(--zn-surface); color: var(--zn-text);
+  font: 400 11px/1.35 var(--font-ui); white-space: nowrap;
+  opacity: 0; pointer-events: none; transform: translateY(-3px);
+  transition: opacity .12s var(--zn-ease), transform .12s var(--zn-ease);
+}
+.zs-view-toggle button[data-tip]:hover::after,
+.zs-view-toggle button[data-tip]:focus-visible::after,
+.zs-file-icon-btn[data-tip]:hover::after,
+.zs-file-icon-btn[data-tip]:focus-visible::after { opacity: 1; transform: translateY(0); }
+
+/* ── Workspace as a file ── */
+.zs-editor-body.is-file { display: flex; flex-direction: column; overflow: hidden; }
+.zs-file-editor { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: var(--zn-2); }
+.zs-file-toolbar { flex: none; display: flex; align-items: center; justify-content: space-between; gap: var(--zn-3); }
+.zs-file-name { display: inline-flex; align-items: center; gap: 6px; color: var(--zn-text-2); font: 500 11.5px/1.2 ui-monospace, SFMono-Regular, Consolas, monospace; }
+.zs-file-name i { width: 7px; height: 7px; border-radius: 50%; background: var(--zn-text-2); }
+.zs-file-actions { display: flex; align-items: center; gap: var(--zn-2); }
+.zs-file-icon-btn {
+  position: relative; display: grid; place-items: center; width: var(--zn-ctl); height: var(--zn-ctl); padding: 0;
+  border: 1px solid var(--zn-line); border-radius: var(--zn-r-control); background: transparent; color: var(--zn-text-2); cursor: pointer;
+  transition: color .15s var(--zn-ease), border-color .15s var(--zn-ease), background .15s var(--zn-ease);
+}
+.zs-file-icon-btn:hover { color: var(--zn-text); border-color: var(--zn-line-strong); background: var(--zn-raised); }
+.zs-file-code {
+  flex: 1; min-height: 320px; display: flex; overflow: hidden;
+  border: 1px solid var(--zn-line); border-radius: var(--zn-r-control); background: var(--zn-sunken);
+  font: 400 12px/18px ui-monospace, "Cascadia Code", SFMono-Regular, Consolas, monospace;
+}
+.zs-file-code:focus-within { border-color: var(--zn-line-strong); }
+.zs-file-code.has-error { border-color: rgba(239, 124, 124, .55); }
+.zs-file-gutter {
+  flex: none; overflow: hidden; padding: 10px 8px 10px 12px; min-width: 44px;
+  color: var(--zn-text-3); text-align: right; user-select: none; border-right: 1px solid var(--zn-line);
+}
+.zs-file-gutter span { display: block; height: 18px; }
+.zs-file-gutter span.is-error { color: #ef7c7c; font-weight: 600; }
+.zs-editor .zs-file-code textarea {
+  flex: 1; min-width: 0; margin: 0; padding: 10px 12px; resize: none; overflow: auto;
+  border: 0; outline: none; background: transparent; color: var(--zn-text);
+  font: inherit; white-space: pre; tab-size: 2; caret-color: var(--zn-text);
+}
+.zs-editor .zs-file-error {
+  flex: none; display: flex; align-items: flex-start; gap: var(--zn-2); width: 100%; padding: 8px 10px;
+  border: 1px solid rgba(239, 124, 124, .45); border-radius: var(--zn-r-control); background: rgba(239, 124, 124, .09);
+  color: #f29a9a; font: 400 11.5px/1.45 var(--font-ui); text-align: left; cursor: pointer;
+}
+.zs-editor .zs-file-error svg { flex: none; margin-top: 2px; }
+.zs-editor .zs-file-error b { font-weight: 600; margin-right: 4px; }
+.zs-file-hint { flex: none; margin: 0; color: var(--zn-text-3); font-size: 11px; line-height: 1.45; }
 .zs-license-card { position: relative; overflow: hidden; border: 1px solid var(--zn-line); border-radius: 14px; padding: 20px; background: linear-gradient(145deg, rgba(255,255,255,.065), rgba(255,255,255,.018) 56%, rgba(255,255,255,.04)); box-shadow: inset 0 1px 0 rgba(255,255,255,.06), 0 20px 42px rgba(0,0,0,.22); }
 .zs-license-card::before { content: ''; position: absolute; inset: 0; pointer-events: none; background: radial-gradient(circle at 89% 8%, rgba(255,255,255,.12), transparent 28%); }
 .zs-license-orbit { position: absolute; right: -29px; top: -31px; width: 118px; height: 118px; border: 1px solid rgba(255,255,255,.13); border-radius: 50%; opacity: .72; }

@@ -25,6 +25,8 @@ import {
   GripVertical,
   Loader2,
   AlertTriangle,
+  Braces,
+  LayoutList,
   Monitor,
   Mouse,
   Pencil,
@@ -70,6 +72,7 @@ import { radialCrowding } from '../utils/workspaceRadial';
 import { startMenuAppIdToLaunchCommand } from '../utils/windowsLaunchCommand';
 import { WheelPreview } from './WheelPreview';
 import { DockShortcutsManager } from './DockShortcuts';
+import { WorkspaceFileEditor, type WorkspaceFileEditorHandle } from './WorkspaceFileEditor';
 import {
   BACK_KEY_OFF,
   DEFAULT_BACK_KEY,
@@ -2471,6 +2474,27 @@ function SettingsEditor({
 }) {
   /** Which dock icon the glyph picker is open for. Unused by every other editor kind. */
   const [dockIconItemId, setDockIconItemId] = useState<string | null>(null);
+  /**
+   * Whether a workspace opens as controls or as its file. Remembered per machine: someone who
+   * edits the text does it every time, and a toggle that forgets is one more click every time.
+   */
+  const [workspaceView, setWorkspaceViewState] = useState<'visual' | 'file'>(() => {
+    try {
+      return window.localStorage.getItem(WORKSPACE_VIEW_KEY) === 'file' ? 'file' : 'visual';
+    } catch {
+      return 'visual';
+    }
+  });
+  const fileEditorRef = useRef<WorkspaceFileEditorHandle>(null);
+  const isFileView = editor.kind === 'workspace' && workspaceView === 'file';
+  /** A draft in the file view is applied on the way out, and a broken one keeps the dialog open. */
+  const flushFile = () => !isFileView || !fileEditorRef.current || fileEditorRef.current.flush();
+  const setWorkspaceView = (next: 'visual' | 'file') => {
+    if (next === workspaceView || !flushFile()) return;
+    setWorkspaceViewState(next);
+    try { window.localStorage.setItem(WORKSPACE_VIEW_KEY, next); } catch { /* per-session then */ }
+  };
+  const leave = () => { if (flushFile()) close(); };
 
   let title = 'Edit setting';
   let description = 'Changes are applied immediately.';
@@ -2560,8 +2584,18 @@ function SettingsEditor({
     const workspace = config.workspaces[index];
     if (!workspace) return null;
     title = workspace.name;
-    description = 'Organize shortcuts and control how this workspace behaves.';
-    content = (
+    description = isFileView
+      ? 'Edit the whole workspace as text — to move it, share it or change many shortcuts at once.'
+      : 'Organize shortcuts and control how this workspace behaves.';
+    content = isFileView ? (
+      <WorkspaceFileEditor
+        ref={fileEditorRef}
+        workspace={workspace}
+        isActive={config.activeWorkspaceIndex === index}
+        onApply={(patch) => updateWorkspace(index, patch)}
+        showToast={showToast}
+      />
+    ) : (
       <WorkspaceManager
         workspace={workspace}
         workspaceIndex={index}
@@ -2587,7 +2621,7 @@ function SettingsEditor({
   }
 
   return (
-    <div className="zs-editor-layer" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) close(); }}>
+    <div className="zs-editor-layer" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) leave(); }}>
       <motion.div
         className={`zs-editor${editor.kind === 'workspace' || editor.kind === 'blocked' || editor.kind === 'dockShortcuts' ? ' is-workspace' : ''}`}
         role="dialog"
@@ -2603,19 +2637,49 @@ function SettingsEditor({
             <h2>{title}</h2>
             <p>{description}</p>
           </div>
-          <button type="button" onClick={close} aria-label="Close">
-            <X size={15} strokeWidth={1.9} />
-          </button>
+          <div className="zs-editor-head-actions">
+            {editor.kind === 'workspace' && (
+              <div className="zs-view-toggle" role="radiogroup" aria-label="Edit as">
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={!isFileView}
+                  className={!isFileView ? 'is-selected' : ''}
+                  data-tip="Edit visually"
+                  aria-label="Edit visually"
+                  onClick={() => setWorkspaceView('visual')}
+                >
+                  <LayoutList size={14} strokeWidth={1.9} />
+                </button>
+                <button
+                  type="button"
+                  role="radio"
+                  aria-checked={isFileView}
+                  className={isFileView ? 'is-selected' : ''}
+                  data-tip="Edit as a file"
+                  aria-label="Edit as a file"
+                  onClick={() => setWorkspaceView('file')}
+                >
+                  <Braces size={14} strokeWidth={1.9} />
+                </button>
+              </div>
+            )}
+            <button type="button" className="zs-editor-close" onClick={leave} aria-label="Close">
+              <X size={15} strokeWidth={1.9} />
+            </button>
+          </div>
         </header>
-        <div className="zs-editor-body">{content}</div>
+        <div className={`zs-editor-body${isFileView ? ' is-file' : ''}`}>{content}</div>
         <footer>
-          <button type="button" className="zs-btn is-primary" onClick={close}>Done</button>
+          <button type="button" className="zs-btn is-primary" onClick={leave}>Done</button>
         </footer>
       </motion.div>
     </div>
   );
 }
 
+
+const WORKSPACE_VIEW_KEY = 'rovyl.workspaceEditorView';
 
 type WorkspaceAddMode = 'app' | 'url' | 'folder' | 'file' | 'command' | null;
 

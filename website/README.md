@@ -7,6 +7,7 @@ What is in this folder is what ships.
 website/
 ├── index.html     the landing page
 ├── privacy.html   what stays local, and the four times the app touches the network
+├── docs.html      the workspace-file reference the app's file view links to (/docs#workspace-file)
 ├── styles.css     the design system, lifted from the app
 ├── site.js        the hero wheel, the workspace cards, scroll reveal
 ├── settings.js    the settings panel, working: five sections, live controls

@@ -1,0 +1,304 @@
+<!doctype html>
+<html lang="en" data-zn-theme="black">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Docs - Rovyl</title>
+<meta name="description" content="Reference for editing a Rovyl workspace as a text file: every key, every shortcut type, and how to share a workspace.">
+<meta name="theme-color" content="#151515">
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&family=Space+Grotesk:wght@300..700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+<style>
+  /* A reference page: wider than the privacy column, because the tables and the code need it. */
+  .doc { max-width: 780px; margin-inline: auto; padding: clamp(48px, 9vh, 88px) clamp(16px, 4vw, 32px) 64px; }
+  .doc h1 { margin: 0; font: 600 clamp(28px, 5vw, 40px)/1.08 var(--font-display); letter-spacing: -.032em; }
+  .doc .lede { margin-top: var(--zn-4); color: var(--zn-text-2); text-align: left; }
+  .doc h2 { margin: 56px 0 var(--zn-3); font: 600 22px/1.2 var(--font-display); letter-spacing: -.02em; scroll-margin-top: 80px; }
+  .doc h3 { margin: var(--zn-8) 0 var(--zn-2); font: 600 15px/1.3 var(--font-ui); scroll-margin-top: 80px; }
+  .doc h3 code { font-size: 14px; }
+  .doc p, .doc li { color: var(--zn-text-2); font-size: 14px; line-height: 1.65; }
+  .doc p { margin: var(--zn-2) 0; }
+  .doc ul, .doc ol { margin: var(--zn-2) 0; padding-left: 20px; }
+  .doc li { margin: 4px 0; }
+  .doc b, .doc strong { color: var(--zn-text); font-weight: 550; }
+  .doc a:not(.btn) { color: var(--zn-text); text-decoration: underline; text-decoration-color: var(--zn-line-strong); text-underline-offset: 3px; }
+  .doc a:not(.btn):hover { text-decoration-color: var(--zn-text-2); }
+  .doc code {
+    padding: 1px 5px; border: 1px solid var(--zn-line); border-radius: 5px; background: var(--zn-sunken);
+    color: var(--zn-text); font: 12.5px/1.5 ui-monospace, "Cascadia Code", SFMono-Regular, Consolas, monospace;
+    overflow-wrap: anywhere;
+  }
+  .doc pre {
+    margin: var(--zn-3) 0; padding: var(--zn-3) var(--zn-4); overflow-x: auto;
+    border: 1px solid var(--zn-line); border-radius: var(--zn-r-control); background: var(--zn-sunken);
+    color: var(--zn-text); font: 12.5px/1.6 ui-monospace, "Cascadia Code", SFMono-Regular, Consolas, monospace;
+  }
+  .doc pre code { padding: 0; border: 0; background: none; overflow-wrap: normal; }
+  .doc pre .c { color: var(--zn-text-3); }
+  .doc .table-wrap { margin: var(--zn-3) 0; overflow-x: auto; border: 1px solid var(--zn-line); border-radius: var(--zn-r-control); }
+  .doc table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .doc th, .doc td { padding: 9px 12px; border-bottom: 1px solid var(--zn-line); text-align: left; vertical-align: top; }
+  .doc tr:last-child td { border-bottom: 0; }
+  .doc th { color: var(--zn-text-3); font-weight: 500; font-size: 12px; background: var(--zn-sunken); white-space: nowrap; }
+  .doc td { color: var(--zn-text-2); line-height: 1.55; }
+  .doc td:first-child { white-space: nowrap; }
+  .doc .req { color: var(--zn-text); font-size: 11px; }
+  .doc .toc { display: flex; flex-wrap: wrap; gap: var(--zn-2); margin-top: var(--zn-6); }
+  .doc .toc a { padding: 5px 10px; border: 1px solid var(--zn-line); border-radius: 999px; color: var(--zn-text-2); font-size: 12.5px; text-decoration: none; }
+  .doc .toc a:hover { color: var(--zn-text); border-color: var(--zn-line-strong); }
+  .doc .callout { margin: var(--zn-4) 0; padding: var(--zn-3) var(--zn-4); border: 1px solid var(--zn-line); border-left: 2px solid var(--zn-text-2); border-radius: var(--zn-r-control); background: var(--zn-raised); }
+  .doc .callout p { margin: 0; }
+  .doc .back { margin-bottom: var(--zn-6); }
+  .doc hr { margin: 56px 0 0; border: 0; border-top: 1px solid var(--zn-line); }
+</style>
+</head>
+<body>
+
+<svg class="sprite" aria-hidden="true" focusable="false"><defs>
+  <symbol id="i-arrow-left" viewBox="0 0 24 24"><path d="M19 12H5m7 7-7-7 7-7"/></symbol>
+</defs></svg>
+
+<header class="nav" id="nav">
+  <a class="nav-brand" href="index.html" aria-label="Rovyl, home">
+    <img class="brand-icon" src="assets/app-icon.svg" alt="" width="22" height="22">
+    <span class="brand-word">Rovyl</span>
+  </a>
+  <div class="nav-actions">
+    <a class="btn is-primary" href="https://github.com/arshit09/rovyl/releases/latest">Download</a>
+  </div>
+</header>
+
+<main class="doc">
+  <a class="btn is-quiet back" href="index.html"><svg class="ico" aria-hidden="true"><use href="#i-arrow-left"/></svg>Back</a>
+
+  <h1 id="workspace-file">Workspace files</h1>
+  <p class="lede">Every workspace can be edited as plain text, much like VS Code's <code>settings.json</code>. Use it to change many shortcuts at once, keep your setup in a dotfiles repo, or share a workspace with someone else.</p>
+
+  <nav class="toc" aria-label="On this page">
+    <a href="#open">Open the file view</a>
+    <a href="#syntax">Syntax</a>
+    <a href="#workspace">Workspace keys</a>
+    <a href="#shortcuts">Shortcut keys</a>
+    <a href="#app">app</a>
+    <a href="#url">url</a>
+    <a href="#folder">folder</a>
+    <a href="#file">file</a>
+    <a href="#command">command</a>
+    <a href="#group">group</a>
+    <a href="#icons">Icons</a>
+    <a href="#share">Share and migrate</a>
+    <a href="#example">Full example</a>
+    <a href="#errors">Errors</a>
+  </nav>
+
+  <h2 id="open">Open the file view</h2>
+  <ol>
+    <li>Open <b>Settings → Workspaces</b> and click a workspace.</li>
+    <li>In the dialog's top-right corner, switch from the list icon (<b>Edit visually</b>) to the <code>{ }</code> icon (<b>Edit as a file</b>). Rovyl remembers your choice for next time.</li>
+    <li>Edit the text, then press <b>Apply</b> or <code>Ctrl+S</code>.</li>
+  </ol>
+  <p>Next to Apply you'll find:</p>
+  <ul>
+    <li><b>?</b>: opens this page.</li>
+    <li><b>Copy</b>: copies the whole file to the clipboard.</li>
+    <li><b>Revert</b>: throws away your edits and reloads the saved workspace.</li>
+  </ul>
+  <p>A dot next to <code>workspace.jsonc</code> means you have unapplied edits. Clicking <b>Done</b>, closing the dialog, pressing <code>Escape</code> or switching back to the visual view applies them first. If the file has an error, the dialog stays open and the error bar shows the line. Click the bar to jump there. After applying, <b>Undo</b> in the toast restores the workspace as it was.</p>
+
+  <h2 id="syntax">Syntax</h2>
+  <p>The file is JSON with two relaxations, the same ones VS Code allows (JSONC):</p>
+  <ul>
+    <li><b>Comments</b>: <code>// to the end of the line</code> and <code>/* blocks */</code>.</li>
+    <li><b>Trailing commas</b> after the last item in a list or object.</li>
+  </ul>
+  <p>Everything else is ordinary JSON: keys and text go in <b>double quotes</b>, and <code>true</code>/<code>false</code> have no quotes.</p>
+  <div class="callout"><p><b>Windows paths need doubled backslashes.</b> Write <code>"C:\\Tools\\app.exe"</code>. A single <code>\</code> starts an escape sequence and is reported as an error. You can also use forward slashes (<code>"C:/Tools/app.exe"</code>), which Windows accepts.</p></div>
+  <p>Rovyl doesn't store comments or formatting. After you apply, the text is rewritten in its standard form.</p>
+
+  <h2 id="workspace">Workspace keys</h2>
+  <p>The file is one object that describes a single workspace.</p>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Key</th><th>Value</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td><code>name</code> <span class="req">required</span></td><td>text</td><td>The name shown on the workspace card and in the picker. Can't be empty.</td></tr>
+      <tr><td><code>icon</code></td><td>icon name</td><td>The glyph on the workspace picker wheel. If you leave it out, it's <code>Layers</code>. See <a href="#icons">Icons</a>.</td></tr>
+      <tr><td><code>color</code></td><td><code>"#rrggbb"</code></td><td>An optional workspace colour, written as hex (3 to 8 digits).</td></tr>
+      <tr><td><code>enabled</code></td><td><code>true</code> / <code>false</code></td><td>Whether the workspace appears on the wheel. Defaults to <code>true</code>. The current workspace is always shown, so <code>false</code> is ignored for it.</td></tr>
+      <tr><td><code>shortcuts</code> <span class="req">required</span></td><td>list</td><td>The shortcuts, in wheel order: the first sits at the top and the rest follow clockwise. Use <code>[]</code> for an empty workspace.</td></tr>
+    </tbody>
+  </table></div>
+  <p>Some things aren't in the file on purpose. The <b>number key</b> comes from the workspace's position (the first workspace gets <code>1</code>), so to change it, drag the card. <b>Which workspace is current</b> is set with the check button in the visual view.</p>
+
+  <h2 id="shortcuts">Shortcut keys</h2>
+  <p>Every entry in <code>shortcuts</code> is an object with a <code>type</code>. Each type accepts its own set of keys. A key that type doesn't accept is an error rather than being ignored, so a typo like <code>"lanch"</code> is caught instead of doing nothing.</p>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Key</th><th>Applies to</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td><code>type</code> <span class="req">required</span></td><td>all</td><td>One of <code>app</code>, <code>url</code>, <code>folder</code>, <code>file</code>, <code>command</code>, <code>group</code>.</td></tr>
+      <tr><td><code>name</code> <span class="req">required</span></td><td>all</td><td>The label on the wheel.</td></tr>
+      <tr><td><code>icon</code></td><td>all</td><td>A glyph name. See <a href="#icons">Icons</a>.</td></tr>
+      <tr><td><code>target</code> <span class="req">required</span></td><td>all except <code>group</code></td><td>What the shortcut opens. The rules depend on the type and are described below.</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3 id="app"><code>"type": "app"</code>: an application</h3>
+  <p><code>target</code> is what Windows launches. It can be:</p>
+  <ul>
+    <li>A path to an <code>.exe</code>, <code>.lnk</code>, <code>.bat</code> or <code>.cmd</code> file, such as <code>"C:\\Program Files\\App\\app.exe"</code>. If the path contains spaces, you can wrap it in escaped quotes and add arguments after it: <code>"\"C:\\Program Files\\App\\app.exe\" --profile work"</code>.</li>
+    <li>A Store or Start menu app ID: <code>"shell:AppsFolder\\Microsoft.WindowsTerminal_8wekyb3d8bbwe!App"</code>. Apps you add from the installed-apps list are stored this way. To find an ID, run <code>Get-StartApps</code> in PowerShell.</li>
+  </ul>
+  <p>Environment variables such as <code>%LOCALAPPDATA%</code> are expanded.</p>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Key</th><th>Value</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td><code>launch</code></td><td><code>"normal"</code> · <code>"reuse"</code> · <code>"prewarm"</code></td><td><code>normal</code> (the default) is a standard launch. <code>reuse</code> uses the process that's already running when the app supports it; for an IDE, that can switch the project in the current window. <code>prewarm</code> keeps the executable in the Windows file cache so later launches start faster.</td></tr>
+      <tr><td><code>recents</code></td><td><code>true</code> / <code>false</code></td><td>IDEs only (VS Code, Cursor, JetBrains, …). Opens a submenu of the IDE's recent projects.</td></tr>
+      <tr><td><code>terminalForRecents</code></td><td><code>true</code> / <code>false</code></td><td>When you pick a recent project, also open a terminal in that folder.</td></tr>
+      <tr><td><code>terminalCommands</code></td><td>list of text</td><td>Commands to run in that terminal, in order, e.g. <code>["npm install", "npm run dev"]</code>.</td></tr>
+      <tr><td><code>openTerminal</code></td><td><code>true</code> / <code>false</code></td><td>Also open a terminal when the app itself is launched.</td></tr>
+      <tr><td><code>workingDirectory</code></td><td>path</td><td>The folder that terminal and its commands start in.</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3 id="url"><code>"type": "url"</code>: a website</h3>
+  <p><code>target</code> is an <code>http://</code> or <code>https://</code> address. If you leave out the scheme, <code>https://</code> is added, so <code>"github.com"</code> becomes <code>"https://github.com"</code>. Other schemes are rejected. The page opens in your default browser.</p>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Key</th><th>Value</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td><code>launch</code></td><td><code>"normal"</code> · <code>"reuse"</code></td><td><code>reuse</code> opens the page in the browser that's already running. The page may land in an existing window, and private or profile windows may be skipped. <code>prewarm</code> isn't available for websites.</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3 id="folder"><code>"type": "folder"</code>: a folder</h3>
+  <p><code>target</code> is a folder path, and it opens in File Explorer. Environment variables are expanded, so <code>"%USERPROFILE%\\Downloads"</code> works on any PC. This type has no other keys.</p>
+
+  <h3 id="file"><code>"type": "file"</code>: a document</h3>
+  <p><code>target</code> is the path to any file. It opens in whichever program Windows uses for that file type, so a <code>.xlsx</code> opens in Excel and a <code>.pdf</code> in your PDF reader. Environment variables are expanded. This type has no other keys, including no launch mode, because Windows picks the program.</p>
+
+  <h3 id="command"><code>"type": "command"</code>: a command line</h3>
+  <p><code>target</code> is a command line, passed to the shell exactly as written, including quotes, <code>&amp;&amp;</code>, <code>;</code> and pipes. Use the chosen shell's own syntax for variables: <code>$env:USERPROFILE</code> in PowerShell, <code>%USERPROFILE%</code> in Command Prompt.</p>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Key</th><th>Value</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td><code>shell</code></td><td><code>"powershell"</code> · <code>"cmd"</code></td><td>Which shell reads the line. Defaults to Windows PowerShell.</td></tr>
+      <tr><td><code>window</code></td><td><code>"open"</code> · <code>"hidden"</code></td><td><code>open</code> (the default) shows a console that stays open so you can read the output. <code>hidden</code> runs in the background with no window; an error in the first moments is still reported.</td></tr>
+      <tr><td><code>workingDirectory</code></td><td>path</td><td>The folder the command runs in. Defaults to your user folder.</td></tr>
+    </tbody>
+  </table></div>
+
+  <h3 id="group"><code>"type": "group"</code>: a submenu</h3>
+  <p>A group has no <code>target</code>. It opens a second wheel containing its <code>items</code>, and the hub takes you back.</p>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Key</th><th>Value</th><th>Meaning</th></tr></thead>
+    <tbody>
+      <tr><td><code>items</code> <span class="req">required</span></td><td>list</td><td>Shortcuts, written exactly like the entries in <code>shortcuts</code>. Groups can contain groups, up to 8 levels deep.</td></tr>
+    </tbody>
+  </table></div>
+
+  <h2 id="icons">Icons</h2>
+  <p><code>icon</code> is the name of a <a href="https://lucide.dev/icons/">Lucide</a> icon in PascalCase: <code>"Rocket"</code>, <code>"FolderGit2"</code>, <code>"TerminalSquare"</code>. Convert Lucide's names from kebab-case (<code>folder-git-2</code> becomes <code>FolderGit2</code>). An unknown name falls back to a generic glyph.</p>
+  <ul>
+    <li>If you leave out <code>icon</code>, the type's default is used: <code>app</code> → <code>AppWindow</code>, <code>url</code> → <code>Globe</code>, <code>folder</code> → <code>Folder</code>, <code>file</code> → <code>File</code>, <code>command</code> → <code>TerminalSquare</code>, <code>group</code> → <code>Folder</code>.</li>
+    <li>Apps, files and websites also get a picture of their own: the icon extracted from the program or the site's favicon. That picture is shown instead of the glyph, and the glyph is only a fallback. Folders, commands and groups always show the glyph.</li>
+  </ul>
+
+  <h2 id="share">Share and migrate</h2>
+  <p>The file holds only what you'd type. It leaves out internal IDs, the machine's icon cache and the number key, so the same text works on any PC.</p>
+  <ol>
+    <li><b>Export:</b> open the workspace, switch to the file view and click <b>Copy</b>. Save or send the text.</li>
+    <li><b>Import into a new workspace:</b> in <b>Settings → Workspaces</b>, click <b>New workspace</b>, open it, switch to the file view, replace the text with what you received, and apply.</li>
+    <li><b>Replace an existing workspace:</b> paste over its file and apply. Undo in the toast brings the old one back.</li>
+  </ol>
+  <p>When you apply a file, every shortcut whose <code>type</code> and <code>target</code> are unchanged keeps its identity and its extracted icon, even if you renamed or moved it. For groups, the <code>name</code> is used instead of the target. New apps, files and websites have their icons fetched right after you apply.</p>
+  <p>Paths are specific to each PC. Prefer <code>%USERPROFILE%</code>, <code>%LOCALAPPDATA%</code> and <code>shell:AppsFolder\\…</code> IDs over hard-coded user folders so a shared file works for the person receiving it.</p>
+  <p>To move <b>everything</b> at once (all workspaces plus every preference), use <b>Settings → Advanced → Export settings</b> and <b>Import settings</b> instead.</p>
+
+  <h2 id="example">Full example</h2>
+<pre><code><span class="c">// Rovyl workspace. Reference: https://rovyl-red.vercel.app/docs#workspace-file</span>
+{
+  "name": "Dev",
+  "icon": "Code",
+  "enabled": true,
+  "shortcuts": [
+    {
+      "type": "app",
+      "name": "VS Code",
+      "target": "%LOCALAPPDATA%\\Programs\\Microsoft VS Code\\Code.exe",
+      "launch": "reuse",
+      "recents": true,
+      "terminalForRecents": true,
+      "terminalCommands": ["git pull", "npm run dev"]
+    },
+    {
+      "type": "app",
+      "name": "Terminal",
+      "target": "shell:AppsFolder\\Microsoft.WindowsTerminal_8wekyb3d8bbwe!App"
+    },
+    { "type": "url", "name": "GitHub", "target": "github.com", "launch": "reuse" },
+    { "type": "folder", "name": "Projects", "icon": "FolderGit2", "target": "%USERPROFILE%\\src" },
+    { "type": "file", "name": "Roadmap", "target": "D:\\Docs\\Roadmap.xlsx" },
+    {
+      "type": "group",
+      "name": "Ops",
+      "icon": "Server",
+      "items": [
+        {
+          "type": "command",
+          "name": "Flush DNS",
+          "icon": "Wifi",
+          "target": "ipconfig /flushdns",
+          "shell": "cmd",
+          "window": "hidden"
+        },
+        {
+          "type": "command",
+          "name": "Dev server",
+          "target": "npm install; npm run dev",
+          "workingDirectory": "D:\\src\\site"
+        }, <span class="c">// trailing commas are fine</span>
+      ]
+    }
+  ]
+}</code></pre>
+
+  <h2 id="errors">Errors</h2>
+  <p>Every error includes its line and column. These are the most common:</p>
+  <div class="table-wrap"><table>
+    <thead><tr><th>Message</th><th>Fix</th></tr></thead>
+    <tbody>
+      <tr><td><code>"\T" is not an escape JSON knows</code></td><td>Double the backslashes in the path: <code>"C:\\Tools"</code>.</td></tr>
+      <tr><td><code>Expected "," or "}" here</code></td><td>A comma is missing at the end of the line above.</td></tr>
+      <tr><td><code>"lanch" is not a setting of a "url" shortcut. Did you mean "launch"?</code></td><td>Fix the spelling, or remove a key that this type doesn't accept.</td></tr>
+      <tr><td><code>"type" must be one of: app, url, folder, file, command, group</code></td><td>Use one of the six types.</td></tr>
+      <tr><td><code>A "url" target must be an http:// or https:// address</code></td><td>For other kinds of link, use an <code>app</code> or <code>command</code> shortcut.</td></tr>
+      <tr><td><code>"recents" must be true or false, without quotes</code></td><td>Write <code>true</code>, not <code>"true"</code>.</td></tr>
+      <tr><td><code>A workspace needs a "shortcuts" list</code></td><td>Add <code>"shortcuts": []</code>.</td></tr>
+    </tbody>
+  </table></div>
+
+  <hr>
+  <p>Found something here that doesn't match what the app does? Open an issue at <a href="https://github.com/arshit09/rovyl/issues">github.com/arshit09/rovyl</a>.</p>
+</main>
+
+<footer class="foot">
+  <a class="nav-brand" href="index.html"><img class="brand-icon" src="assets/app-icon.svg" alt="" width="22" height="22"><span class="brand-word">Rovyl</span></a>
+  <nav aria-label="Footer">
+    <a href="https://github.com/arshit09/rovyl">GitHub</a>
+    <a href="https://github.com/arshit09/rovyl/releases">Releases</a>
+    <a href="index.html">Home</a>
+    <a href="privacy.html">Privacy</a>
+    <a href="https://github.com/arshit09/rovyl/blob/main/LICENSE">License</a>
+  </nav>
+</footer>
+
+<script>
+  const nav = document.getElementById('nav');
+  const sync = () => nav.classList.toggle('is-stuck', window.scrollY > 8);
+  sync();
+  window.addEventListener('scroll', sync, { passive: true });
+</script>
+</body>
+</html>

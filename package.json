@@ -28,6 +28,7 @@
     "test:launch-result": "node scripts/launch-result-smoke.mjs",
     "test:file-shortcut": "node scripts/file-shortcut-smoke.mjs",
     "test:command-shortcut": "node scripts/command-shortcut-smoke.mjs",
+    "test:workspace-file": "node scripts/workspace-file-smoke.mjs",
     "test:start-app-launch": "node scripts/start-app-launch-smoke.mjs",
     "test:tray-menu": "node scripts/tray-menu-smoke.mjs",
     "test:exe-branding": "node scripts/exe-branding-smoke.mjs",
