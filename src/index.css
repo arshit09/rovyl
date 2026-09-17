@@ -1576,7 +1576,8 @@
  */
 .zn-radial--nocursor .zn-radial-slice *,
 .zn-radial--nocursor .zn-radial-hub,
-.zn-radial--nocursor [data-zn-radial-center] {
+.zn-radial--nocursor [data-zn-radial-center],
+.zn-radial--nocursor .zn-radial-update-badge {
   pointer-events: none !important;
 }
 
@@ -1610,6 +1611,26 @@
     background-color 140ms ease-out,
     border-color 140ms ease-out,
     color 140ms ease-out;
+}
+
+/* The hub's update badge lifts under the pointer — the only cue that it is a button. */
+.zn-radial-update-badge {
+  cursor: pointer;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+  transition:
+    transform 160ms cubic-bezier(.2, .82, .28, 1),
+    box-shadow 160ms ease-out,
+    background-color 160ms ease-out;
+}
+
+.zn-radial-update-badge:hover {
+  transform: translateY(-2px) scale(1.12);
+  background-color: #2B95FF !important;
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.55), 0 0 10px rgba(10, 132, 255, 0.45);
+}
+
+.zn-radial-update-badge:active {
+  transform: translateY(0) scale(1.02);
 }
 
 .zn-radial-gear:hover {

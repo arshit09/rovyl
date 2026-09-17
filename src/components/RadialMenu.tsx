@@ -3651,45 +3651,6 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
               onMouseUp={(e) => e.stopPropagation()}
             >
               {/*
-                Update badge. Informative, never clickable: the centre is the gesture for closing,
-                and a target glued to it reintroduced the class of swapped-click bugs that cost a
-                whole session to fix. The action lives in Settings.
-
-                The arrow is drawn, not a typographic glyph: a glyph brings its own side bearings
-                and baseline, and in a 24px circle that is enough to set it crooked. The points
-                below come from the INK's bounds — a 1.7 stroke with round caps grows 0.85 past each
-                end — and not from the bare geometry.
-              */}
-              {updateReady && (
-                <span
-                  className="absolute pointer-events-none"
-                  style={{
-                    top: -Math.round(hubDiameter * 0.03),
-                    right: -Math.round(hubDiameter * 0.03),
-                    width: Math.round(hubDiameter * 0.32),
-                    height: Math.round(hubDiameter * 0.32),
-                    borderRadius: '50%',
-                    background: '#0A84FF',
-                    /** Ring in the background colour: it separates from the hub without adding a new outline. */
-                    border: `${Math.max(2, Math.round(hubDiameter * 0.026))}px solid #0a0a0a`,
-                    boxSizing: 'border-box',
-                    zIndex: 40,
-                  }}
-                  aria-label="Update ready"
-                >
-                  <svg viewBox="0 0 24 24" fill="none" style={{ display: 'block', width: '100%', height: '100%' }}>
-                    <path
-                      d="M12 7.2V13.6M8.9 10.5L12 13.6l3.1-3.1M7.7 16.7h8.6"
-                      stroke="#fff"
-                      strokeWidth={1.7}
-                      strokeLinecap="round"
-                      strokeLinejoin="round"
-                    />
-                  </svg>
-                </span>
-              )}
-
-              {/*
                 The ring is an SVG `<circle>`, not a CSS `border`.
                 They are two different rasterisers: the border of a box with `border-radius` is
                 drawn as four corner arcs stitched around a rectangle, and it is at those seams —
@@ -3746,6 +3707,68 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
                 </div>
               )}
             </div>
+
+            {/*
+              Update badge — clicking it is the Settings "Restart now" button.
+              It lives OUTSIDE the hub, in a wrapper that copies the hub's transform and opacity:
+              inside the hub it would sit under the centre target (z-30), which swallows every click
+              on the hub's square. The wrapper is inert; only the badge takes the pointer, and it
+              stops the press on both edges so it never also reads as the centre.
+
+              The arrow is drawn, not a typographic glyph: a glyph brings its own side bearings
+              and baseline, and in a 24px circle that is enough to set it crooked. The points
+              below come from the INK's bounds — a 1.7 stroke with round caps grows 0.85 past each
+              end — and not from the bare geometry.
+            */}
+            {updateReady && (
+              <div
+                className="zn-radial-hub absolute top-0 left-0 pointer-events-none"
+                style={{
+                  width: `${hubDiameter}px`,
+                  height: `${hubDiameter}px`,
+                  zIndex: 35,
+                  ['--zn-tf' as string]: `translate(-50%, -50%) scale(${bloom && !isExiting ? (isCenterActive ? 1.06 : 1) : 0.82})`,
+                  ['--zn-op' as string]: echoActive ? 0 : bloom && !isExiting ? 1 : 0,
+                  ['--zn-dur' as string]: isExiting ? '120ms' : '160ms',
+                  ...(echoActive ? { ['--zn-dur-op' as string]: '140ms' } : null),
+                }}
+              >
+                <button
+                  type="button"
+                  className={`zn-radial-update-badge absolute ${isOpen && !isExiting && !echoActive ? 'pointer-events-auto' : 'pointer-events-none'}`}
+                  style={{
+                    top: -Math.round(hubDiameter * 0.03),
+                    right: -Math.round(hubDiameter * 0.03),
+                    width: Math.round(hubDiameter * 0.32),
+                    height: Math.round(hubDiameter * 0.32),
+                    padding: 0,
+                    borderRadius: '50%',
+                    background: '#0A84FF',
+                    /** Ring in the background colour: it separates from the hub without adding a new outline. */
+                    border: `${Math.max(2, Math.round(hubDiameter * 0.026))}px solid #0a0a0a`,
+                    boxSizing: 'border-box',
+                  }}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onMouseUp={(e) => e.stopPropagation()}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    window.electron?.installUpdateNow?.();
+                  }}
+                  aria-label="Restart to update"
+                  title="Restart to update"
+                >
+                  <svg viewBox="0 0 24 24" fill="none" style={{ display: 'block', width: '100%', height: '100%' }}>
+                    <path
+                      d="M12 7.2V13.6M8.9 10.5L12 13.6l3.1-3.1M7.7 16.7h8.6"
+                      stroke="#fff"
+                      strokeWidth={1.7}
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    />
+                  </svg>
+                </button>
+              </div>
+            )}
 
             {/* Context pill: where you are in the wheel + the gesture that goes back. */}
             <div
