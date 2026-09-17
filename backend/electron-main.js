@@ -102,8 +102,23 @@ const isStoreBuild = () =>
   process.windowsStore === true || process.env.ROVYL_STORE_BUILD === "1";
 const logDir = isDev
   ? path.join(__dirname, "..")
-  : path.join(os.homedir(), ".zenith-radial-menu");
+  : path.join(os.homedir(), ".rovyl");
 const logFile = path.join(logDir, "diagnostic.log");
+
+/**
+ * The log folder predates the rebrand. Move the Zenith one over once so existing users keep their
+ * history under the new name; it runs before the first write, so a fresh install never sees it.
+ */
+if (!isDev) {
+  const legacyLogDir = path.join(os.homedir(), ".zenith-radial-menu");
+  try {
+    if (fs.existsSync(legacyLogDir) && !fs.existsSync(logDir)) {
+      fs.renameSync(legacyLogDir, logDir);
+    }
+  } catch (e) {
+    console.error("Log folder rename failed:", e.message);
+  }
+}
 
 const logQueue = [];
 let isWriting = false;

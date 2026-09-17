@@ -34,7 +34,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
  * Main computes this at module load, before any `ROVYL_USER_DATA` override can move it, so the
  * diagnostic log is in the same place whichever profile the run uses.
  */
-const LOG_FILE = join(homedir(), ".zenith-radial-menu", "diagnostic.log");
+const LOG_FILE = join(homedir(), ".rovyl", "diagnostic.log");
 
 /** F13–F24 exist in the Windows keyboard map and no physical keyboard sends them by accident. */
 const SHORTCUT = "Alt+Shift+F13";
