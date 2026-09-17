@@ -122,11 +122,11 @@ try {
 
   check(() => {
     /**
-     * `UIConfig['language']` still types `fr`/`it`/`ja`/`ko`, which older builds could write and no
+     * `UIConfig['language']` still types `fr`/`it`/`ko`, which older builds could write and no
      * table covers. They have to degrade to English — a config carrying one must not blank the
      * settings panel or hand `t()` an index that is not there.
      */
-    for (const stale of ["fr", "it", "ja", "ko"]) {
+    for (const stale of ["fr", "it", "ko"]) {
       assert.equal(isSupportedLanguage(stale), false, `${stale} should not claim to be supported`);
       assert.equal(normalizeLanguage(stale), "en", `${stale} should fall back to English`);
       assert.equal(t("settings", stale), translations.en.settings, `t() should fall back for ${stale}`);

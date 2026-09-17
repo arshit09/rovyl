@@ -16,7 +16,7 @@ import { normalizeStoredConfig } from './configHydration';
 import type { DiscoveryPhase } from './discovery';
 import { startMenuAppIdToLaunchCommand } from './utils/windowsLaunchCommand';
 /**
- * Codes and metadata only — never `./i18n/translations`, which would put all seven locale tables
+ * Codes and metadata only — never `./i18n/translations`, which would put all eight locale tables
  * in the chunk the wheel waits on. That distinction is the whole reason `languages.ts` is its own
  * file; `scripts/verify-renderer-budget.mjs` fails the build if it is ignored.
  */

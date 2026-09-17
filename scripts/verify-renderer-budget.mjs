@@ -121,6 +121,7 @@ const LUCIDE_ICON_DEFINITION = /\(["'`]([A-Z][A-Za-z0-9]*)["'`]\s*,\s*\[\[/g;
 const LOCALES_THAT_MUST_STAY_LAZY = {
   Spanish: "Buscar ajustes",
   Chinese: "搜索设置",
+  Japanese: "設定を検索",
   Portuguese: "Buscar configurações",
   Russian: "Поиск по настройкам",
   German: "Einstellungen durchsuchen",

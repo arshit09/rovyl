@@ -224,17 +224,14 @@ interface SettingItem {
 }
 
 /**
- * Glyphs in the vocabulary of macOS System Settings: a simple, recognisable object (gear, mouse,
- * palette, stack of windows, shield) instead of the abstract Windows/web panel icon.
- * Monochrome — color stays reserved for action or state, never for navigation.
+ * The sidebar's order, and only the order.
+ *
+ * This carried a second copy of every label and caption in English until the panel translated in
+ * full, which is how one of two lists goes stale: the sidebar read from `sectionsList` below and
+ * nobody had reason to open this one again. What the arithmetic actually needs is the sequence, so
+ * that is all it holds now.
  */
-const SECTIONS: Array<{ id: SectionId; label: string; caption: string; icon: LucideIcon }> = [
-  { id: 'spaces', label: 'Workspaces', caption: 'Contexts and their shortcuts.', icon: SquareStack },
-  { id: 'trigger', label: 'Activation', caption: 'How and where the wheel appears.', icon: Mouse },
-  { id: 'advanced', label: 'Advanced', caption: 'Performance, protection, and data.', icon: Shield },
-  { id: 'appearance', label: 'Appearance', caption: 'Shape, presence, and theme.', icon: Palette },
-  { id: 'general', label: 'General', caption: 'Core Rovyl behavior.', icon: Settings },
-];
+const SECTION_ORDER: readonly SectionId[] = ['spaces', 'trigger', 'advanced', 'appearance', 'general'];
 
 export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
   isOpen,
@@ -247,8 +244,13 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
   setNav,
   discoveryPhase = 'idle',
 }) => {
-  const { t, dir } = useTranslation(config.language);
+  const { t, tf, dir } = useTranslation(config.language);
 
+  /**
+   * Glyphs in the vocabulary of macOS System Settings: a simple, recognisable object (gear, mouse,
+   * palette, stack of windows, shield) instead of the abstract Windows/web panel icon.
+   * Monochrome — color stays reserved for action or state, never for navigation.
+   */
   const sectionsList = useMemo(() => [
     { id: 'spaces' as const, label: t('workspaces'), caption: t('workspacesDesc'), icon: SquareStack },
     { id: 'trigger' as const, label: t('trigger'), caption: t('triggerDesc'), icon: Mouse },
@@ -417,10 +419,10 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
 
     if (updateInfo.state === 'ready') {
       return {
-        title: version ? `Version ${version} is ready` : 'An update is ready',
-        description: 'Downloaded and verified. Rovyl installs it the next time it starts.',
+        title: version ? tf('updateReadyVersion', { version }) : t('updateReady'),
+        description: t('updateReadyDesc'),
         kind: 'action' as const,
-        actionLabel: 'Restart now',
+        actionLabel: t('updateRestartNow'),
         actionIcon: ArrowUpFromLine,
         onRun: () => window.electron?.installUpdateNow?.(),
       };
@@ -428,13 +430,13 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
 
     if (updateInfo.state === 'downloading') {
       return {
-        title: version ? `Downloading version ${version}` : 'Downloading an update',
+        title: version ? tf('updateDownloadingVersion', { version }) : t('updateDownloadingTitle'),
         description:
           typeof updateInfo.percent === 'number'
-            ? `${updateInfo.percent}% done. You can keep working — Rovyl installs it the next time it starts.`
-            : 'You can keep working — Rovyl installs it the next time it starts.',
+            ? tf('updateDownloadingPercentDesc', { percent: updateInfo.percent })
+            : t('updateDownloadingDesc'),
         kind: 'action' as const,
-        actionLabel: 'Downloading…',
+        actionLabel: t('updateDownloadingAction'),
         actionIcon: ArrowDownToLine,
         actionDisabled: true,
         onRun: () => {},
@@ -443,25 +445,29 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
 
     const checking = updateChecking || updateInfo.state === 'checking';
     const description = checking
-      ? 'Looking for a newer version…'
+      ? t('updateLookingDesc')
       : updateInfo.state === 'error'
-        ? 'Could not reach the update server.'
+        ? t('updateErrorDesc')
         : updateInfo.state === 'current'
           ? version
-            ? `You're on the latest version (${version}).`
-            : "You're on the latest version."
-          : 'Rovyl checks automatically a few seconds after launch.';
+            ? tf('updateCurrentVersionDesc', { version })
+            : t('updateCurrentDesc')
+          : t('updateIdleDesc');
 
     return {
-      title: 'Check for updates',
+      title: t('updateCheck'),
       description,
       kind: 'action' as const,
-      actionLabel: checking ? 'Checking…' : updateInfo.state === 'error' ? 'Try again' : 'Check now',
+      actionLabel: checking
+        ? t('updateCheckingAction')
+        : updateInfo.state === 'error'
+          ? t('tryAgain')
+          : t('updateCheckNow'),
       actionIcon: ArrowDownToLine,
       actionDisabled: checking,
       onRun: () => void runUpdateCheck(),
     };
-  }, [updateInfo, updateChecking, runUpdateCheck]);
+  }, [updateInfo, updateChecking, runUpdateCheck, t, tf]);
 
   const reduceMotion = useReducedMotion();
 
@@ -660,9 +666,9 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
       const direction = (event as CustomEvent<'back' | 'forward'>).detail;
       setQuery('');
       setSectionId((current) => {
-        const currentIndex = SECTIONS.findIndex((section) => section.id === current);
+        const currentIndex = SECTION_ORDER.indexOf(current);
         const delta = direction === 'back' ? -1 : 1;
-        return SECTIONS[Math.max(0, Math.min(SECTIONS.length - 1, currentIndex + delta))].id;
+        return SECTION_ORDER[Math.max(0, Math.min(SECTION_ORDER.length - 1, currentIndex + delta))];
       });
     };
 
@@ -865,7 +871,7 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
 
     return {
       general: [
-        ...(canUpdate ? [{ key: 'update', group: 'Updates', ...updateRow }] : []),
+        ...(canUpdate ? [{ key: 'update', group: t('updates'), ...updateRow }] : []),
         {
           /**
            * A select, not the segmented control this was while it held two languages: seven
@@ -895,8 +901,8 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
           onChange: (value) => update('language', value as UIConfig['language']),
         },
         {
-          key: 'openAtLogin', configKey: 'openAtLogin', group: 'Startup', title: 'Start with Windows',
-          description: 'Rovyl is ready as soon as you sign in to Windows.',
+          key: 'openAtLogin', configKey: 'openAtLogin', group: t('groupStartup'), title: t('startWithWindows'),
+          description: t('startWithWindowsDesc'),
           kind: 'bool', enabled: Boolean(config.openAtLogin),
           onToggle: () => {
             const next = !config.openAtLogin;
@@ -905,10 +911,13 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
           },
         },
         {
-          key: 'workspaceSwitchMode', configKey: 'workspaceSwitchMode', group: 'Workspaces', title: 'Workspace switching',
-          description: 'Use the visual wheel picker or number keys.',
+          key: 'workspaceSwitchMode', configKey: 'workspaceSwitchMode', group: t('workspaces'), title: t('workspaceSwitching'),
+          description: t('workspaceSwitchingDesc'),
           kind: 'segmented', current: config.workspaceSwitchMode ?? 'picker',
-          choices: [{ value: 'picker', label: 'Picker' }, { value: 'hotkeys', label: 'Keys' }],
+          choices: [
+            { value: 'picker', label: t('workspaceSwitchPicker') },
+            { value: 'hotkeys', label: t('workspaceSwitchKeys') },
+          ],
           onChange: (value) => update('workspaceSwitchMode', value as UIConfig['workspaceSwitchMode']),
         },
       ],
@@ -926,21 +935,21 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
          * about the wheel once it is open, however it got there, so they stay put.
          */
         {
-          key: 'keyboard', configKey: 'enableKeyboardTrigger', group: 'Keyboard',
-          title: 'Enable keyboard trigger',
-          description: 'Open the wheel with a keyboard shortcut.',
+          key: 'keyboard', configKey: 'enableKeyboardTrigger', group: t('groupKeyboard'),
+          title: t('enableKeyboardTrigger'),
+          description: t('enableKeyboardTriggerDesc'),
           kind: 'bool', enabled: keyboardTriggerOn,
           onToggle: () => toggleTrigger('enableKeyboardTrigger'),
         },
         ...(keyboardTriggerOn
           ? ([
               {
-                key: 'shortcut', group: 'Keyboard', title: 'Global shortcut',
-                description: 'Open the wheel over any application.',
+                key: 'shortcut', group: t('groupKeyboard'), title: t('globalShortcut'),
+                description: t('globalShortcutRowDesc'),
                 kind: 'open', value: config.globalShortcut, onOpen: () => setEditor({ kind: 'shortcut' }),
               },
               {
-                key: 'shortcutMode', configKey: 'shortcutTriggerMode' as const, group: 'Keyboard',
+                key: 'shortcutMode', configKey: 'shortcutTriggerMode' as const, group: t('groupKeyboard'),
                 title: t('shortcutBehavior'),
                 description: t('shortcutBehaviorDesc'),
                 kind: 'segmented', current: config.shortcutTriggerMode ?? 'toggle',
@@ -950,36 +959,39 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
             ] as SettingItem[])
           : []),
         {
-          key: 'mouse', configKey: 'enableMouseTrigger', group: 'Mouse',
-          title: 'Enable mouse trigger',
-          description: 'Open the wheel with a mouse button.',
+          key: 'mouse', configKey: 'enableMouseTrigger', group: t('mouse'),
+          title: t('enableMouseTrigger'),
+          description: t('enableMouseTriggerDesc'),
           kind: 'bool', enabled: mouseTriggerOn,
           onToggle: () => toggleTrigger('enableMouseTrigger'),
         },
         ...(mouseTriggerOn
           ? ([
               {
-                key: 'mouseButton', configKey: 'mouseTriggerButton' as const, group: 'Mouse', title: 'Trigger button',
-                description: 'Side buttons are usually free; left and right stay with Windows.',
+                key: 'mouseButton', configKey: 'mouseTriggerButton' as const, group: t('mouse'), title: t('triggerButton'),
+                description: t('triggerButtonDesc'),
                 kind: 'segmented', current: config.mouseTriggerButton ?? 'middle',
                 choices: [
-                  { value: 'middle', label: 'Wheel' },
-                  { value: 'x1', label: 'Back' },
-                  { value: 'x2', label: 'Forward' },
+                  { value: 'middle', label: t('mouseBtnWheel') },
+                  { value: 'x1', label: t('mouseBtnBack') },
+                  { value: 'x2', label: t('mouseBtnForward') },
                 ],
                 onChange: (value) => update('mouseTriggerButton', value as UIConfig['mouseTriggerButton']),
               },
               {
-                key: 'mouseMode', configKey: 'mouseTriggerMode' as const, group: 'Mouse', title: 'Gesture behavior',
-                description: 'Click keeps the wheel open; hold runs the selection on release.',
+                key: 'mouseMode', configKey: 'mouseTriggerMode' as const, group: t('mouse'), title: t('gestureBehavior'),
+                description: t('gestureBehaviorRowDesc'),
                 kind: 'segmented', current: config.mouseTriggerMode ?? 'click',
-                choices: [{ value: 'click', label: 'Click' }, { value: 'hold', label: 'Hold' }],
+                choices: [
+                  { value: 'click', label: t('gestureClick') },
+                  { value: 'hold', label: t('gestureHold') },
+                ],
                 onChange: (value) => update('mouseTriggerMode', value as UIConfig['mouseTriggerMode']),
               },
             ] as SettingItem[])
           : []),
         {
-          key: 'radialMonitor', configKey: 'radialMonitor', group: 'Position', title: 'Monitor',
+          key: 'radialMonitor', configKey: 'radialMonitor', group: t('groupPosition'), title: t('monitorRow'),
           /**
            * The consequence, not the mechanism. Nobody opens this panel wanting to know which
            * `Display` object main asks for — they want to know which screen the thing they are about
@@ -987,26 +999,25 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
            */
           description:
             config.radialPlacement === 'cursor'
-              ? 'Appearance opens the wheel under the pointer, so it is already on the screen the pointer is on — this choice has nothing left to decide.'
+              ? t('monitorDescPlacementCursor')
               : config.radialMonitor === 'cursor'
-                ? 'The wheel opens on the screen the pointer is already on, so what you launch lands where you are working.'
-                : 'The wheel always opens on the main screen, wherever the pointer happens to be.',
+                ? t('monitorDescCursor')
+                : t('monitorDescPrimary'),
           kind: 'segmented',
           choices: [
-            { value: 'primary', label: 'Main screen' },
-            { value: 'cursor', label: 'Follow pointer' },
+            { value: 'primary', label: t('monitorMain') },
+            { value: 'cursor', label: t('monitorFollowPointer') },
           ],
           current: config.radialMonitor === 'cursor' ? 'cursor' : 'primary',
           onChange: (value) => update('radialMonitor', value as UIConfig['radialMonitor']),
         },
-        range('threshold', 'Position', 'Activation zone', 'Cursor distance required to confirm a target.',
+        range('threshold', t('groupPosition'), t('activationZone'), t('activationZoneDesc'),
           config.activationThreshold, 20, 120, (value) => update('activationThreshold', value), (value) => `${Math.round(value)} px`,
           1, 'activationThreshold'),
         {
-          key: 'instant', configKey: 'radialInstantActivate', group: 'Hands-free', title: 'Launch without clicking',
+          key: 'instant', configKey: 'radialInstantActivate', group: t('groupHandsFree'), title: t('launchWithoutClicking'),
           /** The way OUT belongs in the description: with the pointer hidden, it is not guessable. */
-          description:
-            'Hides the pointer and picks by direction — move toward a target and it opens by itself. Escape closes the wheel without opening anything.',
+          description: t('launchWithoutClickingDesc'),
           /**
            * A switch, not a segmented control. Everything binary in this panel is `bool`; a
            * segmented control is always a choice between named pairs (Picker/Keys, Click/Hold,
@@ -1038,22 +1049,21 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
               {
                 key: 'instantSensitivity',
                 configKey: 'radialInstantSensitivity' as const,
-                group: 'Hands-free',
-                title: 'Direction sensitivity',
-                description:
-                  'How far your hand must travel before that direction is chosen. High picks on the smallest movement.',
+                group: t('groupHandsFree'),
+                title: t('directionSensitivity'),
+                description: t('directionSensitivityDesc'),
                 kind: 'segmented' as const,
                 current: clampDirectionSensitivity(config.radialInstantSensitivity),
                 choices: [
-                  { value: 'low', label: 'Low' },
-                  { value: 'medium', label: 'Medium' },
-                  { value: 'high', label: 'High' },
+                  { value: 'low', label: t('sensitivityLow') },
+                  { value: 'medium', label: t('sensitivityMedium') },
+                  { value: 'high', label: t('sensitivityHigh') },
                 ],
                 onChange: (value: number | string) =>
                   update('radialInstantSensitivity', value as UIConfig['radialInstantSensitivity']),
               },
-              range('dwellMs', 'Hands-free', 'Hover time',
-                'How long a target must stay aimed before it opens. Drag to zero and the direction opens the moment it commits.',
+              range('dwellMs', t('groupHandsFree'), t('hoverTime'),
+                t('hoverTimeDesc'),
                 clampDwellMs(config.radialInstantDwellMs), DWELL_MS_MIN, DWELL_MS_MAX,
                 (value) => update('radialInstantDwellMs', value),
                 /**
@@ -1061,13 +1071,13 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
                  * less, it is to have no wait at all. The word says the behavior; the rest of the
                  * scale goes on saying the time.
                  */
-                (value) => (Math.round(value) === 0 ? 'Instant' : `${Math.round(value)} ms`),
+                (value) => (Math.round(value) === 0 ? t('instantValue') : `${Math.round(value)} ms`),
                 DWELL_MS_STEP, 'radialInstantDwellMs'),
             ]
           : []),
         {
-          key: 'numberLaunch', configKey: 'radialNumberLaunch', group: 'Number keys',
-          title: 'Quick launch with number keys',
+          key: 'numberLaunch', configKey: 'radialNumberLaunch', group: t('groupNumberKeys'),
+          title: t('quickLaunchNumbers'),
           /**
            * Three things have to be here and nowhere else: that there is no Enter (it is the whole
            * point, and every other keyboard path on the wheel needs one), that the count follows
@@ -1077,10 +1087,10 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
            */
           description:
             numberLaunchOn && workspaceHotkeysOn
-              ? 'Press 1–9 to run the shortcut in that position — no Enter. The digits are the wheel’s now, so switching workspace by number is off; use the wheel or the scroll wheel instead.'
+              ? t('quickLaunchNumbersDescBoth')
               : workspaceHotkeysOn
-                ? 'Press 1–9 to run the shortcut in that position, counting clockwise from the top — no Enter. It takes the number keys away from workspace switching.'
-                : 'Press 1–9 to run the shortcut in that position, counting clockwise from the top — no Enter, no aiming. Also turns on the key that steps back out of a folder.',
+                ? t('quickLaunchNumbersDescWorkspace')
+                : t('quickLaunchNumbersDesc'),
           kind: 'bool', enabled: numberLaunchOn,
           onToggle: () => update('radialNumberLaunch', !numberLaunchOn),
         },
@@ -1088,17 +1098,16 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
         ...(numberLaunchOn
           ? ([
               {
-                key: 'numberLabels', configKey: 'radialNumberLabels' as const, group: 'Number keys',
-                title: 'Show numbers on the wheel',
-                description:
-                  'Draws each position’s digit on its icon. Turn it off once the wheel is in your hands — the keys go on working.',
+                key: 'numberLabels', configKey: 'radialNumberLabels' as const, group: t('groupNumberKeys'),
+                title: t('showNumbers'),
+                description: t('showNumbersDesc'),
                 kind: 'bool', enabled: config.radialNumberLabels !== false,
                 onToggle: () =>
                   update('radialNumberLabels', config.radialNumberLabels === false),
               },
               {
-                key: 'backKey', configKey: 'radialBackKey' as const, group: 'Number keys',
-                title: 'Key to leave a folder',
+                key: 'backKey', configKey: 'radialBackKey' as const, group: t('groupNumberKeys'),
+                title: t('backKeyRow'),
                 /**
                  * Where it does NOT work is the whole reason a plain letter is safe to bind, so it
                  * is the sentence the row leads with. Someone who reads only the title would
@@ -1106,9 +1115,9 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
                  * as broken.
                  */
                 description: backKey
-                  ? `Press ${backKey} inside a folder to step back out, the same as clicking the hub. At the top level it stays an ordinary letter, so searching is unaffected.`
-                  : 'No key assigned. The hub still goes back when clicked, and Backspace still works.',
-                kind: 'open' as const, value: backKey || 'Off',
+                  ? tf('backKeyRowDesc', { key: backKey })
+                  : t('backKeyRowDescNone'),
+                kind: 'open' as const, value: backKey || t('offValue'),
                 onOpen: () => setEditor({ kind: 'backKey' }),
               },
             ] as SettingItem[])
@@ -1116,29 +1125,32 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
       ],
       appearance: [
         {
-          key: 'theme', configKey: 'appearanceTheme', group: 'Theme', title: 'Rovyl surfaces',
-          description: 'Applies to the window and title bar. The wheel remains dark.',
+          key: 'theme', configKey: 'appearanceTheme', group: t('groupTheme'), title: t('rovylSurfaces'),
+          description: t('rovylSurfacesDesc'),
           kind: 'segmented', current: theme,
-          choices: [{ value: 'black', label: 'Black' }, { value: 'white', label: 'White' }],
+          choices: [
+            { value: 'black', label: t('themeBlack') },
+            { value: 'white', label: t('themeWhite') },
+          ],
           onChange: (value) => update('appearanceTheme', value as UIConfig['appearanceTheme']),
         },
-        range('radius', 'Wheel', 'Orbital radius', 'Perceived wheel diameter.',
+        range('radius', t('wheel'), t('orbitalRadius'), t('orbitalRadiusDesc'),
           config.menuRadius, 90, 220, (value) => update('menuRadius', value), (value) => `${Math.round(value)} px`,
           1, 'menuRadius'),
-        range('iconSize', 'Wheel', 'Icon size', 'Visual weight of each target.',
+        range('iconSize', t('wheel'), t('iconSizeRow'), t('iconSizeRowDesc'),
           config.iconSize, 36, 92, (value) => update('iconSize', value), (value) => `${Math.round(value)} px`,
           1, 'iconSize'),
-        range('spacing', 'Wheel', 'Target spacing', 'Free space between items.',
+        range('spacing', t('wheel'), t('targetSpacing'), t('targetSpacingDesc'),
           config.appSpacing ?? 10, 0, 40, (value) => update('appSpacing', value), (value) => `${Math.round(value)} px`,
           1, 'appSpacing'),
         {
-          key: 'radialHoverColor', configKey: 'radialHoverColor', group: 'Wheel', title: 'Hover color',
-          description: 'Color used by the target under the pointer.',
+          key: 'radialHoverColor', configKey: 'radialHoverColor', group: t('wheel'), title: t('hoverColor'),
+          description: t('hoverColorDesc'),
           kind: 'color', value: config.radialHoverColor ?? '#FFFFFF',
           onChange: (value) => update('radialHoverColor', String(value)),
         },
         {
-          key: 'aim', configKey: 'radialSelectionMode', group: 'Wheel', title: 'Targeting',
+          key: 'aim', configKey: 'radialSelectionMode', group: t('wheel'), title: t('targeting'),
           /**
            * With launch without clicking on there is no pointer on screen, so "aim with the
            * pointer" is not an option that can exist — the wheel always falls back to sectors by
@@ -1147,12 +1159,12 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
            */
           description:
             config.radialSelectionMode === 'area'
-              ? 'The wheel is cut into equal wedges — one per shortcut — and the one you point at fills up. Click anywhere inside it.'
+              ? t('targetingDescArea')
               : config.radialInstantActivate === 'dwell'
-                ? 'Launch without clicking is on, so the wheel always aims by direction — each item owns an equal slice of the screen.'
+                ? t('targetingDescHandsFree')
                 : config.radialSelectionMode === 'cursor'
-                  ? 'Only the icon under the pointer highlights. Release away from every icon to cancel.'
-                  : 'Aim by direction: the slice you point toward highlights from anywhere on screen.',
+                  ? t('targetingDescCursor')
+                  : t('targetingDescAngle'),
           kind: 'segmented',
           /**
            * Area is Direction with the boundaries drawn — same maths, same muscle memory — so the
@@ -1160,9 +1172,9 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
            * something else, sits at the end.
            */
           choices: [
-            { value: 'angle', label: 'Direction' },
-            { value: 'area', label: 'Area' },
-            { value: 'cursor', label: 'Pointer' },
+            { value: 'angle', label: t('aimDirection') },
+            { value: 'area', label: t('aimArea') },
+            { value: 'cursor', label: t('aimPointer') },
           ],
           current:
             config.radialSelectionMode === 'cursor'
@@ -1173,13 +1185,13 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
           onChange: (value) => update('radialSelectionMode', value as UIConfig['radialSelectionMode']),
         },
         {
-          key: 'labels', configKey: 'alwaysShowAppLabels', group: 'Wheel', title: 'Persistent labels',
-          description: 'Keep every target name visible.',
+          key: 'labels', configKey: 'alwaysShowAppLabels', group: t('wheel'), title: t('persistentLabels'),
+          description: t('persistentLabelsRowDesc'),
           kind: 'bool', enabled: config.alwaysShowAppLabels,
           onToggle: () => update('alwaysShowAppLabels', !config.alwaysShowAppLabels),
         },
         {
-          key: 'radialPlacement', configKey: 'radialPlacement', group: 'Position', title: 'Where it opens',
+          key: 'radialPlacement', configKey: 'radialPlacement', group: t('groupPosition'), title: t('whereItOpens'),
           /**
            * Said as the consequence, because that is the whole of the choice: the same wheel, the
            * same targets, a different distance for the hand. The clamp near an edge is mentioned —
@@ -1188,19 +1200,19 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
            */
           description:
             config.radialPlacement === 'cursor'
-              ? 'The wheel blooms under the pointer, so nothing is further away than the gesture that opened it. Near an edge it steps inward just enough to keep every target on screen.'
-              : 'The wheel always blooms at the middle of the screen, wherever the pointer happens to be.',
+              ? t('whereItOpensDescCursor')
+              : t('whereItOpensDescCenter'),
           kind: 'segmented',
           choices: [
-            { value: 'center', label: 'Screen center' },
-            { value: 'cursor', label: 'At pointer' },
+            { value: 'center', label: t('placeScreenCenter') },
+            { value: 'cursor', label: t('placeAtPointer') },
           ],
           current: config.radialPlacement === 'cursor' ? 'cursor' : 'center',
           keywords: 'mouse cursor location position place spawn appear under pointer center centre',
           onChange: (value) => update('radialPlacement', value as UIConfig['radialPlacement']),
         },
-        range('backdrop', 'Presence', 'Background dimming',
-          'How much the rest of the screen recedes. At 100% it goes: the desktop is covered edge to edge.',
+        range('backdrop', t('presence'), t('bgDimming'),
+          t('bgDimmingRowDesc'),
           config.backdropOpacity ?? DEFAULT_UI_CONFIG.backdropOpacity, 0, 1,
           (value) => update('backdropOpacity', value), (value) => `${Math.round(value * 100)}%`,
           0.01, 'backdropOpacity'),
@@ -1332,67 +1344,70 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
       spaces: [
         ...config.workspaces.map((workspace, index) => ({
           key: workspace.id,
-          group: 'Your workspaces',
+          group: t('yourWorkspaces'),
           title: workspace.name,
-          description: workspace.hotkey ? `Key ${workspace.hotkey}` : 'Picker / mouse wheel',
+          description: workspace.hotkey ? tf('workspaceHotkeyDesc', { key: workspace.hotkey }) : t('workspacePickerDesc'),
           kind: 'open' as const,
           /** Same vocabulary as the editor: current / available / paused. */
-          value: config.activeWorkspaceIndex === index ? 'Current' : workspace.enabled ? 'Available' : 'Paused',
+          value: config.activeWorkspaceIndex === index ? t('current') : workspace.enabled ? t('available') : t('paused'),
           onOpen: () => setEditor({ kind: 'workspace' as const, index }),
           onDelete: config.workspaces.length > 1 ? () => deleteWorkspace(index) : undefined,
-          deleteLabel: `Delete ${workspace.name}`,
+          deleteLabel: tf('deleteWorkspaceNamed', { name: workspace.name }),
           reorderIndex: index,
           onReorder: reorderWorkspaces,
         })),
         {
-          key: 'new-space', group: 'Your workspaces', title: 'New workspace',
-          description: 'Create another context for your shortcuts.',
-          kind: 'action', actionLabel: 'Create', actionIcon: Plus, onRun: addWorkspace,
+          key: 'new-space', group: t('yourWorkspaces'), title: t('newWorkspace'),
+          description: t('newWorkspaceDesc'),
+          kind: 'action', actionLabel: t('create'), actionIcon: Plus, onRun: addWorkspace,
         },
       ],
       advanced: [
         {
-          key: 'performance', group: 'Performance', title: 'Precision mode',
-          description: 'Prioritize immediate response and reduce visual effects.',
+          key: 'performance', group: t('performance'), title: t('precisionMode'),
+          description: t('precisionModeRowDesc'),
           kind: 'bool', enabled: config.performanceMode,
           onToggle: () => update('performanceMode', !config.performanceMode),
         },
         {
-          key: 'strictOffline', configKey: 'strictOfflineMode', group: 'Performance', title: t('strictOffline'),
+          key: 'strictOffline', configKey: 'strictOfflineMode', group: t('performance'), title: t('strictOffline'),
           description: t('strictOfflineDesc'),
           kind: 'bool', enabled: Boolean(config.strictOfflineMode),
           onToggle: () => update('strictOfflineMode', !config.strictOfflineMode),
         },
         {
-          key: 'game', group: 'Protection', title: 'Fullscreen protection',
-          description: 'Prevent accidental openings during games and videos.',
+          key: 'game', group: t('groupProtection'), title: t('fullscreenProtection'),
+          description: t('fullscreenProtectionDesc'),
           kind: 'bool', enabled: gameMode.enabled,
           onToggle: () => updateGameMode({ enabled: !gameMode.enabled }),
         },
         ...(gameMode.enabled ? [{
-          key: 'scope', group: 'Protection', title: 'Scope', description: 'All fullscreen apps or only a selected list.',
+          key: 'scope', group: t('groupProtection'), title: t('protectionScope'), description: t('protectionScopeDesc'),
           kind: 'segmented' as const, current: gameMode.mode,
-          choices: [{ value: 'all', label: 'All' }, { value: 'list', label: 'List' }],
+          choices: [
+            { value: 'all', label: t('scopeAll') },
+            { value: 'list', label: t('scopeList') },
+          ],
           onChange: (value: number | string) => updateGameMode({ mode: value as 'all' | 'list' }),
         }] : []),
         ...(gameMode.enabled && gameMode.mode === 'list' ? [
           {
-            key: 'auto-games', group: 'Protection', title: 'Detect games automatically',
-            description: 'Uses game-store folders and engine files; protection still applies only in fullscreen.',
+            key: 'auto-games', group: t('groupProtection'), title: t('detectGames'),
+            description: t('detectGamesDesc'),
             kind: 'bool' as const, enabled: gameMode.autoDetectGames,
             onToggle: () => updateGameMode({ autoDetectGames: !gameMode.autoDetectGames }),
           },
           {
-            key: 'blocked', group: 'Protection', title: 'Protected applications',
-            description: 'Choose installed applications visually. No executable names required.',
+            key: 'blocked', group: t('groupProtection'), title: t('protectedApps'),
+            description: t('protectedAppsDesc'),
             kind: 'open' as const,
-            value: gameMode.blockedApps ? 'Edit list' : 'Choose apps',
+            value: gameMode.blockedApps ? t('editList') : t('chooseApps'),
             onOpen: () => setEditor({ kind: 'blocked' as const }),
           },
         ] : []),
         {
-          key: 'settingsCorner', configKey: 'showSettingsCorner', group: 'Settings shortcut',
-          title: 'Settings button on the wheel',
+          key: 'settingsCorner', configKey: 'showSettingsCorner', group: t('groupSettingsShortcut'),
+          title: t('settingsButtonOnWheel'),
           /**
            * Said with its cost, because it has one that shows: the overlay normally opens as a box
            * around the wheel, and a corner only means the screen's corner if the window is the
@@ -1401,16 +1416,16 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
            */
           description:
             config.radialInstantActivate === 'dwell'
-              ? 'A gear in the corner of the open wheel, one click from these settings. Launch without clicking aims by direction and hides the pointer, so the gear stays off while that is on.'
-              : 'A gear in the corner of the open wheel, one click from these settings. The wheel then opens over the whole screen instead of a box around itself, so the corner is a real one.',
+              ? t('settingsButtonDescHandsFree')
+              : t('settingsButtonDesc'),
           kind: 'bool', enabled: config.showSettingsCorner === true,
           keywords: 'gear cog icon corner open settings preferences shortcut button',
           onToggle: () => update('showSettingsCorner', !config.showSettingsCorner),
         },
         ...(config.showSettingsCorner === true ? [{
-          key: 'settingsCornerPosition', configKey: 'settingsCorner' as const, group: 'Settings shortcut',
-          title: 'Which corner',
-          description: 'Where the gear sits. It steps inboard if the battery or weather pill is already there.',
+          key: 'settingsCornerPosition', configKey: 'settingsCorner' as const, group: t('groupSettingsShortcut'),
+          title: t('whichCorner'),
+          description: t('whichCornerDesc'),
           /**
            * A select: four corner names are ~380px of segmented control, wider than the column,
            * and the same reason the Language row stopped being one.
@@ -1420,37 +1435,37 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
             ? (config.settingsCorner as SettingsCorner)
             : 'top-right',
           choices: [
-            { value: 'top-right', label: 'Top right' },
-            { value: 'top-left', label: 'Top left' },
-            { value: 'bottom-right', label: 'Bottom right' },
-            { value: 'bottom-left', label: 'Bottom left' },
+            { value: 'top-right', label: t('cornerTopRight') },
+            { value: 'top-left', label: t('cornerTopLeft') },
+            { value: 'bottom-right', label: t('cornerBottomRight') },
+            { value: 'bottom-left', label: t('cornerBottomLeft') },
           ],
           onChange: (value: number | string) => update('settingsCorner', value as SettingsCorner),
         }] : []),
         {
-          key: 'export', group: 'Data', title: 'Export settings',
-          description: 'Save a portable copy of your configuration.',
-          kind: 'action', actionLabel: 'Export', actionIcon: ArrowUpFromLine, onRun: exportConfig,
+          key: 'export', group: t('groupData'), title: t('exportSettings'),
+          description: t('exportSettingsDesc'),
+          kind: 'action', actionLabel: t('exportAction'), actionIcon: ArrowUpFromLine, onRun: exportConfig,
         },
         {
-          key: 'import', group: 'Data', title: 'Import settings',
-          kind: 'action', actionLabel: 'Import', actionIcon: ArrowDownToLine, onRun: importConfig,
+          key: 'import', group: t('groupData'), title: t('importSettings'),
+          kind: 'action', actionLabel: t('importAction'), actionIcon: ArrowDownToLine, onRun: importConfig,
         },
         {
-          key: 'reset', group: 'Data', title: 'Restore defaults',
-          description: 'Erase local settings and start over.',
-          kind: 'action', actionLabel: 'Restore', onRun: onReset,
+          key: 'reset', group: t('groupData'), title: t('restoreDefaults'),
+          description: t('restoreDefaultsDesc'),
+          kind: 'action', actionLabel: t('restoreAction'), onRun: onReset,
           confirm: {
-            body: 'Every workspace, shortcut, icon and preference on this PC is deleted and Rovyl restarts. This cannot be undone — use Export settings first if you want a copy.',
-            cta: 'Erase everything',
+            body: t('restoreConfirmBody'),
+            cta: t('restoreConfirmCta'),
           },
         },
       ],
     };
-  }, [config, gameMode, statusDock, shortcutDock, theme, apps, update, setConfig, updateRow, canUpdate, onReset, deleteWorkspace, reorderWorkspaces]);
+  }, [config, gameMode, statusDock, shortcutDock, theme, apps, update, setConfig, updateRow, canUpdate, onReset, deleteWorkspace, reorderWorkspaces, t, tf]);
 
   const trimmedQuery = query.trim().toLowerCase();
-  const activeMeta = sectionsList.find((section) => section.id === sectionId) || SECTIONS[0];
+  const activeMeta = sectionsList.find((section) => section.id === sectionId) || sectionsList[0];
 
   /**
    * Where the list was, after touching a setting.

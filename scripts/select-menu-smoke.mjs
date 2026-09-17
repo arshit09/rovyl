@@ -46,11 +46,12 @@ try {
   let n = 0;
   const check = (fn) => { fn(); n += 1; };
 
-  /** The real row: the seven languages, as the Language setting builds them. */
+  /** The real row: the eight languages, as the Language setting builds them. */
   const LANGS = [
     { value: "en", label: "English", hint: "English" },
     { value: "es", label: "Español", hint: "Spanish" },
     { value: "zh", label: "简体中文", hint: "Chinese (Simplified)" },
+    { value: "ja", label: "日本語", hint: "Japanese" },
     { value: "pt", label: "Português", hint: "Portuguese" },
     { value: "ru", label: "Русский", hint: "Russian" },
     { value: "de", label: "Deutsch", hint: "German" },
