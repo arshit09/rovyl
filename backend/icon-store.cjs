@@ -58,6 +58,9 @@ const REF_SCAN_PATTERN = new RegExp(
 
 const DATA_URL_PATTERN = /^data:([a-z0-9.+-]+\/[a-z0-9.+-]+)(;[^,]*)?,/i;
 
+/** The keys that hold an icon: a shortcut's (`AppItem`) and a workspace's own picture. */
+const ICON_FIELDS = ["customIconUrl", "pickerIconUrl"];
+
 function isIconRef(value) {
   return typeof value === "string" && REF_PATTERN.test(value.trim());
 }
@@ -195,7 +198,7 @@ function createIconStore(directory) {
   }
 
   /**
-   * Visits every `customIconUrl` anywhere in a parsed blob.
+   * Visits every icon field (`ICON_FIELDS`) anywhere in a parsed blob.
    *
    * Deliberately shape-agnostic. The persistence blob mirrors the workspace tree under
    * `workspaces`, `config.workspaces` and `apps`, and `stripStaleNativeIcons` in electron-main
@@ -213,11 +216,12 @@ function createIconStore(directory) {
         for (const entry of node) step(entry);
         return;
       }
-      if (typeof node.customIconUrl === "string") {
-        const next = visit(node.customIconUrl);
-        if (next !== undefined && next !== node.customIconUrl) {
-          if (next === null) delete node.customIconUrl;
-          else node.customIconUrl = next;
+      for (const field of ICON_FIELDS) {
+        if (typeof node[field] !== "string") continue;
+        const next = visit(node[field]);
+        if (next !== undefined && next !== node[field]) {
+          if (next === null) delete node[field];
+          else node[field] = next;
           changed = true;
         }
       }

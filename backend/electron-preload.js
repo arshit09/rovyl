@@ -195,9 +195,12 @@ contextBridge.exposeInMainWorld("electron", {
   quitApp: () => ipcRenderer.send("quit-app"),
   selectFile: (options) => ipcRenderer.invoke("select-file", options),
   selectFolder: () => ipcRenderer.invoke("select-folder"),
-  selectImage: () => ipcRenderer.invoke("select-image"),
-  removeManagedCustomIcon: (urlOrPath) =>
-    ipcRenderer.invoke("remove-managed-custom-icon", urlOrPath),
+  /** Custom icons: see the block of the same name in electron-main. */
+  chooseCustomIconFile: () => ipcRenderer.invoke("choose-custom-icon-file"),
+  readCustomIconSource: (source) => ipcRenderer.invoke("read-custom-icon-source", source),
+  extractLibraryIcon: (filePath, index) =>
+    ipcRenderer.invoke("extract-library-icon", filePath, index),
+  storeCustomIcon: (dataUrl) => ipcRenderer.invoke("store-custom-icon", dataUrl),
   getInstalledApps: (forceRefresh = false) =>
     ipcRenderer.invoke("get-installed-apps", forceRefresh),
   getOnboardingApps: () => ipcRenderer.invoke("get-onboarding-apps"),

@@ -10,7 +10,7 @@
  *
  * It lives away from the components that draw it because three places need the same answers: the
  * wheel, which paints them; the settings panel, which edits them; and `RadialApp`, which has to
- * tell the main process that the overlay window must cover the whole monitor when either dock is
+ * tell the main process that the overlay window must reach the screen edges when either dock is
  * on. See scripts/screen-docks-smoke.mjs.
  */
 
@@ -172,12 +172,15 @@ export function shortcutDockIsActive(dock: ShortcutDockConfig): boolean {
 }
 
 /**
- * Whether a dock forces the overlay window to take the whole monitor.
+ * Whether a dock forces the overlay window out to the screen edges.
  *
  * The wheel normally opens in a box around itself rather than over the screen (see
  * `radialModeBounds` in the main process). A dock placed in that box does not sit in the corner of
  * anything the user can see — it floats a couple of hundred pixels off the wheel on a diagonal.
  * Exactly the reason the corner gear asks for the same thing.
+ *
+ * "The screen" is the work area, not the monitor: the window stops at the taskbar, so a dock in a
+ * bottom region lands just above it rather than on top of it (`backend/full-bleed-bounds.cjs`).
  */
 export function docksNeedFullBleed(status: StatusDockConfig, shortcuts: ShortcutDockConfig): boolean {
   return statusDockIsActive(status) || shortcutDockIsActive(shortcuts);

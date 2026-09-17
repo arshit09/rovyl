@@ -18,7 +18,9 @@ export function buildWorkspacePickerItems(cfg: UIConfig): AppItem[] {
       type: 'app',
       label: ws.name,
       iconName: ws.pickerIconName?.trim() || 'Layers',
-      iconSource: 'lucide',
+      /** A chosen picture is drawn like any shortcut's; the glyph stays underneath as its fallback. */
+      iconSource: ws.pickerIconUrl ? 'custom' : 'lucide',
+      ...(ws.pickerIconUrl ? { customIconUrl: ws.pickerIconUrl } : {}),
       command: '',
       commandType: 'app',
       description: ws.hotkey ? `(${ws.hotkey})` : '',

@@ -17,7 +17,12 @@ export const ZENITH_LAUNCHER_AUTH_HASH_URL = `${ZENITH_LAUNCHER_SITE_URL}/#/auth
 
 export const ZENITH_LAUNCHER_HELP_URL = `${ZENITH_LAUNCHER_SITE_URL}/help`;
 
-export const ZENITH_LAUNCHER_DOCS_URL = `${ZENITH_LAUNCHER_SITE_URL}/docs`;
+/**
+ * The reference docs, on the site's own domain. Spelled out rather than built on
+ * `ZENITH_LAUNCHER_SITE_URL`: sign-in and the licence API still live on the Vercel host, and moving
+ * those is a separate change from where people read the docs.
+ */
+export const ZENITH_LAUNCHER_DOCS_URL = "https://rovyl.arshitvaghasiya.com/docs";
 
 /** Public pricing page (same tiers as the app; checkout TBD). */
 export const ZENITH_LAUNCHER_PRICING_URL = `${ZENITH_LAUNCHER_SITE_URL}/pricing`;

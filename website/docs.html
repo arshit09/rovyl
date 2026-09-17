@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Docs - Rovyl</title>
-<meta name="description" content="Reference for editing a Rovyl workspace as a text file: every key, every shortcut type, and how to share a workspace.">
+<meta name="description" content="Reference for editing a Rovyl workspace as a text file: every key, every shortcut type, custom icons, and how to share a workspace.">
 <meta name="theme-color" content="#151515">
 <link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -125,6 +125,7 @@
     <tbody>
       <tr><td><code>name</code> <span class="req">required</span></td><td>text</td><td>The name shown on the workspace card and in the picker. Can't be empty.</td></tr>
       <tr><td><code>icon</code></td><td>icon name</td><td>The glyph on the workspace picker wheel. If you leave it out, it's <code>Layers</code>. See <a href="#icons">Icons</a>.</td></tr>
+      <tr><td><code>iconFile</code></td><td>path</td><td>A picture, icon file or program to use instead of the glyph. See <a href="#icons-file">Icons in the file</a>.</td></tr>
       <tr><td><code>color</code></td><td><code>"#rrggbb"</code></td><td>An optional workspace colour, written as hex (3 to 8 digits).</td></tr>
       <tr><td><code>enabled</code></td><td><code>true</code> / <code>false</code></td><td>Whether the workspace appears on the wheel. Defaults to <code>true</code>. The current workspace is always shown, so <code>false</code> is ignored for it.</td></tr>
       <tr><td><code>shortcuts</code> <span class="req">required</span></td><td>list</td><td>The shortcuts, in wheel order: the first sits at the top and the rest follow clockwise. Use <code>[]</code> for an empty workspace.</td></tr>
@@ -140,6 +141,7 @@
       <tr><td><code>type</code> <span class="req">required</span></td><td>all</td><td>One of <code>app</code>, <code>url</code>, <code>folder</code>, <code>file</code>, <code>command</code>, <code>group</code>.</td></tr>
       <tr><td><code>name</code> <span class="req">required</span></td><td>all</td><td>The label on the wheel.</td></tr>
       <tr><td><code>icon</code></td><td>all</td><td>A glyph name. See <a href="#icons">Icons</a>.</td></tr>
+      <tr><td><code>iconFile</code></td><td>all</td><td>The path to a picture, an icon file or a program whose icon to use. See <a href="#icons-file">Icons in the file</a>.</td></tr>
       <tr><td><code>target</code> <span class="req">required</span></td><td>all except <code>group</code></td><td>What the shortcut opens. The rules depend on the type and are described below.</td></tr>
     </tbody>
   </table></div>
@@ -199,25 +201,52 @@
   </table></div>
 
   <h2 id="icons">Icons</h2>
-  <p><code>icon</code> is the name of a <a href="https://lucide.dev/icons/">Lucide</a> icon in PascalCase: <code>"Rocket"</code>, <code>"FolderGit2"</code>, <code>"TerminalSquare"</code>. Convert Lucide's names from kebab-case (<code>folder-git-2</code> becomes <code>FolderGit2</code>). An unknown name falls back to a generic glyph.</p>
+  <p>A workspace and each of its shortcuts can show a glyph from the built-in set or a picture of your own. You can set either one in Settings or in the file.</p>
+
+  <h3 id="icons-settings">Choose an icon in Settings</h3>
+  <p>For a workspace, click the icon square next to its name. For a shortcut, click its pencil, then click the <b>Icon</b> field. The dialog has two tabs:</p>
   <ul>
-    <li>If you leave out <code>icon</code>, the type's default is used: <code>app</code> → <code>AppWindow</code>, <code>url</code> → <code>Globe</code>, <code>folder</code> → <code>Folder</code>, <code>file</code> → <code>File</code>, <code>command</code> → <code>TerminalSquare</code>, <code>group</code> → <code>Folder</code>.</li>
-    <li>Apps, files and websites also get a picture of their own: the icon extracted from the program or the site's favicon. That picture is shown instead of the glyph, and the glyph is only a fallback. Folders, commands and groups always show the glyph.</li>
+    <li><b>Glyph</b>: search the built-in set by name, or by an English word such as <i>work</i>, <i>time</i> or <i>home</i>.</li>
+    <li><b>Picture</b>: use an image of your own, or any icon Windows has. Click <b>Browse…</b>, drop a file on the dashed area, or press <code>Ctrl+V</code> to paste a copied picture (a screenshot, for example) or a copied file path.</li>
+  </ul>
+  <p>The Picture tab accepts these files:</p>
+  <div class="table-wrap"><table>
+    <thead><tr><th>File</th><th>Icon you get</th></tr></thead>
+    <tbody>
+      <tr><td>PNG, JPG, GIF, WebP, BMP, SVG, AVIF</td><td>The picture itself.</td></tr>
+      <tr><td>ICO, CUR</td><td>The largest image in the file.</td></tr>
+      <tr><td>EXE, DLL, ICL, CPL, OCX, SCR, MUN</td><td>The file's first icon. A grid of every icon in the file appears below it, so you can pick another one.</td></tr>
+      <tr><td>A shortcut (<code>.lnk</code>, <code>.url</code>), a folder, or any other file</td><td>The icon File Explorer shows for it.</td></tr>
+    </tbody>
+  </table></div>
+  <p>Under <b>Windows icons</b>, the <code>shell32.dll</code>, <code>imageres.dll</code> and <code>ddores.dll</code> buttons open the icon libraries that come with Windows, so you don't have to browse to <code>System32</code>.</p>
+  <p>Rovyl trims empty transparent edges and scales every picture to match the icons it finds on its own, so custom icons line up with the rest of the wheel. It also keeps its own copy, so moving or deleting the original file later doesn't change the icon.</p>
+  <p><b>Default</b> undoes your choice. An app, file or website gets back the icon Rovyl found for it, and a folder, command or group gets back its standard glyph.</p>
+
+  <h3 id="icons-file">Icons in the file</h3>
+  <p><code>icon</code> is the name of a <a href="https://lucide.dev/icons/">Lucide</a> icon in PascalCase: <code>"Rocket"</code>, <code>"FolderGit2"</code>, <code>"TerminalSquare"</code>. Convert Lucide's names from kebab-case (<code>folder-git-2</code> becomes <code>FolderGit2</code>). An unknown name falls back to a generic glyph.</p>
+  <p><code>iconFile</code> is the full path to a picture, an icon file or a program, and accepts the same file types as the Picture tab. Environment variables such as <code>%SystemRoot%</code> are expanded. To use an icon other than the first one in a program or DLL, add a comma and its number, counting from 0. This is the format Windows uses for icon locations: <code>"%SystemRoot%\\System32\\shell32.dll,4"</code> is the fifth icon. In the Picture tab's grid, hold the pointer over an icon to see its number. A negative number is a resource ID instead (<code>shell32.dll,-16769</code>).</p>
+  <ul>
+    <li>If you leave out <code>icon</code>, the type's default glyph is used: <code>app</code> → <code>AppWindow</code>, <code>url</code> → <code>Globe</code>, <code>folder</code> → <code>Folder</code>, <code>file</code> → <code>File</code>, <code>command</code> → <code>TerminalSquare</code>, <code>group</code> → <code>Folder</code>.</li>
+    <li>Apps, files and websites find a picture on their own: the program's icon, the file type's icon or the site's favicon. If you set <code>icon</code> to a glyph other than the default, that glyph is shown instead. Remove the line to get the found picture back.</li>
+    <li><code>iconFile</code> takes priority over both. When it's set, <code>icon</code> is used only if the picture can't be loaded.</li>
+    <li>Removing <code>iconFile</code> removes the picture. The one exception is a picture you pasted in Settings: it has no path, so it isn't written to the file, and it stays until you change it in Settings.</li>
+    <li>The file is read when you apply. If it's missing or can't be used, a message says so and the glyph is shown instead.</li>
   </ul>
 
   <h2 id="share">Share and migrate</h2>
-  <p>The file holds only what you'd type. It leaves out internal IDs, the machine's icon cache and the number key, so the same text works on any PC.</p>
+  <p>The file holds only what you'd type. It leaves out internal IDs, the machine's icon cache and the number key, so the same text works on any PC. A custom picture is written as the path it came from (<code>iconFile</code>), never as Rovyl's own copy of it.</p>
   <ol>
     <li><b>Export:</b> open the workspace, switch to the file view and click <b>Copy</b>. Save or send the text.</li>
     <li><b>Import into a new workspace:</b> in <b>Settings → Workspaces</b>, click <b>New workspace</b>, open it, switch to the file view, replace the text with what you received, and apply.</li>
     <li><b>Replace an existing workspace:</b> paste over its file and apply. Undo in the toast brings the old one back.</li>
   </ol>
-  <p>When you apply a file, every shortcut whose <code>type</code> and <code>target</code> are unchanged keeps its identity and its extracted icon, even if you renamed or moved it. For groups, the <code>name</code> is used instead of the target. New apps, files and websites have their icons fetched right after you apply.</p>
-  <p>Paths are specific to each PC. Prefer <code>%USERPROFILE%</code>, <code>%LOCALAPPDATA%</code> and <code>shell:AppsFolder\\…</code> IDs over hard-coded user folders so a shared file works for the person receiving it.</p>
+  <p>When you apply a file, every shortcut whose <code>type</code> and <code>target</code> are unchanged keeps its identity and its extracted icon, even if you renamed or moved it. For groups, the <code>name</code> is used instead of the target. A picture named in <code>iconFile</code> is kept as long as the path stays the same. New apps, files and websites have their icons fetched right after you apply, and a new or changed <code>iconFile</code> is read at the same time.</p>
+  <p>Paths are specific to each PC. Prefer <code>%USERPROFILE%</code>, <code>%LOCALAPPDATA%</code> and <code>shell:AppsFolder\\…</code> IDs over hard-coded user folders so a shared file works for the person receiving it. The same goes for <code>iconFile</code>: <code>%SystemRoot%\\System32\\imageres.dll</code> exists on every PC, a picture in your Downloads folder doesn't.</p>
   <p>To move <b>everything</b> at once (all workspaces plus every preference), use <b>Settings → Advanced → Export settings</b> and <b>Import settings</b> instead.</p>
 
   <h2 id="example">Full example</h2>
-<pre><code><span class="c">// Rovyl workspace. Reference: https://rovyl-red.vercel.app/docs#workspace-file</span>
+<pre><code><span class="c">// Rovyl workspace. Reference: https://rovyl.arshitvaghasiya.com/docs</span>
 {
   "name": "Dev",
   "icon": "Code",
@@ -235,10 +264,17 @@
     {
       "type": "app",
       "name": "Terminal",
+      "iconFile": "%USERPROFILE%\\Pictures\\Icons\\terminal.png",
       "target": "shell:AppsFolder\\Microsoft.WindowsTerminal_8wekyb3d8bbwe!App"
     },
     { "type": "url", "name": "GitHub", "target": "github.com", "launch": "reuse" },
     { "type": "folder", "name": "Projects", "icon": "FolderGit2", "target": "%USERPROFILE%\\src" },
+    {
+      "type": "folder",
+      "name": "Downloads",
+      "iconFile": "%SystemRoot%\\System32\\shell32.dll,4",
+      "target": "%USERPROFILE%\\Downloads"
+    },
     { "type": "file", "name": "Roadmap", "target": "D:\\Docs\\Roadmap.xlsx" },
     {
       "type": "group",
@@ -276,6 +312,9 @@
       <tr><td><code>A "url" target must be an http:// or https:// address</code></td><td>For other kinds of link, use an <code>app</code> or <code>command</code> shortcut.</td></tr>
       <tr><td><code>"recents" must be true or false, without quotes</code></td><td>Write <code>true</code>, not <code>"true"</code>.</td></tr>
       <tr><td><code>A workspace needs a "shortcuts" list</code></td><td>Add <code>"shortcuts": []</code>.</td></tr>
+      <tr><td><code>"iconFile" is the full path to a picture, an .ico or a program</code></td><td>Write the whole path, starting from the drive letter (<code>"C:\\…"</code>), a network share (<code>"\\\\server\\…"</code>) or a variable such as <code>%USERPROFILE%</code>.</td></tr>
+      <tr><td><code>"icon" is a glyph name such as "Rocket". For a picture or a program's icon, use "iconFile".</code></td><td>Move the path from <code>icon</code> to <code>iconFile</code>.</td></tr>
+      <tr><td><code>Icon shell32.dll,999 not loaded: …</code> (a message after applying)</td><td>The file couldn't be used: it's missing, it isn't a picture Rovyl can read, or it has no icon with that number. The glyph is shown until you fix the path.</td></tr>
     </tbody>
   </table></div>
 

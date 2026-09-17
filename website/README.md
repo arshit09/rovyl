@@ -72,7 +72,8 @@ npx serve website
 Point a static host at this folder. `vercel.json` is already here; Vercel needs
 **Root Directory** set to `website` and no build command. The app links to the
 site through `src/constants/siteUrls.ts` - keep `ZENITH_LAUNCHER_SITE_URL` and
-the deployed domain in step.
+the deployed domain in step. The docs link (`ZENITH_LAUNCHER_DOCS_URL`, behind the
+workspace file editor's help button) points at `rovyl.arshitvaghasiya.com/docs`.
 
 ## Why it looks the way it does
 

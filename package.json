@@ -1,7 +1,7 @@
 {
   "name": "rovyl",
   "private": true,
-  "version": "1.13.0",
+  "version": "1.14.0",
   "main": "backend/electron-main.js",
   "author": "HenryCa",
   "description": "Rovyl radial launcher",
@@ -40,6 +40,7 @@
     "test:persistence-mirror": "node scripts/persistence-mirror-smoke.mjs",
     "test:foreground-snapshot": "node scripts/foreground-snapshot-smoke.mjs",
     "test:fullscreen-bounds": "node scripts/fullscreen-bounds-smoke.mjs",
+    "test:full-bleed-bounds": "node scripts/full-bleed-bounds-smoke.mjs",
     "test:page-title": "node scripts/page-title-smoke.mjs",
     "test:pending-update": "node scripts/pending-update-smoke.mjs",
     "test:keyboard-nav": "node scripts/keyboard-nav-smoke.mjs",

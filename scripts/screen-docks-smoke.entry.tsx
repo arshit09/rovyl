@@ -11,7 +11,10 @@
 import React from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { ScreenDocks, dockStackHeight } from "../src/components/ScreenDocks";
+import { DockPositionPicker, DOCK_POSITION_GRID } from "../src/components/DockPositionPicker";
 import {
+  DOCK_POSITIONS,
+  DOCK_POSITION_LABELS,
   normalizeShortcutDock,
   normalizeStatusDock,
   type DockPosition,
@@ -89,6 +92,20 @@ const APART = {
   shortcuts: BOTH_ON_LEFT.shortcuts,
 };
 
+/**
+ * The settings picker for the same six regions.
+ *
+ * Rendered here rather than trusted because it is a PICTURE of the model: every region the wheel
+ * can draw a dock in has to be reachable in it, exactly one of them can be the chosen one, and the
+ * sibling dock's region has to be marked. A region missing from the grid is a setting the user
+ * cannot reach, and nothing else in the build would notice.
+ */
+function picker(value: DockPosition, occupied?: { position: DockPosition; label: string }): string {
+  return renderToStaticMarkup(
+    React.createElement(DockPositionPicker, { value, onChange: NOOP, occupied }),
+  );
+}
+
 export function collect() {
   const both = render(BOTH_ON_LEFT.status, BOTH_ON_LEFT.shortcuts, LAPTOP);
   const apart = render(APART.status, APART.shortcuts, LAPTOP);
@@ -99,9 +116,27 @@ export function collect() {
   const shells = (html: string) => html.split("zn-dock-shell").length - 1;
   const plates = (html: string) => html.split("zn-dock-plate").length - 1;
 
+  const picked = picker("bottom-right");
+  const shared = picker("bottom-left", { position: "bottom-left", label: "System dock" });
+
   return {
     /** The markup itself, so a failed assertion above can be read instead of guessed at. */
-    markup: { both, apart, desktop, closed },
+    markup: { both, apart, desktop, closed, picked, shared },
+
+    /* The picker covers the model: every region, once, and the grid is the same set. */
+    pickerGridPositions: DOCK_POSITION_GRID.flat().slice().sort(),
+    modelPositions: DOCK_POSITIONS.slice().sort(),
+    pickerCells: picked.split("zs-dockpick-cell").length - 1,
+    pickerChecked: picked.split('aria-checked="true"').length - 1,
+    pickerChecksTheChosenOne:
+      picked.includes(`aria-label="${DOCK_POSITION_LABELS["bottom-right"]}" `)
+      && picked.indexOf("is-bottom is-right is-selected") > -1,
+    /* One tab stop for six buttons: the arrows move the choice inside the group. */
+    pickerTabStops: picked.split('tabindex="0"').length - 1,
+    /* The other dock's region is marked, and says so in words too. */
+    pickerMarksSibling: shared.includes("is-shared"),
+    pickerNamesSibling: shared.includes("System dock is here too"),
+    pickerUnsharedIsClean: !picked.includes("is-shared"),
 
     /* One region, one positioned shell — but still both plates inside it. */
     sharedRegionShells: shells(both),

@@ -311,6 +311,23 @@ try {
   assert.equal(drawn.closedIsInert, true,
     "a closing dock still animates but must not take a click");
 
+  /* The picker is a picture of the model, so the two have to hold the same six
+     regions. A position the wheel honours and the picker does not draw is a
+     setting nobody can reach — and nothing else in the build would say so. */
+  assert.deepEqual(drawn.pickerGridPositions, drawn.modelPositions,
+    "the picker must offer every region the docks can be placed in");
+  assert.equal(drawn.pickerCells, 6, "six regions, six targets");
+  assert.equal(drawn.pickerChecked, 1, "exactly one is chosen");
+  assert.equal(drawn.pickerChecksTheChosenOne, true, "and it is the one that was passed in");
+  assert.equal(drawn.pickerTabStops, 1,
+    "six radios are one tab stop — the arrows move the choice inside the group");
+
+  /* Both docks may share a region (ScreenDocks stacks them); the picker's job is
+     to make that a decision rather than a surprise. */
+  assert.equal(drawn.pickerMarksSibling, true, "the other dock's region is marked");
+  assert.equal(drawn.pickerNamesSibling, true, "and named, for anyone not looking at the picture");
+  assert.equal(drawn.pickerUnsharedIsClean, true, "with no dock to share with, nothing is marked");
+
   /* The gear's step: both plates plus the gap between them, and zero for a
      corner no dock is in — the gear must not dodge a strip that is not there. */
   assert.equal(drawn.stackEmptyRegion, 0);

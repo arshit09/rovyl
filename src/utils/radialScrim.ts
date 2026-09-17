@@ -40,8 +40,9 @@ export function radialScrimAlphas(backdropOpacity: number): { peak: number; floo
  * The radial normally opens in a box around the wheel rather than over the monitor (see
  * `radialModeBounds` in the main process — it keeps the DWM off a full-screen layered surface).
  * That box is invisible for as long as the pool fades to nothing inside it. The moment it does
- * not, the box has to become the monitor, or the dimming is a dark rectangle sitting on a bright
- * desktop with four hard edges. Main is told through `setRadialViewport`, before the wheel opens.
+ * not, the box has to become the screen, or the dimming is a dark rectangle sitting on a bright
+ * desktop with four hard edges. Main is told through `setRadialViewport`, before the wheel opens,
+ * and it stops the window at the work area: the scrim takes the desktop, never the taskbar.
  */
 export function radialScrimNeedsFullBleed(backdropOpacity: number): boolean {
   /** ~1% alpha: below it the edge is not visible on any desktop, so the cheap box still wins. */

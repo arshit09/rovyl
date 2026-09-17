@@ -61,6 +61,7 @@ const { normalizeFullPersistenceBlob } = require("./persistence-normalize.cjs");
 const { detectGameExecutable } = require("./game-detection.cjs");
 const { parseForegroundSnapshot, createLineSplitter } = require("./foreground-snapshot.cjs");
 const { isPhysicalRectFullscreen } = require("./fullscreen-bounds.cjs");
+const { fullBleedBounds } = require("./full-bleed-bounds.cjs");
 const { titleFromHtmlBuffer } = require("./page-title.cjs");
 const { decidePendingUpdate } = require("./pending-update.cjs");
 const { createSystemStatusService } = require("./system-status.cjs");
@@ -2056,7 +2057,7 @@ function showMenuAtCursor(source = "shortcut") {
     const cursorPoint = radialOpensAtCursor ? currentCursorPoint() : null;
     const targetDisplay = radialTargetDisplay(cursorPoint ?? undefined);
     const radialCenter = radialOpenCenter(targetDisplay.bounds, cursorPoint);
-    const bounds = radialOpenBounds(targetDisplay.bounds, radialCenter);
+    const bounds = radialOpenBounds(targetDisplay, radialCenter);
 
     try {
       if (!boundsApproxEqual(win.getBounds(), bounds)) win.setBounds(bounds);
@@ -2808,16 +2809,22 @@ function radialModeBounds(displayBounds, point) {
 
 /**
  * Where the radial actually opens. The box above, unless the dimming reaches its edge — then the
- * monitor, because that edge would otherwise be drawn on screen as a rectangle.
+ * screen, because that edge would otherwise be drawn on screen as a rectangle. The screen meaning
+ * the WORK area: a wheel that takes the monitor takes the taskbar with it, and an almost-opaque
+ * scrim over the taskbar is a taskbar the user cannot see. See `backend/full-bleed-bounds.cjs`.
+ *
+ * @param {Electron.Display} display the monitor the wheel is born on — bounds AND work area, since
+ *   the work area is what says how much of it the wheel may have.
  *
  * Every caller that computes the open bounds has to go through here, including the one that only
  * compares them against the current bounds to decide whether to hide before resizing: two callers
  * disagreeing about the target is a visible DWM flash.
  */
-function radialOpenBounds(displayBounds, point) {
-  const needsFull = radialFullBleed;
-  if (!needsFull) return radialModeBounds(displayBounds, point);
-  return {
+function radialOpenBounds(display, point) {
+  const displayBounds = display.bounds;
+  if (!radialFullBleed) return radialModeBounds(displayBounds, point);
+  /** A display Electron described oddly is still a display: the monitor rect is the last resort. */
+  return fullBleedBounds(displayBounds, display.workArea) || {
     x: Math.round(displayBounds.x),
     y: Math.round(displayBounds.y),
     width: Math.round(displayBounds.width),
@@ -8758,53 +8765,226 @@ ipcMain.handle("select-folder", async () => {
   }
 });
 
-// IPC: Select Image (Custom Icon)
-// Copy into userData so the icon survives if the original file is deleted/moved.
-ipcMain.handle("select-image", async () => {
+/* ── Custom icons ─────────────────────────────────────────────────────────────────────────────
+ *
+ * A picture, an icon file, or one of the icons inside a program, chosen by the user for a
+ * workspace or a shortcut. Main reads and extracts; the renderer normalizes every result to the
+ * same 256px canvas the automatic icons use (Chromium decodes WebP, SVG and AVIF, GDI+ does not)
+ * and hands the PNG back to be stored. The result lives in the same content-addressed store as the
+ * extracted icons, so export, import and the sweep treat both alike.
+ *
+ * The replaced `select-image` copied the original into `userData/custom-icons` under a random name
+ * and returned a bare path — which the renderer cannot load from the dev server — and nothing ever
+ * called it.
+ */
+
+/** Pictures the renderer can decode. SVG is safe here: it only ever reaches an `<img>`. */
+const CUSTOM_ICON_IMAGE_MIME = {
+  png: "image/png",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  jfif: "image/jpeg",
+  gif: "image/gif",
+  webp: "image/webp",
+  bmp: "image/bmp",
+  ico: "image/x-icon",
+  cur: "image/x-icon",
+  svg: "image/svg+xml",
+  avif: "image/avif",
+};
+
+/** Files that carry icon resources of their own, possibly hundreds (shell32.dll, imageres.dll). */
+const CUSTOM_ICON_LIBRARY_EXTENSIONS = new Set(["exe", "dll", "icl", "cpl", "ocx", "scr", "mun"]);
+
+/** A photo straight off a phone is ~10 MB; nothing an icon needs is larger than this. */
+const CUSTOM_ICON_MAX_IMAGE_BYTES = 16 * 1024 * 1024;
+/** 256×256 RGBA is 256 kB raw; this only has to refuse garbage, not police compression. */
+const CUSTOM_ICON_MAX_PNG_CHARS = 4 * 1024 * 1024;
+/** One run lists every icon in the file. shell32.dll's 329 take under a second. */
+const LIBRARY_ICONS_TIMEOUT_MS = 20000;
+
+/**
+ * `C:\Windows\System32\shell32.dll,4` → the file and the icon number, the way Windows writes an
+ * icon location. `%SystemRoot%` and friends are expanded, so a workspace file stays portable.
+ */
+function parseCustomIconSource(source) {
+  let text = String(source ?? "").trim().replace(/^"([\s\S]*)"$/, "$1").trim();
+  if (!text) return null;
+  text = text.replace(/%([^%\\/]+)%/g, (whole, name) => process.env[name] ?? whole);
+  let index = 0;
+  const match = /^([\s\S]*?)\s*,\s*(-?\d+)$/.exec(text);
+  /** A file really named `icons,2.png` exists; only split what is not itself a file. */
+  if (match && !fs.existsSync(text)) {
+    text = match[1].replace(/^"([\s\S]*)"$/, "$1");
+    index = Number(match[2]);
+  }
+  return { filePath: path.normalize(text), index };
+}
+
+/**
+ * Runs `library-icons.ps1`. Resolves `null` on any failure — a file the picker cannot read is an
+ * answer for the renderer to show, not an exception.
+ */
+function runLibraryIcons(filePath, index, list) {
+  return new Promise((resolve) => {
+    const args = [
+      "-NoProfile",
+      "-ExecutionPolicy",
+      "RemoteSigned",
+      "-File",
+      getAssetPath("library-icons.ps1"),
+      "-Path",
+      filePath,
+      "-Index",
+      String(index),
+    ];
+    if (list) args.push("-List");
+    const psExe = getPowerShellExePath();
+    const child = spawn(fs.existsSync(psExe) ? psExe : "powershell.exe", args, { windowsHide: true });
+    const chunks = [];
+    let settled = false;
+    const finish = (value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(watchdog);
+      resolve(value);
+    };
+    const watchdog = setTimeout(() => {
+      diagLog(`[CustomIcon] library-icons timed out for ${filePath}`);
+      try {
+        child.kill();
+      } catch {}
+      finish(null);
+    }, LIBRARY_ICONS_TIMEOUT_MS);
+    watchdog.unref?.();
+    child.stdout.on("data", (d) => chunks.push(d));
+    child.stderr.on("data", (d) => diagLog(`[CustomIcon] library-icons stderr: ${String(d).trim()}`));
+    child.on("error", (err) => {
+      diagLog(`[CustomIcon] library-icons spawn error: ${err.message}`);
+      finish(null);
+    });
+    child.on("close", () => {
+      const result = { count: 0, full: null, thumbnails: [] };
+      for (const line of Buffer.concat(chunks).toString("utf8").split(/\r?\n/)) {
+        if (line.startsWith("count ")) {
+          result.count = Math.max(0, Number(line.slice(6)) || 0);
+          result.thumbnails = Array.from({ length: result.count }, () => "");
+        } else if (line.startsWith("full data:image/png;base64,")) {
+          result.full = line.slice(5);
+        } else if (line.startsWith("thumb ")) {
+          const space = line.indexOf(" ", 6);
+          const at = Number(line.slice(6, space));
+          const data = line.slice(space + 1);
+          if (Number.isInteger(at) && at >= 0 && at < result.count && data.startsWith("data:image/png;base64,")) {
+            result.thumbnails[at] = data;
+          }
+        }
+      }
+      finish(result);
+    });
+  });
+}
+
+ipcMain.handle("choose-custom-icon-file", async () => {
   try {
     const targetWin = mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
+    const pictures = Object.keys(CUSTOM_ICON_IMAGE_MIME);
+    const libraries = [...CUSTOM_ICON_LIBRARY_EXTENSIONS, "lnk", "url"];
     const result = await dialog.showOpenDialog(targetWin, {
+      title: "Choose an icon",
       properties: ["openFile"],
       filters: [
-        { name: "Images", extensions: ["png", "jpg", "jpeg", "ico", "svg"] },
-        { name: "All Files", extensions: ["*"] },
+        { name: "Pictures, icons and programs", extensions: [...pictures, ...libraries] },
+        { name: "Pictures and icon files", extensions: pictures },
+        { name: "Programs and icon libraries", extensions: libraries },
+        { name: "All files (uses the file's own icon)", extensions: ["*"] },
       ],
     });
     if (result.canceled || result.filePaths.length === 0) return null;
-
-    const srcPath = result.filePaths[0];
-    const customIconsDir = path.join(app.getPath("userData"), "custom-icons");
-    if (!fs.existsSync(customIconsDir)) {
-      fs.mkdirSync(customIconsDir, { recursive: true });
-    }
-    const ext = path.extname(srcPath) || ".png";
-    const destPath = path.join(
-      customIconsDir,
-      `${crypto.randomUUID()}${ext}`,
-    );
-    fs.copyFileSync(srcPath, destPath);
-    return destPath;
+    return result.filePaths[0];
   } catch (e) {
-    diagLog(`[select-image] ${e.message}`);
+    diagLog(`[CustomIcon] choose: ${e.message}`);
     return null;
   }
 });
 
-// Delete a copied custom icon file (only if path is under userData/custom-icons).
-ipcMain.handle("remove-managed-custom-icon", async (_, urlOrPath) => {
+/**
+ * What a file offers as a custom icon:
+ *  - a picture: its bytes, for the renderer to decode and normalize;
+ *  - a program or icon library: every icon it holds as a thumbnail, plus the requested one full size;
+ *  - anything else: the icon Windows shows for it, already stored.
+ */
+ipcMain.handle("read-custom-icon-source", async (_event, source) => {
   try {
-    if (!urlOrPath || typeof urlOrPath !== "string") return;
-    let filePath = urlOrPath.trim();
-    if (filePath.startsWith("file:")) {
-      filePath = url.fileURLToPath(filePath);
+    const parsed = parseCustomIconSource(source);
+    if (!parsed) return { ok: false, error: "No file was given." };
+    const { filePath, index } = parsed;
+    if (!path.isAbsolute(filePath)) {
+      return { ok: false, error: "Use the full path to the file, such as C:\\Icons\\app.png." };
     }
-    filePath = path.resolve(filePath);
-    const customDir = path.resolve(path.join(app.getPath("userData"), "custom-icons"));
-    const rel = path.relative(customDir, filePath);
-    if (!rel || rel.startsWith("..") || path.isAbsolute(rel)) return;
-    if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+    let stat;
+    try {
+      stat = await fs.promises.stat(filePath);
+    } catch {
+      return { ok: false, error: `${path.basename(filePath)} was not found.` };
+    }
+    const extension = path.extname(filePath).slice(1).toLowerCase();
+
+    const mime = stat.isFile() ? CUSTOM_ICON_IMAGE_MIME[extension] : undefined;
+    if (mime) {
+      if (stat.size > CUSTOM_ICON_MAX_IMAGE_BYTES) {
+        return { ok: false, error: "That picture is larger than 16 MB." };
+      }
+      const bytes = await fs.promises.readFile(filePath);
+      return { ok: true, kind: "image", path: filePath, dataUrl: `data:${mime};base64,${bytes.toString("base64")}` };
+    }
+
+    if (stat.isFile() && CUSTOM_ICON_LIBRARY_EXTENSIONS.has(extension)) {
+      const listed = await runLibraryIcons(filePath, index, true);
+      if (listed && listed.count > 0) {
+        return {
+          ok: true,
+          kind: "library",
+          path: filePath,
+          index,
+          count: listed.count,
+          thumbnails: listed.thumbnails,
+          dataUrl: listed.full,
+        };
+      }
+      /** No icon resources of its own: Windows draws the generic program icon, and so do we. */
+    }
+
+    const ref = await getFileIconCached(filePath);
+    if (!ref) return { ok: false, error: `Windows has no icon for ${path.basename(filePath)}.` };
+    return { ok: true, kind: "shell", path: filePath, ref };
   } catch (e) {
-    diagLog(`[remove-managed-custom-icon] ${e.message}`);
+    diagLog(`[CustomIcon] read: ${e.message}`);
+    return { ok: false, error: "That file could not be read." };
+  }
+});
+
+/** One icon out of a program or library, at the largest size it carries. */
+ipcMain.handle("extract-library-icon", async (_event, filePath, index) => {
+  if (typeof filePath !== "string" || !path.isAbsolute(filePath) || !Number.isInteger(index)) return null;
+  const result = await runLibraryIcons(filePath, index, false);
+  return result?.full ?? null;
+});
+
+/** A finished, normalized PNG from the renderer, into the icon store. */
+ipcMain.handle("store-custom-icon", (_event, dataUrl) => {
+  if (
+    typeof dataUrl !== "string" ||
+    !dataUrl.startsWith("data:image/png;base64,") ||
+    dataUrl.length > CUSTOM_ICON_MAX_PNG_CHARS
+  ) {
+    return null;
+  }
+  try {
+    return iconStore.putDataUrl(dataUrl);
+  } catch (e) {
+    diagLog(`[CustomIcon] store: ${e.message}`);
+    return null;
   }
 });
 
@@ -8828,7 +9008,9 @@ const ICON_CACHE_MAX_ENTRIES = 600;
 
 /**
  * Removes the native icons already written into the config on disk, so healing resolves them again.
- * Web shortcuts (`http…`) keep their favicon: they do not come from the Windows pipeline.
+ * Web shortcuts (`http…`) keep their favicon: they do not come from the Windows pipeline. Neither
+ * does a custom icon (`iconSource: "custom"`) — the user chose it, and healing would never bring
+ * it back.
  */
 function stripStaleNativeIcons(configFilePath) {
   let removed = 0;
@@ -8840,7 +9022,7 @@ function stripStaleNativeIcons(configFilePath) {
     const walk = (items) => {
       if (!Array.isArray(items)) return;
       for (const item of items) {
-        if (item && item.customIconUrl && !isWebShortcut(item)) {
+        if (item && item.customIconUrl && !isWebShortcut(item) && item.iconSource !== "custom") {
           delete item.customIconUrl;
           removed += 1;
         }
@@ -9385,7 +9567,14 @@ const enqueueIconExtraction = (job) =>
 /** Deduplicates concurrent requests for the same target. */
 const inFlightIconRequests = new Map();
 
-ipcMain.handle("get-file-icon", async (event, filePath) => {
+ipcMain.handle("get-file-icon", (_event, filePath) => getFileIconCached(filePath));
+
+/**
+ * The icon Windows shows for a target, from the cache when there is one. Shared by `get-file-icon`
+ * and by the custom icon picker, which falls back to it for a file that is neither a picture nor
+ * an icon library (a `.lnk`, a folder, a document).
+ */
+async function getFileIconCached(filePath) {
   try {
     if (!filePath || typeof filePath !== "string") {
       diagLog(`[IconRequest] Aborted: Invalid filePath: ${typeof filePath}`);
@@ -9424,7 +9613,7 @@ ipcMain.handle("get-file-icon", async (event, filePath) => {
     console.error("Critical error in get-file-icon:", error);
     return null;
   }
-});
+}
 
 async function extractIconUncached(filePath) {
   try {

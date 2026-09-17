@@ -25,9 +25,24 @@ export interface AppItem {
   type?: "app" | "folder";
   label: string;
   iconName: string;
-  iconSource?: "lucide" | "native"; // New property: 'lucide' for vector, 'native' for custom/extracted image
+  /**
+   * Where the icon comes from.
+   * 'lucide' — the `iconName` glyph.
+   * 'native' — a bitmap Rovyl found by itself (the program's icon, the site's favicon), kept up to
+   *   date by the healing pass and re-extracted when the pipeline changes.
+   * 'custom' — the user chose it: the picture in `customIconUrl`, or, with none, the `iconName`
+   *   glyph in place of the program's own icon. Nothing automatic ever replaces it.
+   */
+  iconSource?: "lucide" | "native" | "custom";
   /** `rovyl-icon://` reference to a file in userData, an `https:` favicon, or a legacy `data:` URL. */
-  customIconUrl?: string; // Supports base64 images or URLs
+  customIconUrl?: string;
+  /**
+   * The file a custom picture was taken from, as Windows writes an icon location:
+   * `C:\Icons\app.png`, or `C:\Windows\System32\shell32.dll,4` for the fifth icon in a library.
+   * Only there so the workspace file can name it; the picture itself is `customIconUrl`. Absent
+   * for a picture that was pasted.
+   */
+  customIconFile?: string;
   direction?: string;
   command: string;
   /**
@@ -125,7 +140,35 @@ export interface Workspace {
   color?: string; // Optional project/workspace color
   /** Lucide icon on the first wheel when `workspaceSwitchMode === 'picker'`. Omitted → Layers. */
   pickerIconName?: string;
+  /**
+   * A picture chosen for the workspace, drawn instead of `pickerIconName` — a `rovyl-icon://`
+   * reference, like `AppItem.customIconUrl`. The glyph stays as the fallback if the file is gone.
+   */
+  pickerIconUrl?: string;
+  /** Where that picture came from — see `AppItem.customIconFile`. */
+  pickerIconFile?: string;
 }
+
+/**
+ * What a file offers as a custom icon, as main reads it (`readCustomIconSource`).
+ * `image` is raw bytes still to be normalized; `library` is every icon a program or icon library
+ * holds, with the requested one at full size; `shell` is the icon Windows draws for anything else,
+ * already stored.
+ */
+export type CustomIconSource =
+  | { ok: true; kind: "image"; path: string; dataUrl: string }
+  | {
+      ok: true;
+      kind: "library";
+      path: string;
+      index: number;
+      count: number;
+      /** One per icon, in the file's order; an empty string where one could not be drawn. */
+      thumbnails: string[];
+      dataUrl: string | null;
+    }
+  | { ok: true; kind: "shell"; path: string; ref: string }
+  | { ok: false; error: string };
 
 export const CLOCK_HUD_POSITIONS = [
   'top-left',
@@ -526,7 +569,8 @@ export interface ElectronAPI {
   /**
    * Side of the radial's box (px) + whether the position is fixed — the main sizes the menu window
    * with this. `fullBleed` overrides the box entirely: the dimming reaches the edge, so the window
-   * has to be the monitor (see `radialScrimNeedsFullBleed`).
+   * takes the screen (see `radialScrimNeedsFullBleed`). The screen meaning the work area — main
+   * stops the window at the taskbar, which it would otherwise cover with the scrim.
    */
   setRadialViewport?: (payload: {
     size: number;
@@ -589,9 +633,14 @@ export interface ElectronAPI {
    */
   selectFile: (options?: { mode?: "executable" | "any" }) => Promise<string | null>;
   selectFolder: () => Promise<string | null>;
-  selectImage: () => Promise<string | null>;
-  /** Removes a file only if it lives under userData/custom-icons (safe no-op otherwise). */
-  removeManagedCustomIcon: (urlOrPath?: string) => Promise<void>;
+  /** The open dialog for a custom icon: pictures, icon files, programs, or any file's own icon. */
+  chooseCustomIconFile?: () => Promise<string | null>;
+  /** Accepts `path` or `path,index`, with `%VARIABLES%`. */
+  readCustomIconSource?: (source: string) => Promise<CustomIconSource>;
+  /** One icon from a program or icon library, full size, as a PNG data URL. */
+  extractLibraryIcon?: (filePath: string, index: number) => Promise<string | null>;
+  /** A normalized PNG data URL in, its `rovyl-icon://` reference out. */
+  storeCustomIcon?: (pngDataUrl: string) => Promise<string | null>;
   getInstalledApps: (forceRefresh?: boolean) => Promise<any[]>;
   getOnboardingApps: () => Promise<any[]>;
   getStartupApps: () => Promise<any[]>;

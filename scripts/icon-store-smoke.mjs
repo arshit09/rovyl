@@ -153,6 +153,16 @@ try {
     assert.deepEqual(copy, original);
   });
 
+  check("a workspace's own picture is stored and inlined like a shortcut's", () => {
+    const blob = { workspaces: [{ id: "w", pickerIconName: "Layers", pickerIconUrl: PNG_B, apps: [] }] };
+    store.externalizeBlob(blob);
+    const ref = blob.workspaces[0].pickerIconUrl;
+    assert.ok(store.isIconRef(ref), `pickerIconUrl stayed inline: ${String(ref).slice(0, 40)}`);
+    assert.equal(blob.workspaces[0].pickerIconName, "Layers", "the glyph beside it is untouched");
+    assert.equal(store.inlineBlob(blob).inlined, 1);
+    assert.equal(blob.workspaces[0].pickerIconUrl, PNG_B);
+  });
+
   check("a reference whose file is gone is dropped, not left dangling", () => {
     const ref = store.putDataUrl(PNG_B);
     unlinkSync(store.resolvePath(ref));

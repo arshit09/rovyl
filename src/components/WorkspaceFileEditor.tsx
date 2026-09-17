@@ -3,11 +3,13 @@ import { AlertTriangle, Check, Copy, HelpCircle, RotateCcw } from 'lucide-react'
 import type { AppItem, Workspace } from '../types';
 import { resolveWebsiteIconFields } from '../siteFavicon';
 import { openExternalSiteUrl } from '../utils/openExternalSiteUrl';
+import { describeIconFile, importIconFile } from '../utils/customIcon';
 import {
   WORKSPACE_FILE_DOCS_URL,
   applyWorkspaceFile,
   parseWorkspaceFile,
   workspaceToFileText,
+  type PictureRequest,
   type WorkspaceFileError,
 } from '../utils/workspaceFile';
 
@@ -20,9 +22,16 @@ export interface WorkspaceFileEditorHandle {
 }
 
 /** Patches one shortcut, wherever in the group tree it sits. */
-function patchById(items: AppItem[], id: string, patch: Partial<AppItem>): AppItem[] {
+function patchById(
+  items: AppItem[],
+  id: string,
+  patch: Partial<AppItem> | ((item: AppItem) => Partial<AppItem> | null),
+): AppItem[] {
   return items.map((item) => {
-    if (item.id === id) return { ...item, ...patch };
+    if (item.id === id) {
+      const next = typeof patch === 'function' ? patch(item) : patch;
+      return next ? { ...item, ...next } : item;
+    }
     if (item.children?.length) return { ...item, children: patchById(item.children, id, patch) };
     return item;
   });
@@ -74,10 +83,40 @@ export const WorkspaceFileEditor = forwardRef<WorkspaceFileEditorHandle, {
         } catch {
           /* the glyph stays; the wheel draws that */
         }
-        if (patch) onApply((current) => ({ apps: patchById(current.apps, item.id, patch!) }));
+        if (!patch) return;
+        /** Not onto a shortcut that has been given an icon of its own while this was fetching. */
+        onApply((current) => ({
+          apps: patchById(current.apps, item.id, (now) =>
+            now.iconSource === 'custom' || now.customIconUrl ? null : patch),
+        }));
       })();
     }
   }, [onApply]);
+
+  /**
+   * The pictures `iconFile` names. Each lands only where that same file is still named: a second
+   * apply, or an undo, may have moved on while PowerShell was reading.
+   */
+  const fetchPictures = useCallback((requests: PictureRequest[]) => {
+    for (const request of requests) {
+      void importIconFile(request.file).then(
+        (url) => {
+          if (request.itemId) {
+            onApply((current) => ({
+              apps: patchById(current.apps, request.itemId!, (item) =>
+                item.customIconFile === request.file ? { customIconUrl: url } : null),
+            }));
+          } else {
+            onApply((current) => (current.pickerIconFile === request.file ? { pickerIconUrl: url } : {}));
+          }
+        },
+        (error: unknown) => {
+          const reason = error instanceof Error ? error.message : String(error);
+          showToast(`Icon ${describeIconFile(request.file)} not loaded: ${reason}`);
+        },
+      );
+    }
+  }, [onApply, showToast]);
 
   const jumpTo = useCallback((at: WorkspaceFileError) => {
     const area = textRef.current;
@@ -100,15 +139,18 @@ export const WorkspaceFileEditor = forwardRef<WorkspaceFileEditorHandle, {
     }
     setError(null);
     const before = workspace;
-    const { workspace: next, needsIcon } = applyWorkspaceFile(workspace, result.workspace, { isActive });
+    const { workspace: next, needsIcon, needsPicture } = applyWorkspaceFile(workspace, result.workspace, { isActive });
     onApply(() => ({
       name: next.name,
       enabled: next.enabled,
       pickerIconName: next.pickerIconName,
+      pickerIconUrl: next.pickerIconUrl,
+      pickerIconFile: next.pickerIconFile,
       color: next.color,
       apps: next.apps,
     }));
     fetchIcons(needsIcon);
+    fetchPictures(needsPicture);
     /** The canonical text: comments and spacing are not stored, so the draft settles on what was. */
     const canonical = workspaceToFileText(next);
     setDraft(canonical);
@@ -118,12 +160,14 @@ export const WorkspaceFileEditor = forwardRef<WorkspaceFileEditorHandle, {
         name: before.name,
         enabled: before.enabled,
         pickerIconName: before.pickerIconName,
+        pickerIconUrl: before.pickerIconUrl,
+        pickerIconFile: before.pickerIconFile,
         color: before.color,
         apps: before.apps,
       }));
     });
     return true;
-  }, [draft, workspace, isActive, onApply, fetchIcons, showToast]);
+  }, [draft, workspace, isActive, onApply, fetchIcons, fetchPictures, showToast]);
 
   useImperativeHandle(ref, () => ({
     flush: () => {
@@ -234,7 +278,7 @@ export const WorkspaceFileEditor = forwardRef<WorkspaceFileEditorHandle, {
         </button>
       ) : (
         <p className="zs-file-hint">
-          Ctrl+S applies. Paste a file someone shared to replace this workspace's contents; icons for new shortcuts are fetched after applying.
+          Ctrl+S applies. Paste a file someone shared to replace this workspace's contents; icons for new shortcuts and new iconFile pictures are fetched after applying.
         </p>
       )}
     </div>

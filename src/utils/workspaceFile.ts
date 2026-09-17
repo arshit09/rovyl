@@ -9,7 +9,8 @@ import { ZENITH_LAUNCHER_DOCS_URL } from '../constants/siteUrls';
  * and nothing on another machine: ids, `rovyl-icon://` references into this profile's icon store,
  * the positional hotkey. The file carries only what somebody would type, so it can be pasted into
  * a friend's Rovyl or kept in a dotfiles repo, and `applyWorkspaceFile` carries the hidden fields
- * across from the shortcuts the text still names.
+ * across from the shortcuts the text still names. A custom picture is named by the file it came
+ * from (`iconFile`), never by its reference; one with no file behind it (pasted) is a hidden field.
  *
  * The syntax is JSON with comments and trailing commas (what VS Code calls JSONC), parsed here by
  * hand for one reason: an error has to say WHICH LINE. `JSON.parse` in this Chromium reports a
@@ -18,7 +19,7 @@ import { ZENITH_LAUNCHER_DOCS_URL } from '../constants/siteUrls';
  * The reference page is `website/docs.html`; the two describe the same rules and move together.
  */
 
-export const WORKSPACE_FILE_DOCS_URL = `${ZENITH_LAUNCHER_DOCS_URL}#workspace-file`;
+export const WORKSPACE_FILE_DOCS_URL = ZENITH_LAUNCHER_DOCS_URL;
 
 export type ShortcutFileType = 'app' | 'url' | 'folder' | 'file' | 'command' | 'group';
 
@@ -43,17 +44,30 @@ const SHORTCUT_DESCRIPTIONS: Record<ShortcutFileType, string> = {
   group: 'Group',
 };
 
-const WORKSPACE_KEYS = ['name', 'icon', 'color', 'enabled', 'shortcuts'] as const;
+const WORKSPACE_KEYS = ['name', 'icon', 'iconFile', 'color', 'enabled', 'shortcuts'] as const;
 
 /** Which keys each kind admits. Anything else is an error, because a typo that is ignored is a setting that silently does nothing. */
 const SHORTCUT_KEYS: Record<ShortcutFileType, readonly string[]> = {
-  app: ['type', 'name', 'icon', 'target', 'launch', 'recents', 'terminalForRecents', 'terminalCommands', 'openTerminal', 'workingDirectory'],
-  url: ['type', 'name', 'icon', 'target', 'launch'],
-  folder: ['type', 'name', 'icon', 'target'],
-  file: ['type', 'name', 'icon', 'target'],
-  command: ['type', 'name', 'icon', 'target', 'shell', 'window', 'workingDirectory'],
-  group: ['type', 'name', 'icon', 'items'],
+  app: ['type', 'name', 'icon', 'iconFile', 'target', 'launch', 'recents', 'terminalForRecents', 'terminalCommands', 'openTerminal', 'workingDirectory'],
+  url: ['type', 'name', 'icon', 'iconFile', 'target', 'launch'],
+  folder: ['type', 'name', 'icon', 'iconFile', 'target'],
+  file: ['type', 'name', 'icon', 'iconFile', 'target'],
+  command: ['type', 'name', 'icon', 'iconFile', 'target', 'shell', 'window', 'workingDirectory'],
+  group: ['type', 'name', 'icon', 'iconFile', 'items'],
 };
+
+/**
+ * The kinds that find a picture by themselves — the program's icon, the file type's, the favicon.
+ * For these a named glyph is a choice that replaces that picture; for the others it is simply the
+ * icon.
+ */
+const FINDS_OWN_ICON: ReadonlySet<ShortcutFileType> = new Set(['app', 'file', 'url']);
+
+/** An absolute path, a UNC path, or one that starts with a `%VARIABLE%`; an icon number may follow. */
+const ICON_FILE_PATTERN = /^(%[^%\\/]+%|[A-Za-z]:[\\/]|\\\\)[^\r\n]*$/;
+
+const sameIconFile = (a: string | undefined, b: string | undefined) =>
+  Boolean(a && b) && a!.trim().toLowerCase() === b!.trim().toLowerCase();
 
 const MAX_GROUP_DEPTH = 8;
 
@@ -76,7 +90,13 @@ function shortcutToFile(item: AppItem): Record<string, unknown> {
   const type = shortcutKind(item);
   const out: Record<string, unknown> = { type, name: item.label ?? '' };
   const icon = item.iconName?.trim();
-  if (icon && icon !== SHORTCUT_DEFAULT_ICONS[type]) out.icon = icon;
+  /**
+   * On an app, a file or a site the glyph is only written when the user chose it: the automatic
+   * picture is what that shortcut shows, and a glyph line would read back as a choice.
+   */
+  const glyphIsShown = !FINDS_OWN_ICON.has(type) || item.iconSource === 'custom';
+  if (icon && icon !== SHORTCUT_DEFAULT_ICONS[type] && glyphIsShown) out.icon = icon;
+  if (item.iconSource === 'custom' && item.customIconFile?.trim()) out.iconFile = item.customIconFile.trim();
 
   if (type === 'group') {
     out.items = (item.children ?? []).map(shortcutToFile);
@@ -106,6 +126,7 @@ function shortcutToFile(item: AppItem): Record<string, unknown> {
 export function workspaceToFileText(workspace: Workspace): string {
   const body: Record<string, unknown> = { name: workspace.name };
   if (workspace.pickerIconName?.trim()) body.icon = workspace.pickerIconName.trim();
+  if (workspace.pickerIconFile?.trim()) body.iconFile = workspace.pickerIconFile.trim();
   if (workspace.color) body.color = workspace.color;
   body.enabled = workspace.enabled !== false;
   body.shortcuts = (workspace.apps ?? []).map(shortcutToFile);
@@ -129,6 +150,7 @@ export type WorkspaceFileResult =
 export interface WorkspaceFileData {
   name: string;
   icon?: string;
+  iconFile?: string;
   color?: string;
   enabled: boolean;
   shortcuts: ShortcutFileData[];
@@ -138,6 +160,7 @@ export interface ShortcutFileData {
   type: ShortcutFileType;
   name: string;
   icon?: string;
+  iconFile?: string;
   target: string;
   launch?: 'normal' | 'reuse' | 'prewarm';
   recents?: boolean;
@@ -316,6 +339,8 @@ function validateWorkspace(root: Node): WorkspaceFileData {
   const name = requireString(root, 'name', 'The workspace');
   if (!name.trim()) throw new FileError('"name" cannot be empty.', valueOffset(root, 'name'));
   const icon = optionalString(root, 'icon');
+  if (icon) checkGlyphName(root, icon);
+  const iconFile = optionalIconFile(root);
   const color = optionalString(root, 'color');
   if (color !== undefined && color !== '' && !/^#[0-9a-fA-F]{3,8}$/.test(color)) {
     throw new FileError('"color" must be a hex colour such as "#3b82f6".', valueOffset(root, 'color'));
@@ -325,7 +350,7 @@ function validateWorkspace(root: Node): WorkspaceFileData {
   const listNode = child(root, 'shortcuts');
   if (!listNode) throw new FileError('A workspace needs a "shortcuts" list, even an empty one: "shortcuts": [].', root.offset);
   const shortcuts = validateShortcutList(listNode, 'shortcuts', 0);
-  return { name, icon: icon || undefined, color: color || undefined, enabled, shortcuts };
+  return { name, icon: icon || undefined, iconFile, color: color || undefined, enabled, shortcuts };
 }
 
 function validateShortcutList(node: Node, where: string, depth: number): ShortcutFileData[] {
@@ -350,14 +375,13 @@ function validateShortcut(node: Node, where: string, depth: number): ShortcutFil
 
   const name = requireString(node, 'name', 'A shortcut');
   const icon = optionalString(node, 'icon') || undefined;
-  if (icon !== undefined && !/^[A-Za-z][A-Za-z0-9]*$/.test(icon)) {
-    throw new FileError('"icon" is a Lucide icon name in PascalCase, such as "Rocket" or "FolderGit2".', valueOffset(node, 'icon'));
-  }
+  if (icon !== undefined) checkGlyphName(node, icon);
+  const iconFile = optionalIconFile(node);
 
   if (type === 'group') {
     const items = child(node, 'items');
     if (!items) throw new FileError('A group needs an "items" list of shortcuts.', node.offset);
-    return { type, name, icon, target: '', items: validateShortcutList(items, `${where}.items`, depth + 1) };
+    return { type, name, icon, iconFile, target: '', items: validateShortcutList(items, `${where}.items`, depth + 1) };
   }
 
   let target = requireString(node, 'target', `A "${type}" shortcut`).trim();
@@ -374,7 +398,7 @@ function validateShortcut(node: Node, where: string, depth: number): ShortcutFil
     }
   }
 
-  const out: ShortcutFileData = { type, name, icon, target };
+  const out: ShortcutFileData = { type, name, icon, iconFile, target };
   if (type === 'app' || type === 'url') {
     const allowed = type === 'url' ? ['normal', 'reuse'] as const : ['normal', 'reuse', 'prewarm'] as const;
     out.launch = optionalEnum(node, 'launch', allowed);
@@ -399,6 +423,28 @@ function validateShortcut(node: Node, where: string, depth: number): ShortcutFil
     out.workingDirectory = optionalString(node, 'workingDirectory')?.trim() || undefined;
   }
   return out;
+}
+
+function checkGlyphName(node: Node, icon: string) {
+  if (/^[A-Za-z][A-Za-z0-9]*$/.test(icon)) return;
+  throw new FileError(
+    /[\\/.]/.test(icon)
+      ? '"icon" is a glyph name such as "Rocket". For a picture or a program\'s icon, use "iconFile".'
+      : '"icon" is a Lucide icon name in PascalCase, such as "Rocket" or "FolderGit2".',
+    valueOffset(node, 'icon'),
+  );
+}
+
+function optionalIconFile(node: Node): string | undefined {
+  const value = optionalString(node, 'iconFile')?.trim();
+  if (!value) return undefined;
+  if (!ICON_FILE_PATTERN.test(value)) {
+    throw new FileError(
+      '"iconFile" is the full path to a picture, an .ico or a program, such as "C:\\\\Icons\\\\app.png" or "%SystemRoot%\\\\System32\\\\shell32.dll,4".',
+      valueOffset(node, 'iconFile'),
+    );
+  }
+  return value;
 }
 
 function expectObject(node: Node, message: string) {
@@ -489,32 +535,72 @@ function indexExisting(items: AppItem[], pool = new Map<string, AppItem[]>()): M
   return pool;
 }
 
-function buildItem(data: ShortcutFileData, pool: Map<string, AppItem[]>, fresh: AppItem[]): AppItem {
+/** A picture the file names that is not the one already stored for it — the caller imports it. */
+export interface PictureRequest {
+  /** The shortcut that receives it; absent for the workspace's own icon. */
+  itemId?: string;
+  file: string;
+}
+
+interface MergeState {
+  pool: Map<string, AppItem[]>;
+  /** New apps, files and sites, still without the picture they find by themselves. */
+  needsIcon: AppItem[];
+  needsPicture: PictureRequest[];
+}
+
+function buildItem(data: ShortcutFileData, state: MergeState): AppItem {
   const key = matchKey(data.type, data.type === 'group' ? data.name : data.target);
-  const previous = pool.get(key)?.shift();
-  const iconName = data.icon ?? SHORTCUT_DEFAULT_ICONS[data.type];
+  const previous = state.pool.get(key)?.shift();
+  const id = previous?.id ?? newId();
+  const defaultIcon = SHORTCUT_DEFAULT_ICONS[data.type];
+  const findsOwnIcon = FINDS_OWN_ICON.has(data.type);
+  const wasCustom = previous?.iconSource === 'custom';
+  let iconName = data.icon ?? defaultIcon;
+
+  /** The icon rules are spelled out on `applyWorkspaceFile`. */
+  let icon: Pick<AppItem, 'iconSource' | 'customIconUrl' | 'customIconFile'>;
+  let needsAutomaticIcon = false;
+  if (data.iconFile) {
+    const kept = wasCustom && Boolean(previous!.customIconUrl) && sameIconFile(previous!.customIconFile, data.iconFile);
+    icon = { iconSource: 'custom', customIconFile: data.iconFile, ...(kept ? { customIconUrl: previous!.customIconUrl } : {}) };
+    if (!kept) state.needsPicture.push({ itemId: id, file: data.iconFile });
+  } else if (wasCustom && previous!.customIconUrl && !previous!.customIconFile) {
+    icon = { iconSource: 'custom', customIconUrl: previous!.customIconUrl };
+  } else if (findsOwnIcon && data.icon !== undefined && data.icon !== defaultIcon) {
+    icon = { iconSource: 'custom' };
+  } else if (findsOwnIcon && previous && !wasCustom) {
+    /** A bitmap belongs to the target it was extracted from; a matched shortcut still has that target. */
+    icon = { iconSource: previous.iconSource, ...(previous.customIconUrl ? { customIconUrl: previous.customIconUrl } : {}) };
+    /** Not written to the file, so not the file's to change: it is only the fallback under the picture. */
+    iconName = previous.iconName;
+  } else if (findsOwnIcon) {
+    /** New, or back from a custom icon: the picture it finds by itself is fetched after applying. */
+    icon = { iconSource: 'lucide' };
+    needsAutomaticIcon = true;
+  } else {
+    icon = { iconSource: previous && !wasCustom ? previous.iconSource : 'lucide' };
+  }
 
   if (data.type === 'group') {
     return {
-      id: previous?.id ?? newId(),
+      id,
       type: 'folder',
       label: data.name,
       iconName,
-      iconSource: previous ? previous.iconSource : 'lucide',
+      ...icon,
       command: '',
       description: previous?.description ?? SHORTCUT_DESCRIPTIONS.group,
-      children: (data.items ?? []).map((entry) => buildItem(entry, pool, fresh)),
+      children: (data.items ?? []).map((entry) => buildItem(entry, state)),
     };
   }
 
   const item: AppItem = {
-    id: previous?.id ?? newId(),
+    id,
     type: 'app',
     label: data.name,
     iconName,
-    /** A bitmap belongs to the target it was extracted from; a matched shortcut still has that target. */
-    iconSource: previous ? previous.iconSource : 'lucide',
-    ...(previous?.customIconUrl ? { customIconUrl: previous.customIconUrl } : {}),
+    ...icon,
     command: data.target,
     commandType: data.type,
     description: previous?.description ?? SHORTCUT_DESCRIPTIONS[data.type],
@@ -529,22 +615,38 @@ function buildItem(data: ShortcutFileData, pool: Map<string, AppItem[]>, fresh: 
     item.commandShell = data.shell ?? 'powershell';
     item.commandWindow = data.window ?? 'open';
   }
-  if (!previous && (data.type === 'app' || data.type === 'file' || data.type === 'url')) fresh.push(item);
+  if (needsAutomaticIcon) state.needsIcon.push(item);
   return item;
 }
 
 /**
- * The stored workspace the file describes, plus the shortcuts that are new to it — those have no
- * bitmap yet, and the caller fetches one the same way the add forms do.
+ * The stored workspace the file describes, plus the icons still to fetch: `needsIcon` are the
+ * shortcuts that have to find their own picture (the caller does it the way the add forms do), and
+ * `needsPicture` the `iconFile`s that are not already stored.
+ *
+ * Icons, for the workspace and for every shortcut:
+ *  - `iconFile` is the picture. The stored one is kept only if it came from that same file.
+ *  - no `iconFile`: a picture that was pasted is kept, since the file has no way to name it; any
+ *    other custom picture goes.
+ *  - on an app, a file or a site, `icon` naming a glyph other than the default replaces the
+ *    picture the shortcut finds by itself; leaving it out gives that picture back.
  */
 export function applyWorkspaceFile(
   current: Workspace,
   data: WorkspaceFileData,
   options: { isActive: boolean },
-): { workspace: Workspace; needsIcon: AppItem[] } {
-  const pool = indexExisting(current.apps ?? []);
-  const needsIcon: AppItem[] = [];
-  const apps = data.shortcuts.map((entry) => buildItem(entry, pool, needsIcon));
+): { workspace: Workspace; needsIcon: AppItem[]; needsPicture: PictureRequest[] } {
+  const state: MergeState = { pool: indexExisting(current.apps ?? []), needsIcon: [], needsPicture: [] };
+  const apps = data.shortcuts.map((entry) => buildItem(entry, state));
+
+  let pickerIconUrl: string | undefined;
+  if (data.iconFile) {
+    if (current.pickerIconUrl && sameIconFile(current.pickerIconFile, data.iconFile)) pickerIconUrl = current.pickerIconUrl;
+    else state.needsPicture.push({ file: data.iconFile });
+  } else if (current.pickerIconUrl && !current.pickerIconFile) {
+    pickerIconUrl = current.pickerIconUrl;
+  }
+
   const workspace: Workspace = {
     ...current,
     name: data.name.trim(),
@@ -555,8 +657,10 @@ export function applyWorkspaceFile(
      * missing key would leave the old icon in place after the line naming it was removed.
      */
     pickerIconName: data.icon,
+    pickerIconUrl,
+    pickerIconFile: data.iconFile,
     color: data.color,
     apps,
   };
-  return { workspace, needsIcon };
+  return { workspace, needsIcon: state.needsIcon, needsPicture: state.needsPicture };
 }

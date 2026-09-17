@@ -106,7 +106,11 @@ export function useIconHealing({
         list.forEach(item => {
           const web = isWebShortcutItem(item);
           const iconStr = String(item.customIconUrl ?? '').trim();
-          if (web && item.command?.trim()) {
+          /**
+           * A custom icon, picture or glyph, is never healed: a favicon arriving on top of it would
+           * undo the user's choice. The native branch below already requires `'native'`.
+           */
+          if (web && item.iconSource !== 'custom' && item.command?.trim()) {
             // Missing icon, or only a remote URL (renderer won't show it → migrate to a data URL)
             if ((!iconStr || isRemoteIconUrl(item.customIconUrl)) && canAttempt(item)) {
               missing.push(item);
@@ -151,6 +155,7 @@ export function useIconHealing({
               const iconStr = String(item.customIconUrl ?? '').trim();
               const webNeedsIcon =
                 web &&
+                item.iconSource !== 'custom' &&
                 item.command?.trim() &&
                 (!iconStr || isRemoteIconUrl(item.customIconUrl)) &&
                 canAttempt(item);
@@ -280,8 +285,13 @@ export function useIconHealing({
           let touched = 0;
           const apply = (items: AppItem[]): AppItem[] =>
             items.map((item) => {
-              /** No icon, or a remote URL the renderer won't show: both cases qualify. */
-              const stale = !item.customIconUrl || isRemoteIconUrl(item.customIconUrl);
+              /**
+               * No icon, or a remote URL the renderer won't show: both cases qualify. An icon the
+               * user chose while this pass was running does not, whatever it looks like.
+               */
+              const stale =
+                item.iconSource !== 'custom' &&
+                (!item.customIconUrl || isRemoteIconUrl(item.customIconUrl));
               const patch = item.id ? resolved.get(item.id) : undefined;
               const next: AppItem = patch && stale ? { ...item, ...patch } : { ...item };
               if (patch && stale) touched += 1;

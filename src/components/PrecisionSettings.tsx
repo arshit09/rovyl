@@ -23,6 +23,7 @@ import {
   FolderOpen,
   Globe2,
   GripVertical,
+  Image as ImageGlyph,
   Loader2,
   AlertTriangle,
   Braces,
@@ -35,6 +36,7 @@ import {
   Search,
   Palette,
   Settings,
+  Shapes,
   Shield,
   Square,
   SquareStack,
@@ -50,7 +52,6 @@ import { DEFAULT_UI_CONFIG } from '../defaults';
 import {
   DOCK_GAP_MAX,
   DOCK_GAP_MIN,
-  DOCK_POSITIONS,
   DOCK_POSITION_LABELS,
   SHORTCUT_DOCK_ICON_MAX,
   SHORTCUT_DOCK_ICON_MIN,
@@ -58,6 +59,9 @@ import {
   STATUS_DOCK_ICON_MIN,
   normalizeShortcutDock,
   normalizeStatusDock,
+  shortcutDockIsActive,
+  statusDockIsActive,
+  type DockPosition,
 } from '../utils/screenDocks';
 import { getIcon } from '../iconMap';
 import { resolveWebsiteIconFields } from '../siteFavicon';
@@ -65,6 +69,8 @@ import { hostLabelFromUrl, looksFetchable, normalizeSiteUrl, resolveWebsiteTitle
 import { SmartIcon } from './SmartIcon';
 import { Collapse, isRevealScrolling } from './Collapse';
 import { IconPicker } from './IconPicker';
+import { CustomIconPanel } from './CustomIconPanel';
+import { describeIconFile, type CustomIconPick } from '../utils/customIcon';
 import { RovylLogo } from './RovylLogo';
 import '../fonts-display.css';
 import { NativeAppIcon, useInstalledApps, clearInstalledAppsMemory, type InstalledApp } from './installedApps';
@@ -72,6 +78,7 @@ import { radialCrowding } from '../utils/workspaceRadial';
 import { startMenuAppIdToLaunchCommand } from '../utils/windowsLaunchCommand';
 import { WheelPreview } from './WheelPreview';
 import { DockShortcutsManager } from './DockShortcuts';
+import { DockPositionPicker } from './DockPositionPicker';
 import { WorkspaceFileEditor, type WorkspaceFileEditorHandle } from './WorkspaceFileEditor';
 import {
   BACK_KEY_OFF,
@@ -156,7 +163,7 @@ interface SettingItem {
   group: string;
   title: string;
   description?: string;
-  kind: 'bool' | 'range' | 'segmented' | 'select' | 'open' | 'action' | 'color';
+  kind: 'bool' | 'range' | 'segmented' | 'select' | 'dockPosition' | 'open' | 'action' | 'color';
   enabled?: boolean;
   value?: string;
   min?: number;
@@ -166,6 +173,8 @@ interface SettingItem {
   format?: (value: number) => string;
   choices?: Array<{ value: string; label: string; hint?: string }>;
   current?: string;
+  /** `dockPosition` only: the other dock's region, drawn faint so a shared corner is a choice. */
+  occupied?: { position: DockPosition; label: string };
   /**
    * Extra words the search box matches, beyond title/description/group.
    *
@@ -1229,14 +1238,18 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
           },
           {
             key: 'shortcutDock-position', group: 'Shortcut dock', title: 'Where it sits',
-            description: 'The corner or edge the strip is placed against. The wheel opens over the whole screen while a dock is on, so the corner is a real one.',
-            /** A select, not a segmented control: six region names is far wider than the column. */
-            kind: 'select' as const,
+            description: 'Pick the corner or edge on the screen below. The wheel opens over the whole screen while a dock is on — everything but the taskbar — so the corner is a real one.',
+            keywords: 'corner edge top bottom left right center centre place position move',
+            /**
+             * The screen itself, not a list of six region names. A dropdown made the user translate
+             * "Bottom center" into a place and then trust that they had; the picture is the place.
+             */
+            kind: 'dockPosition' as const,
             current: shortcutDock.position,
-            choices: DOCK_POSITIONS.map((position) => ({
-              value: position,
-              label: DOCK_POSITION_LABELS[position],
-            })),
+            value: DOCK_POSITION_LABELS[shortcutDock.position],
+            occupied: statusDockIsActive(statusDock)
+              ? { position: statusDock.position, label: 'System dock' }
+              : undefined,
             onChange: (value: number | string) =>
               updateShortcutDock({ position: value as typeof shortcutDock.position }),
           },
@@ -1268,13 +1281,14 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
         ...(statusDock.enabled ? ([
           {
             key: 'statusDock-position', group: 'System dock', title: 'Where it sits',
-            description: 'The corner or edge the readouts are placed against.',
-            kind: 'select' as const,
+            description: 'Pick the corner or edge on the screen below.',
+            keywords: 'corner edge top bottom left right center centre place position move',
+            kind: 'dockPosition' as const,
             current: statusDock.position,
-            choices: DOCK_POSITIONS.map((position) => ({
-              value: position,
-              label: DOCK_POSITION_LABELS[position],
-            })),
+            value: DOCK_POSITION_LABELS[statusDock.position],
+            occupied: shortcutDockIsActive(shortcutDock)
+              ? { position: shortcutDock.position, label: 'Shortcut dock' }
+              : undefined,
             onChange: (value: number | string) =>
               updateStatusDock({ position: value as typeof statusDock.position }),
           },
@@ -1842,7 +1856,7 @@ function SettingRow({
 
   return (
     <div
-      className={`zs-row${item.kind === 'range' ? ' is-slider' : ''}${item.kind === 'open' ? ' is-openable' : ''}`
+      className={`zs-row${item.kind === 'range' ? ' is-slider' : ''}${item.kind === 'dockPosition' ? ' is-picker' : ''}${item.kind === 'open' ? ' is-openable' : ''}`
         + `${reorderable ? ' is-reorderable' : ''}${isDragging ? ' is-dragging' : ''}`
         + `${dropEdge === 'above' ? ' is-drop-above' : ''}${dropEdge === 'below' ? ' is-drop-below' : ''}`}
       onClick={item.kind === 'open' ? item.onOpen : undefined}
@@ -1921,6 +1935,9 @@ function SettingRow({
 
         {item.kind === 'range' && <span className="zs-readout">{item.value}</span>}
 
+        {/* The picture answers "where"; this says it in words, for the search and the screen reader. */}
+        {item.kind === 'dockPosition' && <span className="zs-readout is-place">{item.value}</span>}
+
         {item.kind === 'color' && <ColorSettingControl item={item} describedBy={describedBy} />}
 
         {item.kind === 'open' && (
@@ -1987,6 +2004,16 @@ function SettingRow({
           </Collapse>
         )}
       </AnimatePresence>
+
+      {item.kind === 'dockPosition' && (
+        <DockPositionPicker
+          value={item.current as DockPosition}
+          onChange={(position) => item.onChange?.(position)}
+          labelledBy={`${item.key}-label`}
+          describedBy={describedBy}
+          occupied={item.occupied}
+        />
+      )}
 
       {item.kind === 'range' && (
         <div className="zs-slider">
@@ -2546,13 +2573,40 @@ function SettingsEditor({
     const iconEditItem = dockIconItemId
       ? dock.items.find((item) => item.id === dockIconItemId) ?? null
       : null;
-    const setDockIcon = (iconName: string) =>
-      update('shortcutDock', {
-        ...dock,
-        items: dock.items.map((item) =>
-          item.id === dockIconItemId ? { ...item, iconName } : item,
-        ),
+    /** By id, against the dock as it is when the patch lands — "Default" fetches after an await. */
+    const patchDockItem = (id: string, patch: (item: AppItem) => Partial<AppItem> | null) =>
+      setConfig((current) => {
+        const latest = normalizeShortcutDock(current.shortcutDock);
+        let changed = false;
+        const items = latest.items.map((item) => {
+          if (item.id !== id) return item;
+          const next = patch(item);
+          if (!next) return item;
+          changed = true;
+          return { ...item, ...next };
+        });
+        return changed ? { ...current, shortcutDock: { ...latest, items } } : current;
       });
+    /** The dock has no healing pass, but the same rules keep the two editors saying the same thing. */
+    const setDockGlyph = (item: AppItem, iconName: string) =>
+      patchDockItem(item.id, () => ({
+        iconName,
+        iconSource: itemFindsOwnIcon(item) ? 'custom' : 'lucide',
+        customIconUrl: undefined,
+        customIconFile: undefined,
+      }));
+    const resetDockIcon = (item: AppItem) => {
+      patchDockItem(item.id, () => ({
+        iconName: itemDefaultGlyph(item),
+        iconSource: 'lucide',
+        customIconUrl: undefined,
+        customIconFile: undefined,
+      }));
+      if (!itemFindsOwnIcon(item)) return;
+      void resolveAutomaticIcon(item).then((found) => {
+        if (found) patchDockItem(item.id, (now) => (now.iconSource === 'custom' || now.customIconUrl ? null : found));
+      });
+    };
     content = (
       <>
         <DockShortcutsManager
@@ -2567,9 +2621,25 @@ function SettingsEditor({
               key="dock-icon"
               titleId="dock-icon-modal-title"
               title="Dock icon"
-              hint={`Shown in the dock for “${iconEditItem.label || 'this shortcut'}”. An application or a website keeps its own picture until you pick a glyph here.`}
-              selectedIcon={iconEditItem.iconName?.trim() || 'AppWindow'}
-              onSelect={setDockIcon}
+              hint={`Shown in the dock for “${iconEditItem.label || 'this shortcut'}”.`}
+              selectedIcon={itemFallbackIcon(iconEditItem)}
+              picture={iconEditItem.customIconUrl
+                ? {
+                    url: iconEditItem.customIconUrl,
+                    file: iconEditItem.customIconFile,
+                    label: itemIconSummary(iconEditItem).title,
+                    custom: iconEditItem.iconSource === 'custom',
+                  }
+                : null}
+              canReset={!itemIconIsDefault(iconEditItem)}
+              onSelect={(iconName) => setDockGlyph(iconEditItem, iconName)}
+              onPicture={(pick) =>
+                patchDockItem(iconEditItem.id, () => ({
+                  iconSource: 'custom',
+                  customIconUrl: pick.url,
+                  customIconFile: pick.file,
+                }))}
+              onReset={() => resetDockIcon(iconEditItem)}
               onClose={() => setDockIconItemId(null)}
             />
           )}
@@ -2816,22 +2886,73 @@ const DEFAULT_FOLDER_ICON = 'Folder';
 /** And a command's. A typed line has no file to pull a bitmap from either. */
 const DEFAULT_COMMAND_ICON = 'TerminalSquare';
 
-/** The glyph "Reset" goes back to for this kind of shortcut. */
+/**
+ * Whether Rovyl finds this shortcut a picture by itself: the program's icon, the document type's,
+ * the site's favicon. For these, "Default" means that picture, and a glyph chosen instead has to
+ * be marked as the user's (`iconSource: 'custom'`) or the healing pass would put the picture back.
+ * Folders, commands and groups have no picture of their own — their glyph is the default.
+ */
+function itemFindsOwnIcon(item: AppItem): boolean {
+  return item.type !== 'folder' && (item.commandType === 'app' || item.commandType === 'file' || item.commandType === 'url');
+}
+
+/** The glyph "Default" goes back to for this kind of shortcut — the one the add form gives it. */
 function itemDefaultGlyph(item: AppItem) {
-  return item.commandType === 'command' ? DEFAULT_COMMAND_ICON : DEFAULT_FOLDER_ICON;
+  if (item.type === 'folder' || item.commandType === 'folder') return DEFAULT_FOLDER_ICON;
+  if (item.commandType === 'command') return DEFAULT_COMMAND_ICON;
+  if (item.commandType === 'url') return 'Globe';
+  if (item.commandType === 'file') return 'File';
+  return 'AppWindow';
+}
+
+/** Whether the icon is still what the shortcut came with, so "Default" has nothing to undo. */
+function itemIconIsDefault(item: AppItem): boolean {
+  if (item.iconSource === 'custom') return false;
+  if (itemFindsOwnIcon(item)) return true;
+  return !item.customIconUrl && itemFallbackIcon(item) === itemDefaultGlyph(item);
+}
+
+/** One line naming the icon in force, for the Icon field. */
+function itemIconSummary(item: AppItem): { title: string; detail: string } {
+  if (item.iconSource === 'custom' && item.customIconUrl) {
+    return { title: describeIconFile(item.customIconFile) || 'Custom picture', detail: 'Your own picture' };
+  }
+  if (item.iconSource === 'custom') return { title: itemFallbackIcon(item), detail: 'Your own glyph' };
+  if (itemFindsOwnIcon(item)) {
+    const title = item.commandType === 'url' ? 'Site icon' : item.commandType === 'file' ? 'File type icon' : 'Program icon';
+    return { title, detail: 'Found automatically · click to choose your own' };
+  }
+  return { title: itemFallbackIcon(item), detail: 'Shown on the wheel' };
+}
+
+/** "Folder icon", "Website icon"… — the modal's title. */
+function itemIconModalTitle(item: AppItem): string {
+  if (item.type === 'folder') return 'Group icon';
+  switch (item.commandType) {
+    case 'url': return 'Website icon';
+    case 'folder': return 'Folder icon';
+    case 'file': return 'File icon';
+    case 'command': return 'Command icon';
+    default: return 'App icon';
+  }
 }
 
 /**
- * Whether a shortcut's glyph is the user's to choose.
- *
- * Folders only, and for a concrete reason: an application, a document and a web link each arrive
- * with a bitmap of their own — the shell's extracted icon, or the site's favicon — and
- * `ItemBitmapOrGlyph` draws that in preference to any Lucide name. A picker on those would offer a
- * choice that never showed up anywhere. A folder has no bitmap: its glyph IS what the wheel draws,
- * which is also why every folder looked identical before this.
+ * The icon Rovyl would have found for this shortcut, fetched again after "Default". The healing
+ * pass cannot be relied on for it: it tries each target once per session, and a shortcut whose icon
+ * was already found this session counts as tried.
  */
-function itemGlyphIsChoosable(item: AppItem): boolean {
-  return item.type === 'folder' || item.commandType === 'folder' || item.commandType === 'command';
+async function resolveAutomaticIcon(item: AppItem): Promise<Partial<AppItem> | null> {
+  try {
+    if (item.commandType === 'url') {
+      const icon = await resolveWebsiteIconFields(item.command);
+      return icon?.customIconUrl ? { customIconUrl: icon.customIconUrl, iconSource: icon.iconSource } : null;
+    }
+    const url = await window.electron?.getFileIcon?.(item.command);
+    return url ? { customIconUrl: url, iconSource: 'native' } : null;
+  } catch {
+    return null;
+  }
 }
 
 /**
@@ -2930,6 +3051,25 @@ function ItemBitmapOrGlyph({
   return <Icon size={glyphSize} strokeWidth={glyphStroke} />;
 }
 
+/** The workspace's own icon: its picture when it has one, its glyph otherwise or if the picture is gone. */
+function WorkspaceIconArt({ workspace }: { workspace: Workspace }) {
+  const [failed, setFailed] = React.useState(false);
+  React.useEffect(() => setFailed(false), [workspace.pickerIconUrl]);
+  if (workspace.pickerIconUrl && !failed) {
+    return (
+      <img
+        src={workspace.pickerIconUrl}
+        alt=""
+        className="zs-workspace-icon-img"
+        draggable={false}
+        onError={() => setFailed(true)}
+      />
+    );
+  }
+  const Glyph = getIcon(workspace.pickerIconName?.trim() || 'Layers');
+  return <Glyph size={24} strokeWidth={1.6} />;
+}
+
 function WorkspaceItemIcon({ item }: { item: AppItem }) {
   return (
     <span className="zs-workspace-app-icon" aria-hidden>
@@ -2944,12 +3084,20 @@ function WorkspaceItemIcon({ item }: { item: AppItem }) {
   );
 }
 
+/** A picture the item is drawn with right now — one the user chose, or one Rovyl found. */
+interface PictureInForce extends CustomIconPick {
+  /** What the footer calls it: a file name, "Program icon"… */
+  label: string;
+  /** Chosen by the user, as opposed to found automatically. */
+  custom: boolean;
+}
+
 /**
- * The icon grid, as a modal — the workspace's glyph and a shortcut's glyph now both go through it.
+ * The icon chooser, as a modal — the workspace's icon and every shortcut's go through it.
  *
- * It was inline in `WorkspaceManager`, written once for the workspace icon. A folder shortcut needs
- * exactly the same thing (its wheel glyph is a Lucide name too), and a second copy of forty lines
- * of framer-motion would have been two escape handlers, two footers and two chances to drift apart.
+ * Two tabs. Glyph is the Lucide grid it always was. Picture takes a file, a drop or a paste: a PNG,
+ * an SVG, an .ico, or one of the icons inside a program or DLL (`CustomIconPanel`). Whichever was
+ * used last is the icon; the other is kept only as the glyph a missing picture falls back to.
  *
  * Mounting IS opening: the caller holds the "which icon" state, `AnimatePresence` handles the exit,
  * and `onClose` is the only way out — the escape key, the backdrop, the X and Done all take it.
@@ -2959,20 +3107,24 @@ function IconPickerModal({
   title,
   hint,
   selectedIcon,
-  defaultIcon,
+  picture,
+  canReset,
   onSelect,
+  onPicture,
   onReset,
   onClose,
 }: {
   titleId: string;
   title: string;
   hint: string;
-  /** The name in force — never empty, so the grid always has a cell highlighted. */
+  /** The glyph name in force — never empty; with a picture in force it is only the fallback. */
   selectedIcon: string;
-  /** What the item wears when nothing has been picked; enables the reset button when it differs. */
-  defaultIcon?: string;
+  picture: PictureInForce | null;
+  /** Whether "Default" has anything to undo. */
+  canReset: boolean;
   onSelect: (iconName: string) => void;
-  onReset?: () => void;
+  onPicture: (pick: CustomIconPick) => void;
+  onReset: () => void;
   onClose: () => void;
 }) {
   /** A modal that only closes with the mouse is a modal that traps whoever uses the keyboard. */
@@ -2989,8 +3141,12 @@ function IconPickerModal({
     return () => window.removeEventListener('keydown', onKey, true);
   }, []);
 
+  /** Opens where the icon in force lives: a shortcut wearing a picture is most likely after another. */
+  const [tab, setTab] = useState<'glyph' | 'picture'>(picture ? 'picture' : 'glyph');
+  const [pictureFailed, setPictureFailed] = useState(false);
+  useEffect(() => setPictureFailed(false), [picture?.url]);
   const PickedIcon = getIcon(selectedIcon);
-  const canReset = Boolean(onReset && defaultIcon && selectedIcon !== defaultIcon);
+  const showPicture = Boolean(picture) && !pictureFailed;
 
   return (
     <motion.div
@@ -3023,8 +3179,35 @@ function IconPickerModal({
             <X size={14} />
           </button>
         </header>
-        <div className="zs-icon-modal-body">
-          <IconPicker selectedIcon={selectedIcon} onSelect={onSelect} />
+        <div className="zs-icon-modal-tabs">
+          <div className="zs-segmented" role="tablist" aria-label="Icon kind">
+            <button
+              type="button"
+              role="tab"
+              aria-selected={tab === 'glyph'}
+              className={tab === 'glyph' ? 'is-selected' : ''}
+              onClick={() => setTab('glyph')}
+            >
+              <Shapes size={13} strokeWidth={1.8} /> Glyph
+            </button>
+            <button
+              type="button"
+              role="tab"
+              aria-selected={tab === 'picture'}
+              className={tab === 'picture' ? 'is-selected' : ''}
+              onClick={() => setTab('picture')}
+            >
+              <ImageGlyph size={13} strokeWidth={1.8} /> Picture
+            </button>
+          </div>
+        </div>
+        <div className="zs-icon-modal-body" role="tabpanel">
+          {tab === 'glyph' ? (
+            /** No cell lit while a picture is drawn: the glyph is not what the wheel shows. */
+            <IconPicker selectedIcon={picture ? '' : selectedIcon} onSelect={onSelect} />
+          ) : (
+            <CustomIconPanel current={picture?.custom ? picture : null} onPick={onPicture} />
+          )}
         </div>
         {/**
           * Picking writes straight through, so once a glyph was clicked the modal had
@@ -3034,8 +3217,12 @@ function IconPickerModal({
           */}
         <footer>
           <span className="zs-icon-modal-pick">
-            <PickedIcon size={16} strokeWidth={1.7} />
-            <b>{selectedIcon}</b>
+            {showPicture ? (
+              <img src={picture!.url} alt="" draggable={false} onError={() => setPictureFailed(true)} />
+            ) : (
+              <PickedIcon size={16} strokeWidth={1.7} />
+            )}
+            <b>{showPicture ? picture!.label : selectedIcon}</b>
           </span>
           <span className="zs-icon-modal-acts">
             {canReset && (
@@ -3286,8 +3473,6 @@ function WorkspaceManager({
     }, 60);
     return () => window.clearTimeout(timer);
   }, [focusAppId, onFocusApplied, workspace.apps]);
-
-  const WorkspaceIcon = getIcon(workspace.pickerIconName?.trim() || 'Layers');
 
   const addItem = (item: AppItem, openEditor = false) => {
     const newIndex = workspace.apps.length;
@@ -3617,6 +3802,67 @@ function WorkspaceManager({
     });
   };
 
+  /**
+   * The icon modal's writes, by id and against the workspace as it is when they land: a picture is
+   * stored and a "Default" icon fetched after an await, and by then the list may have moved.
+   */
+  const patchItemById = (id: string, patch: (item: AppItem) => Partial<AppItem> | null) => {
+    updateWorkspace(workspaceIndex, (current) => {
+      let changed = false;
+      const apps = current.apps.map((item) => {
+        if (item.id !== id) return item;
+        const next = patch(item);
+        if (!next) return item;
+        changed = true;
+        return { ...item, ...next };
+      });
+      return changed ? { apps } : {};
+    });
+  };
+
+  const setItemGlyph = (item: AppItem, iconName: string) => {
+    patchItemById(item.id, () => ({
+      iconName,
+      /** On a shortcut that finds its own picture, a glyph is a choice the healing pass must leave alone. */
+      iconSource: itemFindsOwnIcon(item) ? 'custom' : 'lucide',
+      customIconUrl: undefined,
+      customIconFile: undefined,
+    }));
+  };
+
+  const setItemPicture = (item: AppItem, pick: CustomIconPick) => {
+    patchItemById(item.id, () => ({ iconSource: 'custom', customIconUrl: pick.url, customIconFile: pick.file }));
+  };
+
+  const resetItemIcon = (item: AppItem) => {
+    const glyph = itemDefaultGlyph(item);
+    if (!itemFindsOwnIcon(item)) {
+      patchItemById(item.id, () => ({ iconName: glyph, iconSource: 'lucide', customIconUrl: undefined, customIconFile: undefined }));
+      return;
+    }
+    /** A site with no favicon is a glyph, not a wait; a program is 'native' so the wheel shows it is coming. */
+    patchItemById(item.id, () => ({
+      iconName: glyph,
+      iconSource: item.commandType === 'url' ? 'lucide' : 'native',
+      customIconUrl: undefined,
+      customIconFile: undefined,
+    }));
+    void resolveAutomaticIcon(item).then((found) => {
+      if (!found) return;
+      /** Only onto the shortcut still waiting for it — not one that picked something else meanwhile. */
+      patchItemById(item.id, (now) => (now.iconSource === 'custom' || now.customIconUrl ? null : found));
+    });
+  };
+
+  const workspacePicture: PictureInForce | null = workspace.pickerIconUrl
+    ? {
+        url: workspace.pickerIconUrl,
+        file: workspace.pickerIconFile,
+        label: describeIconFile(workspace.pickerIconFile) || 'Custom picture',
+        custom: true,
+      }
+    : null;
+
   /** The shortcut the icon picker is open for, looked up fresh so a stale id closes the modal. */
   const iconEditIndex = iconEditItemId
     ? workspace.apps.findIndex((item) => item.id === iconEditItemId)
@@ -3679,7 +3925,7 @@ function WorkspaceManager({
             aria-label="Change workspace icon"
             title="Change icon"
           >
-            <WorkspaceIcon size={24} strokeWidth={1.6} />
+            <WorkspaceIconArt workspace={workspace} />
             <Pencil size={10} strokeWidth={2} />
           </button>
           <label className="zs-workspace-name-field">
@@ -3773,30 +4019,49 @@ function WorkspaceManager({
             title="Workspace icon"
             hint="Shown in the wheel picker, and on the workspace card."
             selectedIcon={workspace.pickerIconName?.trim() || 'Layers'}
-            defaultIcon="Layers"
-            onSelect={(iconName) => updateWorkspace(workspaceIndex, { pickerIconName: iconName })}
-            onReset={() => updateWorkspace(workspaceIndex, { pickerIconName: undefined })}
+            picture={workspacePicture}
+            canReset={Boolean(workspace.pickerIconUrl) || (workspace.pickerIconName?.trim() || 'Layers') !== 'Layers'}
+            onSelect={(iconName) => updateWorkspace(workspaceIndex, {
+              pickerIconName: iconName,
+              pickerIconUrl: undefined,
+              pickerIconFile: undefined,
+            })}
+            onPicture={(pick) => updateWorkspace(workspaceIndex, { pickerIconUrl: pick.url, pickerIconFile: pick.file })}
+            onReset={() => updateWorkspace(workspaceIndex, {
+              pickerIconName: undefined,
+              pickerIconUrl: undefined,
+              pickerIconFile: undefined,
+            })}
             onClose={() => setIsIconPickerOpen(false)}
           />
         )}
       </AnimatePresence>
 
       {/**
-       * And the same modal for one shortcut's glyph. It is the folder rows that needed it: every
-       * folder added arrived wearing the one `Folder` icon, so a wheel of project directories was
-       * eight identical glyphs with only the labels to tell them apart.
+       * And the same modal for one shortcut's icon. Folders needed it first — every one arrived
+       * wearing the same `Folder` glyph — and now every kind has it: an app can wear another
+       * program's icon, a site a logo, a command a picture.
        */}
       <AnimatePresence>
         {iconEditItem && (
           <IconPickerModal
             key="item-icon"
             titleId="item-icon-modal-title"
-            title={iconEditItem.commandType === 'command' ? 'Command icon' : 'Folder icon'}
+            title={itemIconModalTitle(iconEditItem)}
             hint={`Shown on the wheel for “${iconEditItem.label || 'this shortcut'}”.`}
             selectedIcon={itemFallbackIcon(iconEditItem)}
-            defaultIcon={itemDefaultGlyph(iconEditItem)}
-            onSelect={(iconName) => updateItem(iconEditIndex, { iconName })}
-            onReset={() => updateItem(iconEditIndex, { iconName: itemDefaultGlyph(iconEditItem) })}
+            picture={iconEditItem.customIconUrl
+              ? {
+                  url: iconEditItem.customIconUrl,
+                  file: iconEditItem.customIconFile,
+                  label: itemIconSummary(iconEditItem).title,
+                  custom: iconEditItem.iconSource === 'custom',
+                }
+              : null}
+            canReset={!itemIconIsDefault(iconEditItem)}
+            onSelect={(iconName) => setItemGlyph(iconEditItem, iconName)}
+            onPicture={(pick) => setItemPicture(iconEditItem, pick)}
+            onReset={() => resetItemIcon(iconEditItem)}
             onClose={() => setIconEditItemId(null)}
           />
         )}
@@ -4089,11 +4354,11 @@ function WorkspaceManager({
                   <div className="zs-workspace-item-editor">
                     <label className="zs-field"><span>Name</span><input value={item.label} onChange={(event) => updateItem(index, { label: event.target.value })} /></label>
                     {/*
-                      Folders get to choose their glyph. `div`, not `label`: the control is a
+                      Every shortcut chooses its icon. `div`, not `label`: the control is a
                       button, and a label wrapping one steals the click on half its surface.
                     */}
-                    {itemGlyphIsChoosable(item) && (() => {
-                      const ItemGlyph = getIcon(itemFallbackIcon(item));
+                    {(() => {
+                      const summary = itemIconSummary(item);
                       return (
                         <div className="zs-field">
                           <span>Icon</span>
@@ -4103,12 +4368,10 @@ function WorkspaceManager({
                             onClick={() => setIconEditItemId(item.id)}
                             aria-label={`Change the icon for ${item.label}`}
                           >
-                            <span className="zs-workspace-app-icon" aria-hidden>
-                              <ItemGlyph size={17} strokeWidth={1.8} />
-                            </span>
+                            <WorkspaceItemIcon item={item} />
                             <div>
-                              <b>{itemFallbackIcon(item)}</b>
-                              <small>Shown on the wheel</small>
+                              <b>{summary.title}</b>
+                              <small>{summary.detail}</small>
                             </div>
                             <Pencil size={13} aria-hidden />
                           </button>
