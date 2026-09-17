@@ -15,7 +15,7 @@ dist-ssr
 
 # Build outputs
 build/icon.ico
-build-out
+build-out*
 release
 diagnostic.log
 
@@ -45,6 +45,7 @@ backend/debug_*.json
 
 # Assistant / editor tooling — local to whoever is working, not part of the project
 .claude/
+CLAUDE.md
 .cursor/
 .codex-video-review/
 .codex-video-review-current/
