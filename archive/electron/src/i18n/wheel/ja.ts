@@ -14,6 +14,21 @@ const ja: WheelStrings = {
   menuDirectionHint: '対象の方へ動かすと開きます。閉じるには %s を押します。',
   hudOpenSettings: 'Rovyl の設定を開く',
   hudSettingsTitle: 'Rovyl の設定',
+  dockNetWired: '有線ネットワーク',
+  dockNetNone: 'ネットワークなし',
+  dockNetOther: '接続済み',
+  dockNetWifiSignal: 'Wi-Fi — 電波 {percent}%',
+  dockNetWifi: 'Wi-Fi',
+  dockMute: 'クリックでミュート',
+  dockUnmute: 'ミュート中 — クリックで解除',
+  dockVolumeNone: 'オーディオデバイスなし',
+  dockVolumeLevel: '音量 {percent}%',
+  dockNetOpenSettings: '{name} — クリックで Windows のネットワーク設定',
+  dockBatteryLevel: 'バッテリー {percent}%',
+  dockBatteryCharging: 'バッテリー {percent}% — 充電中',
+  dockBatteryAria: 'バッテリー {percent} パーセント',
+  dockMuteAria: 'ミュート',
+  dockUnmuteAria: 'ミュート解除',
 };
 
 export default ja;

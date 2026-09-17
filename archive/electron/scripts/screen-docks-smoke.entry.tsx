@@ -20,6 +20,8 @@ import {
   type DockPosition,
 } from "../src/utils/screenDocks";
 import type { AppItem, SystemStatus } from "../src/types";
+/** English, as the wheel's own first frame uses it — this suite asserts layout, not wording. */
+import { en as wheelStrings } from "../src/i18n/wheel/en";
 
 const NOOP = () => {};
 
@@ -67,6 +69,7 @@ function render(
       status: normalizeStatusDock(statusRaw),
       shortcuts: normalizeShortcutDock(shortcutsRaw),
       systemStatus,
+      strings: wheelStrings,
       onLaunch: NOOP,
       onOpenPanel: NOOP,
       onVolume: NOOP,

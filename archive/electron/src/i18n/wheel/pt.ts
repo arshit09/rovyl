@@ -14,6 +14,21 @@ const pt: WheelStrings = {
   menuDirectionHint: 'Empurre na direção de um alvo para abri-lo, ou pressione %s para fechar a roda.',
   hudOpenSettings: 'Abrir os ajustes do Rovyl',
   hudSettingsTitle: 'Ajustes do Rovyl',
+  dockNetWired: 'Rede com fio',
+  dockNetNone: 'Sem rede',
+  dockNetOther: 'Conectado',
+  dockNetWifiSignal: 'Wi-Fi — {percent}% de sinal',
+  dockNetWifi: 'Wi-Fi',
+  dockMute: 'Clique para silenciar',
+  dockUnmute: 'Mudo — clique para reativar',
+  dockVolumeNone: 'Sem dispositivo de áudio',
+  dockVolumeLevel: 'Volume {percent}%',
+  dockNetOpenSettings: '{name} — clique para as configurações de rede do Windows',
+  dockBatteryLevel: 'Bateria {percent}%',
+  dockBatteryCharging: 'Bateria {percent}% — carregando',
+  dockBatteryAria: 'Bateria {percent} por cento',
+  dockMuteAria: 'Silenciar',
+  dockUnmuteAria: 'Reativar som',
 };
 
 export default pt;
