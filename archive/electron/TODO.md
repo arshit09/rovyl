@@ -252,9 +252,10 @@ that closed it. The section stays because §8 points into it and because a later
   add the check a type cannot express at all: placeholder parity, so a translation cannot quietly
   drop the `{version}` that names a release or the `%s` that holds a key name.
 - [x] **6.4** Decided (a) — delete the table, ship English-only — and then reversed to (b) once the
-  bundle half made (b) cheap. Shipped: en, es, zh, **ja**, pt, ru, de, ar at 333 keys each — the
+  bundle half made (b) cheap. Shipped: en, es, zh, **ja**, pt, ru, de, ar at 361 keys each — the
   count tripled when the panel's remaining English literals went through `t()`, which is what made
-  picking a language translate the settings rather than only the navigation.
+  picking a language translate the settings rather than only the navigation. The corner docks
+  brought the last 41 and retired the 13 the taskbar overlay had owned.
   **The constraint that made (a) right is the one that now keeps (b) honest**: the tables must never
   reach the chunk the wheel waits on. `src/i18n/languages.ts` holds codes and metadata only, so
   `App.tsx` can validate a hydrated `config.language` without importing a translated string, and the
@@ -263,13 +264,21 @@ that closed it. The section stays because §8 points into it and because a later
   reaches the critical path — or if one stops shipping at all, which would leave the picker
   offering a language it cannot render.
 - [x] **6.5** **Everything translates now, on exactly the terms this item set.** `src/strings.ts`
-  is gone. The wheel's twelve strings live in `src/i18n/wheel/`: English static and synchronous,
-  the other seven behind one literal `import()` each, fetched once `RadialApp` knows the language.
+  is gone. The wheel's twenty-seven strings live in `src/i18n/wheel/`: English static and
+  synchronous, the other seven behind one literal `import()` each, fetched once `RadialApp` knows
+  the language. Fifteen of the twenty-seven belong to the corner docks, which look like settings
+  text and are not: `ScreenDocks.tsx` is imported by `RadialMenu`, so its labels are in the wheel's
+  first frame and are wheel strings by position. Its pack arrives as a prop rather than through a
+  context, for the same reason — a provider is another module in front of the gesture.
   The fault card's 44 sentences work the same way (`src/i18n/faults/`) and are *injected* into
   `launchFailure.ts`, which stays React-free and node-runnable. `IconPicker`, `FirstRun` and
   `ErrorOverlays` turned out never to have been in the wheel's chunk at all — `radial.html` loads
   `RadialApp` and `ErrorBoundary` and nothing else — so they simply call `t()`.
-  Cost to first paint: **1.4 kB** (273.9 → 275.3 kB critical JS against the 300 kB budget).
+  Cost to first paint: **1.4 kB** (273.9 → 275.3 kB critical JS against the 300 kB budget), and
+  **0.4 kB** more when the docks' own words joined the packs (285.2 → 285.6 kB on the base that
+  brought the docks). `DOCK_POSITION_KEYS` lives in `PrecisionSettings.tsx` and not beside
+  `DOCK_POSITIONS` in `screenDocks.ts` because that module is one of the wheel's imports: a `t()`
+  there drags the settings table into the critical chunk, which is this whole item in reverse.
   The loaders are spelled out one `import()` per language on purpose: a template specifier makes
   rollup emit every pack beside the entry, which undoes the whole thing while still passing the
   byte budget. `verify-renderer-budget` holds both halves — the seven must ship and must not be
@@ -293,7 +302,9 @@ that closed it. The section stays because §8 points into it and because a later
   - the wheel's document is pinned to `dir="ltr"` in every language, Arabic included. Its geometry
     is absolute pixels and `dir="rtl"` mirrors the HUD. An RTL wheel is its own piece of work;
   - a new shortcut's `description` field (`Application`, `Web link`, …), which is written into
-    `config-v2.json` as data: translating it freezes one language into the user's file;
+    `config-v2.json` as data: translating it freezes one language into the user's file. The same
+    rule keeps `fallbackIconName` in `DockShortcuts.tsx` English — those are Lucide glyph ids;
+  - the `keywords` on each settings row, which are a search index rather than painted text;
   - the OAuth setup error, which names environment variables in a file only a developer edits.
 
 ## 7. Engineering hygiene

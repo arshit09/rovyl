@@ -448,11 +448,17 @@ period, is the fix.
 - **Text lives in one of four places, decided by which chunk paints it.** The rule is the
   same everywhere and it is about position, not preference: nothing that translates may sit
   in front of the wheel's first frame.
-  - `src/i18n/translations.ts` — the settings window, 333 keys across eight locales, in a
+  - `src/i18n/translations.ts` — the settings window, 361 keys across eight locales, in a
     lazy chunk. Reached through `useTranslation`, never imported by `App.tsx`.
-  - `src/i18n/wheel/` — the twelve strings `radial.html` paints. English is a static import
-    and MUST stay in the critical path, since it is what the first frame draws with; every
-    other language is a chunk fetched when `RadialApp` learns the configured language.
+  - `src/i18n/wheel/` — the twenty-seven strings `radial.html` paints. English is a static
+    import and MUST stay in the critical path, since it is what the first frame draws with;
+    every other language is a chunk fetched when `RadialApp` learns the configured language.
+    **The corner docks' words are here and not in `translations.ts`**, which reads like a
+    filing mistake until you notice `ScreenDocks.tsx` is imported by `RadialMenu`: its labels
+    paint in the wheel's own first frame, so they are wheel strings by position. For the same
+    reason `DOCK_POSITION_KEYS` sits in `PrecisionSettings.tsx` rather than beside
+    `DOCK_POSITIONS` in `screenDocks.ts` — a `t()` call in that module would pull the whole
+    settings table in behind it.
   - `src/i18n/faults/` — the fault card's sentences, injected into `launchFailure.ts` so
     that module stays React-free, DOM-free and runnable under plain `node`.
   - `backend/i18n.cjs` — the tray, the native dialogs, the error boxes. A separate table
