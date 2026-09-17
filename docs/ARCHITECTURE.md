@@ -386,7 +386,7 @@ handed over the package.
 
 The direct build keeps both: `electron-updater` against this repository's releases, and a
 license key. There is no native update dialog — the main process emits `update-state`, the
-wheel shows a badge on the hub, and Settings → Advanced offers the restart.
+wheel shows a badge on the hub, and Settings → General offers the restart.
 
 A downloaded update installs on the next LAUNCH, and `autoInstallOnAppQuit` is off. The
 default does the opposite: it spawns the silent NSIS installer behind the closing app, so a
