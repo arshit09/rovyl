@@ -64,7 +64,8 @@
   --zn-10: 40px;
 
   /* Radius: the radius communicates hierarchy (window > panel > control > chip). */
-  --zn-r-window: 12px;
+  /* 0: the window is opaque now and Windows owns its corners (rounded on 11, square on 10). */
+  --zn-r-window: 0px;
   --zn-r-panel: 10px;
   --zn-r-control: 8px;
   --zn-r-chip: 6px;
@@ -111,6 +112,8 @@
   border-radius: var(--zn-r-window);
   box-shadow: inset 0 0 0 1px var(--zn-line);
 }
+/* Maximized, the window meets the screen edges like any Windows window: no hairline. */
+.zenith-panel-surface[data-window-state="maximized"] { box-shadow: none; }
 
 /*
  * The panel can stay visible underneath the radial. Some inner controls use
@@ -1657,6 +1660,20 @@
   .zs-add-panel-head { grid-template-columns: 1fr; }
   .zs-workspace-item-editor { grid-template-columns: 1fr; padding-left: 42px; }
   .zs-launch-options { grid-template-columns: 1fr; }
+}
+
+/* Wide windows (maximized, or dragged large): the column grows with the window and sits in the
+   middle of it, instead of a 620px strip pinned to the sidebar with the rest of the screen empty. */
+@media (min-width: 1100px) {
+  .zs-window { grid-template-columns: 260px minmax(0, 1fr); }
+  .zs-canvas { width: min(820px, 100%); margin-inline: auto; }
+}
+@media (min-width: 1500px) {
+  .zs-window { grid-template-columns: 280px minmax(0, 1fr); }
+  .zs-scroll { padding-inline: var(--zn-10); }
+  .zs-canvas { width: min(980px, 100%); }
+  .zs-workspace-workbench.is-split > .zs-workspace-items { max-height: 62vh; }
+  .zs-installed-apps { max-height: min(520px, 48vh); }
 }
 
 @media (max-height: 560px) {

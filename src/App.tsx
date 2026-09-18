@@ -1136,6 +1136,10 @@ export default function App() {
   const prevIsMenuOpenForCloseRef = useRef(false);
   /** OS hid the window (Alt+F4 / close) while React still had the panel "open" — sync refs before state so we don't schedule hideWindow twice. */
   const syncAfterMainWindowHidRef = useRef<() => void>(() => {});
+  /** The window is opaque: a strip exposed mid-resize shows this colour, so it follows the theme's `--zn-bg`. */
+  useEffect(() => {
+    window.electron?.setWindowBackground?.(config.appearanceTheme === 'white' ? '#e8e8ea' : '#151515');
+  }, [config.appearanceTheme]);
   useEffect(() => {
     syncAfterMainWindowHidRef.current = () => {
       if (hideTimeout.current) {
@@ -1364,6 +1368,7 @@ export default function App() {
       */}
       <div
         data-zn-theme={panelTheme}
+        data-window-state={windowState}
         className={`
         overflow-hidden [--zenith-title-bar-h:38px] absolute inset-0
         ${panelSurfaceOpen
@@ -1375,7 +1380,7 @@ export default function App() {
         {panelSurfaceOpen && (
           <div
             /* `zenith-titlebar` — styled in index.css, alongside the radial panel. */
-            className="zenith-titlebar absolute top-0 left-0 right-0 h-[var(--zenith-title-bar-h)] z-[999] flex items-center justify-between pl-3 rounded-t-[12px] overflow-hidden"
+            className="zenith-titlebar absolute top-0 left-0 right-0 h-[var(--zenith-title-bar-h)] z-[999] flex items-center justify-between pl-3 overflow-hidden"
             style={{ WebkitAppRegion: 'drag' } as any}
           >
             {isSettingsOpen ? (

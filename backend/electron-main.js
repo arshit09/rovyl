@@ -1466,21 +1466,29 @@ async function createWindow() {
     height: initialBounds.height,
     x: initialBounds.x,
     y: initialBounds.y,
-    frame: false, // Keep frameless for transparency
-    titleBarStyle: "hidden", // Hide default title bar but keep controls
+    /**
+     * Frameless but OPAQUE, with the standard resize frame (`thickFrame` defaults on). Windows only
+     * gives Snap, drag-to-top maximize, Snap Layouts and a real maximize to a window that has that
+     * frame, and Electron strips it from every transparent window — transparency here bought the
+     * 12px CSS corners and cost all of that. Windows 11 rounds this window itself; Windows 10
+     * draws it square, like every other window on Windows 10.
+     */
+    frame: false,
+    titleBarStyle: "hidden",
     titleBarOverlay: false,
-    transparent: true,
+    transparent: false,
     alwaysOnTop: false,
     skipTaskbar: false,
     show: false,
     fullscreen: false,
-    hasShadow: false, // Disable native shadow to prevent rectangular ghosting around rounded CSS corners
-    thickFrame: false, // Prevents native resizing border artifacts on Win 11
+    hasShadow: true,
     icon: isDev
       ? path.join(__dirname, "../public/icon.png")
       : path.join(__dirname, "../dist/icon.png"),
-    backgroundColor: "#00000000",
-    backgroundMaterial: "none", // Avoid acrylic blur leaking outside rounded corners
+    /** What shows in a strip the renderer has not painted yet while resizing; the renderer
+     *  swaps it for the light theme's colour (`set-window-background`). */
+    backgroundColor: "#151515",
+    backgroundMaterial: "none",
     webPreferences: {
       preload: path.join(__dirname, "electron-preload.js"),
       nodeIntegration: false,
@@ -1679,6 +1687,8 @@ function setupMainWindow(window) {
   window.webContents.on("did-finish-load", () => {
     diagLog("Renderer: Content finished loading successfully");
     console.log("DEBUG: Content finished loading successfully");
+    // A reload starts React on "windowed"; tell it the truth so the maximized styling matches the window.
+    if (window.isMaximized()) window.webContents.send("window-state", "maximized");
   });
 
   // IPC handler for renderer process logs
@@ -8657,6 +8667,12 @@ ipcMain.on("minimize-window", () => {
   } catch (e) {
     console.error("minimize-window failed:", e);
   }
+});
+
+ipcMain.on("set-window-background", (event, color) => {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (typeof color !== "string" || !/^#[0-9a-f]{6}$/i.test(color)) return;
+  mainWindow.setBackgroundColor(color);
 });
 
 ipcMain.on("toggle-maximize", () => {

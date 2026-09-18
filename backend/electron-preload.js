@@ -203,6 +203,7 @@ contextBridge.exposeInMainWorld("electron", {
     return () => ipcRenderer.removeListener("switch-workspace", listener);
   },
   minimizeWindow: () => ipcRenderer.send("minimize-window"),
+  setWindowBackground: (color) => ipcRenderer.send("set-window-background", color),
   toggleMaximize: () => ipcRenderer.send("toggle-maximize"),
   quitApp: () => ipcRenderer.send("quit-app"),
   selectFile: (options) => ipcRenderer.invoke("select-file", options),

@@ -641,6 +641,8 @@ export interface ElectronAPI {
   /** The page's own <title>, so a web shortcut is named the way its browser tab is. */
   getWebsitePageTitle?: (pageUrl: string) => Promise<string | null>;
   minimizeWindow: () => void;
+  /** The colour the native window shows before the page paints (`#rrggbb`). */
+  setWindowBackground?: (color: string) => void;
   toggleMaximize: () => void;
   quitApp: () => void;
   onWindowState: (
