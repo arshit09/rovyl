@@ -36,6 +36,21 @@ Do not commit the `rovyl-helper.exe` files as part of this commit.
 
 ## 4. Check, build, publish
 
+First kill every running Rovyl: the dev instance, the installed app, the native helper, and any installer or uninstaller. They lock `rovyl-helper.exe` and `app.asar` and break the build. Also stop the node launchers (`npm run dev`/`start:*`), or they restart the app right away. Do this without asking — the user wants it every time:
+
+```powershell
+Get-CimInstance Win32_Process | Where-Object {
+  $_.Name -eq 'node.exe' -and $_.CommandLine -match 'rovyl' -and $_.CommandLine -match 'vite|scripts[\\/](start-|dev-runtime|launch-electron)'
+} | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
+Get-Process -Name 'Rovyl','rovyl-helper','Rovyl-Setup*','Uninstall Rovyl' -ErrorAction SilentlyContinue | Stop-Process -Force
+Start-Sleep -Seconds 2
+Get-Process -Name 'Rovyl','rovyl-helper','Rovyl-Setup*','Uninstall Rovyl' -ErrorAction SilentlyContinue
+```
+
+The last command must print nothing. If something is still running, run the kill again, or stop and tell the user which process is left. If the build later fails with `EnsureEmptyDir … used by another process` or `EBUSY`, run this kill again and retry into a new output folder.
+
+Then check, build and publish:
+
 ```powershell
 $env:GH_TOKEN = (gh auth token)
 node scripts/release.mjs --check
