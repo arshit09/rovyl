@@ -42,9 +42,10 @@ First kill every running Rovyl: the dev instance, the installed app, the native 
 Get-CimInstance Win32_Process | Where-Object {
   $_.Name -eq 'node.exe' -and $_.CommandLine -match 'rovyl' -and $_.CommandLine -match 'vite|scripts[\\/](start-|dev-runtime|launch-electron)'
 } | ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
-Get-Process -Name 'Rovyl','rovyl-helper','Rovyl-Setup*','Uninstall Rovyl' -ErrorAction SilentlyContinue | Stop-Process -Force
+$rovylProcs = { Get-Process | Where-Object { $_.Name -match '^(Rovyl|rovyl-helper|Rovyl-Setup.*|Uninstall Rovyl)$' } }
+& $rovylProcs | ForEach-Object { try { Stop-Process -Id $_.Id -Force -ErrorAction Stop } catch {} }
 Start-Sleep -Seconds 2
-Get-Process -Name 'Rovyl','rovyl-helper','Rovyl-Setup*','Uninstall Rovyl' -ErrorAction SilentlyContinue
+& $rovylProcs | Select-Object Id, Name, Path
 ```
 
 The last command must print nothing. If something is still running, run the kill again, or stop and tell the user which process is left. If the build later fails with `EnsureEmptyDir … used by another process` or `EBUSY`, run this kill again and retry into a new output folder.
