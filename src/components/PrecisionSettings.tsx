@@ -76,7 +76,7 @@ import '../fonts-display.css';
 import { NativeAppIcon, useInstalledApps, clearInstalledAppsMemory, type InstalledApp } from './installedApps';
 import { radialCrowding } from '../utils/workspaceRadial';
 import { startMenuAppIdToLaunchCommand } from '../utils/windowsLaunchCommand';
-import { WheelPreview } from './WheelPreview';
+import { WheelPreview, MENU_RADIUS_RANGE } from './WheelPreview';
 import { DockShortcutsManager } from './DockShortcuts';
 import { DockPositionPicker } from './DockPositionPicker';
 import { WorkspaceFileEditor, type WorkspaceFileEditorHandle } from './WorkspaceFileEditor';
@@ -1123,7 +1123,8 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
           onChange: (value) => update('appearanceTheme', value as UIConfig['appearanceTheme']),
         },
         range('radius', 'Wheel', 'Orbital radius', 'Perceived wheel diameter.',
-          config.menuRadius, 90, 220, (value) => update('menuRadius', value), (value) => `${Math.round(value)} px`,
+          config.menuRadius, MENU_RADIUS_RANGE.min, MENU_RADIUS_RANGE.max,
+          (value) => update('menuRadius', value), (value) => `${Math.round(value)} px`,
           1, 'menuRadius'),
         range('iconSize', 'Wheel', 'Icon size', 'Visual weight of each target.',
           config.iconSize, 36, 92, (value) => update('iconSize', value), (value) => `${Math.round(value)} px`,

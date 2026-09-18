@@ -35,6 +35,7 @@
     "test:radial-filter": "node scripts/radial-filter-smoke.mjs",
     "test:backdrop-dim": "node scripts/backdrop-dim-smoke.mjs",
     "test:radial-sectors": "node scripts/radial-sectors-smoke.mjs",
+    "test:radial-drag": "node scripts/radial-drag-smoke.mjs",
     "test:screen-docks": "node scripts/screen-docks-smoke.mjs",
     "test:icon-store": "node scripts/icon-store-smoke.mjs",
     "test:persistence-mirror": "node scripts/persistence-mirror-smoke.mjs",

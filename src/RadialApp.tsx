@@ -6,6 +6,7 @@ import { DEFAULT_UI_CONFIG, MINIMAL_MAIN_WORKSPACE_APPS } from './defaults';
 import { normalizeStoredConfig } from './configHydration';
 import { preloadIconsByName } from './iconMap';
 import { radialScrimNeedsFullBleed } from './utils/radialScrim';
+import { remapClientPoint } from './utils/radialDrag';
 import { useSystemStatus } from './components/ScreenDocks';
 import {
   docksNeedFullBleed,
@@ -100,6 +101,8 @@ export default function RadialApp() {
    * renderer's copy of those metrics lags a frame behind the `setBounds` that put it there.
    */
   const [radialWindowOrigin, setRadialWindowOrigin] = useState<Coordinates | null>(null);
+  const radialWindowOriginRef = useRef(radialWindowOrigin);
+  radialWindowOriginRef.current = radialWindowOrigin;
   const [triggerSource, setTriggerSource] = useState<'mmb' | 'mmb-click' | 'shortcut'>('shortcut');
   /** Remounts the visual tree on every open; no geometry/transition from the previous session survives. */
   const [radialMountKey, setRadialMountKey] = useState(0);
@@ -289,6 +292,11 @@ export default function RadialApp() {
     paintToken?: number;
   }) => {
     radialTriggerGenerationRef.current += 1;
+    /**
+     * A drag's geometry that never landed — the wheel went away between main sending it and the
+     * window resizing — must not be applied to THIS open, whose origin main has just set.
+     */
+    pendingRadialGeometryRef.current = null;
 
     const clientSize = data.clientSize ?? { width: window.innerWidth, height: window.innerHeight };
     /** The wheel is always born at the centre of its own window; main sizes the window, not the wheel. */
@@ -589,6 +597,78 @@ export default function RadialApp() {
   }, []);
 
   /* ------------------------------------------------------------------ */
+  /* Carrying the wheel                                                  */
+  /* ------------------------------------------------------------------ */
+
+  /**
+   * The wheel has been dragged by its middle button. Local and only for this open: nothing is sent
+   * to the writer and nothing is stored, so the next wheel is born wherever `radialPlacement` says.
+   * That is the difference between this and the `fixedPosition` that used to be pinned forever.
+   */
+  const handleRadialMove = useCallback((next: Coordinates) => {
+    setMenuPosition(next);
+  }, []);
+
+  /**
+   * The hand has committed to a drag, and the box the wheel was born in is too small a desk. Main
+   * grows the overlay to the whole display; the new geometry comes back on its own channel, and is
+   * applied by the effect below rather than here.
+   */
+  const handleRadialDragBegin = useCallback(() => {
+    window.electron?.requestRadialDragSpace?.();
+  }, []);
+
+  /**
+   * The window is about to change size and, with it, the corner every client coordinate is measured
+   * from. Both halves of that have to land in ONE frame.
+   *
+   * Main sends this before it calls `setBounds`, so the geometry is already here when the `resize`
+   * arrives. Applying it early would paint the wheel at its new-frame centre inside the old window;
+   * applying it late paints the old centre inside the new window — either way the wheel jumps out
+   * from under the hand, several hundred pixels, at the moment the hand is holding it. So it is
+   * held until the window IS the size it was promised, and then applied synchronously, inside the
+   * resize event, before the browser paints that size.
+   */
+  const pendingRadialGeometryRef = useRef<{
+    windowOrigin: Coordinates;
+    clientSize: { width: number; height: number };
+  } | null>(null);
+
+  useEffect(() => {
+    const applyPendingGeometry = () => {
+      const geometry = pendingRadialGeometryRef.current;
+      if (!geometry) return;
+      if (
+        window.innerWidth !== geometry.clientSize.width ||
+        window.innerHeight !== geometry.clientSize.height
+      ) {
+        return;
+      }
+      pendingRadialGeometryRef.current = null;
+      const previousOrigin = radialWindowOriginRef.current;
+      flushSync(() => {
+        setMenuPosition((current) =>
+          remapClientPoint(current, previousOrigin, geometry.windowOrigin),
+        );
+        setRadialWindowOrigin(geometry.windowOrigin);
+        setRadialClientSize(geometry.clientSize);
+      });
+    };
+
+    const off = window.electron?.onRadialDragGeometry?.((geometry) => {
+      if (!geometry?.windowOrigin || !geometry.clientSize) return;
+      pendingRadialGeometryRef.current = geometry;
+      /** The window may already BE that size — nothing to grow — and then no resize is coming. */
+      applyPendingGeometry();
+    });
+    window.addEventListener('resize', applyPendingGeometry);
+    return () => {
+      off?.();
+      window.removeEventListener('resize', applyPendingGeometry);
+    };
+  }, []);
+
+  /* ------------------------------------------------------------------ */
 
   const radialApps = useMemo(() => {
     const w = config.workspaces[config.activeWorkspaceIndex];
@@ -621,6 +701,8 @@ export default function RadialApp() {
         updateReady={updateReady}
         discoveryPhase={discoveryPhase}
         onWorkspaceSwitch={handleWorkspaceSwitch}
+        onMove={handleRadialMove}
+        onDragBegin={handleRadialDragBegin}
         onDirectionHintSeen={handleDirectionHintSeen}
         onOpenSettings={handleOpenSettings}
         systemStatus={systemStatus}

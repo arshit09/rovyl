@@ -269,6 +269,8 @@ export interface UIConfig {
   showLabels: boolean;
   /** When true, app names stay visible for all items; when false, only the hovered/selected item shows its label. */
   alwaysShowAppLabels: boolean;
+  /** The pill under the wheel naming where you are (workspace, then folders). Absent means on. */
+  showWorkspacePill?: boolean;
   showBattery: boolean; // New
   showWeather: boolean; // New
   weatherLocation?: string; // New: CEP or city name for weather
@@ -595,6 +597,25 @@ export interface ElectronAPI {
   setRadialCursorCapture?: (enabled: boolean) => void;
   /** Pulls the cursor back to the center without ending the gesture — used when it drifts off the window. */
   parkRadialCursor?: () => void;
+  /**
+   * The hub has been picked up and the wheel wants the whole screen to be carried across.
+   *
+   * Main grows the overlay to the display the wheel is on. The new geometry arrives separately, on
+   * `onRadialDragGeometry`, and it arrives BEFORE the window actually moves — which is the point:
+   * client coordinates are measured from a corner that is about to shift by several hundred pixels,
+   * and a renderer told afterwards paints one frame with the new size and the old centre.
+   */
+  requestRadialDragSpace?: () => void;
+  /**
+   * Where this window's client area is about to start, and how big it is about to be. Applied on
+   * the `resize` that follows, so the two halves of the change land in the same frame.
+   */
+  onRadialDragGeometry?: (
+    callback: (geometry: {
+      windowOrigin: Coordinates;
+      clientSize: { width: number; height: number };
+    }) => void,
+  ) => () => void;
   setGameMode: (config: GameModeConfig) => void;
   /**
    * Whether the status dock needs live readings. Main owns the helper that produces them, so it is

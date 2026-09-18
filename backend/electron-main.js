@@ -2272,6 +2272,63 @@ ipcMain.on("set-radial-viewport", (_event, payload) => {
 });
 
 /**
+ * The wheel is being carried, and the box it was born in is too small a desk.
+ *
+ * `radialViewportSize` is a square around the ring (988 by default): on a 1920×1080 monitor that is
+ * a quarter of the screen, and mouse events stop at the window's edge — drag past it and the wheel
+ * would stick to an invisible frame a few hundred pixels from where it started. So the first
+ * committed drag of an open grows the overlay to the whole display, once, and the renderer keeps
+ * the wheel under the hand from there with no further help from main.
+ *
+ * It is the same rect a deep scrim or a screen dock already opens at (`fullBleedBounds`), for the
+ * same reason and with the same taskbar left alone — so a wheel that was already full-bleed pays
+ * for nothing here and no window is resized at all.
+ *
+ * THE ORDER MATTERS, and it is the whole reason this is a message and not an `invoke`. Growing the
+ * window moves its top-left corner several hundred pixels, and client coordinates are measured from
+ * that corner: a renderer told afterwards paints one frame with the new size and the old centre,
+ * which on screen is the wheel jumping out from under the hand at the exact moment the hand is
+ * holding it. Sending the geometry BEFORE `setBounds` puts the message in the renderer's queue
+ * ahead of the resize, so it is already holding the new origin when the `resize` event arrives and
+ * can apply both in one frame.
+ */
+ipcMain.on("radial-drag-space", (event) => {
+  if (!radialOpen || !overlayWindow || overlayWindow.isDestroyed()) return;
+  try {
+    const current = overlayWindow.getBounds();
+    /** The display the wheel is ON, never the cursor's: a drag must not teleport it to another screen. */
+    const display = screen.getDisplayMatching(current);
+    const target = fullBleedBounds(display.bounds, display.workArea) || {
+      x: display.bounds.x,
+      y: display.bounds.y,
+      width: display.bounds.width,
+      height: display.bounds.height,
+    };
+    const bounds = {
+      x: Math.round(target.x),
+      y: Math.round(target.y),
+      width: Math.round(target.width),
+      height: Math.round(target.height),
+    };
+    event.sender.send("radial-drag-geometry", {
+      windowOrigin: { x: bounds.x, y: bounds.y },
+      clientSize: { width: bounds.width, height: bounds.height },
+    });
+    if (boundsApproxEqual(current, bounds)) return;
+    overlayWindow.setBounds(bounds);
+    /**
+     * The blocker's rect is the ALLOWED one — everything else on the monitor is swallowed before it
+     * reaches any window. Left at the old box, the release that ends a drag out in the new area
+     * would never be delivered and the wheel would stay stuck to the pointer.
+     */
+    setRadialMouseBlocking(bounds, display.bounds);
+    diagLog(`[RadialDrag] overlay grown for a drag: ${JSON.stringify(bounds)}`);
+  } catch (e) {
+    diagLog(`[RadialDrag] could not grow the overlay: ${e.message}`);
+  }
+});
+
+/**
  * The monitor the wheel is born on.
  *
  * `primary` is what shipped and stays the default. `cursor` exists for the case that made this a

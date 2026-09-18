@@ -23,6 +23,7 @@ import {
 import { clampDwellMs, directionCommitPx } from '../constants/radialDwell';
 import { isBackKeyEvent, normalizeBackKey } from '../constants/radialBackKey';
 import { radialScrimGradient } from '../utils/radialScrim';
+import { HUB_DRAG_SLOP_PX, clampWheelCenter } from '../utils/radialDrag';
 import {
   annularSectorPath,
   polarPoint,
@@ -178,23 +179,47 @@ export function computeRadialLayout({
     numberOfApps > 1 ? (size + neighbourGap) / 2 / sinHalfSlice : 0;
 
   // Floor: clear of the central hub, clear of the centre dead zone that
-  // cancels selection, and scaled by the saved radius.
-  const radiusScale = (menuRadius + minGap) / 150;
+  // cancels selection.
   const floorRadius = (size: number) =>
     Math.max(
       size * 1.1 + minGap + 12,                // hub is size * 1.2 wide
       (activationThreshold ?? 60) + size / 2 + 8, // stay outside the dead zone
       92,
-    ) * radiusScale;
+    );
 
-  let targetRadius = Math.max(floorRadius(currentIconSize), packedRadius(currentIconSize));
+  /**
+   * The saved radius scales the WHOLE ring, not just its floor.
+   *
+   * Scaling only the floor made the setting inert wherever packing won, which on any wheel of nine
+   * or more is the entire lower half of the slider: twelve shortcuts sat at the same 170 px from
+   * 90 px through 220 px, so the one control named after the wheel's size could not change it. The
+   * divisor is 150 and the defaults are 140 + 10, so a default wheel comes out exactly where it
+   * always did; every other value now moves it.
+   */
+  const radiusScale = (menuRadius + minGap) / 150;
+  const naturalRadius = (size: number) => Math.max(floorRadius(size), packedRadius(size));
+
+  let targetRadius = naturalRadius(currentIconSize) * radiusScale;
+
+  /**
+   * A ring asked to come in tighter than its own packing has to take it out of the icons — there is
+   * nowhere else for the room to come from, and neighbours that overlap are worse than tiles that
+   * are small. Bounded at half size, the same floor the screen clamp below uses; past that the ring
+   * simply stops shrinking.
+   */
+  if (targetRadius < packedRadius(currentIconSize) && numberOfApps > 1) {
+    const possibleScale = (2 * targetRadius * sinHalfSlice - neighbourGap) / currentIconSize;
+    const scaleFactor = Math.max(0.5, Math.min(1.0, possibleScale));
+    currentIconSize = Math.round(currentIconSize * scaleFactor);
+    targetRadius = Math.max(targetRadius, packedRadius(currentIconSize));
+  }
 
   // If the ring outgrows the screen, shrink the icons instead of overlapping.
   if (targetRadius > maxScreenRadius && numberOfApps > 1) {
     const possibleScale = (2 * maxScreenRadius * sinHalfSlice - neighbourGap) / currentIconSize;
     const scaleFactor = Math.max(0.5, Math.min(1.0, possibleScale));
     currentIconSize = Math.round(currentIconSize * scaleFactor);
-    targetRadius = Math.max(floorRadius(currentIconSize), packedRadius(currentIconSize));
+    targetRadius = Math.max(naturalRadius(currentIconSize), Math.min(targetRadius, maxScreenRadius));
   }
 
   return { actualMenuRadius: targetRadius, actualIconSize: currentIconSize };
@@ -221,6 +246,18 @@ interface RadialMenuProps {
    */
   windowOrigin?: Coordinates | null;
   onWorkspaceSwitch?: (workspaceIndex: number) => void;
+  /**
+   * The hub has been picked up and carried: the wheel's new centre, in this window's client
+   * coordinates. Absent — the wheel drawn somewhere that cannot move it — leaves the middle
+   * button a button and nothing more.
+   */
+  onMove?: (position: Coordinates) => void;
+  /**
+   * The hand has committed to a drag. The owner's job is to make room for it: the wheel is born in
+   * a box a few hundred pixels wider than itself, and a wheel that cannot leave that box has not
+   * been moved anywhere. Called once per drag, on the pixel the slop is crossed.
+   */
+  onDragBegin?: () => void;
   currentWorkspace?: Workspace;
   /** False while the hidden HWND takes its first transparent paint. */
   animationReady?: boolean;
@@ -1236,6 +1273,8 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
   triggerSource = 'shortcut',
   windowOrigin = null,
   onWorkspaceSwitch,
+  onMove,
+  onDragBegin,
   onDirectionHintSeen,
   onOpenSettings,
   currentWorkspace,
@@ -1667,6 +1706,7 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
 
   // The root hub carries the Rovyl identity; deeper levels keep the Back affordance.
   const isRoot = folderStack.length === 0;
+  const rootIsPicker = pickWorkspaceSwitchMode(config) === 'picker' && enabledWorkspaceCount(config) > 1;
   const centerLabel = !isRoot ? uiString('menu.back') : (config.centerButton?.label || uiString('menu.center'));
 
 
@@ -1835,6 +1875,7 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
   const stateRef = useRef({
     isOpen,
     position,
+    viewportSize,
     activeIndex,
     onClose,
     currentLevelApps,
@@ -1853,6 +1894,7 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
     stateRef.current = {
       isOpen,
       position,
+      viewportSize,
       activeIndex,
       onClose,
       currentLevelApps,
@@ -1865,7 +1907,7 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
       actualIconSize,
       deadZoneRadius,
     };
-  }, [isOpen, position, activeIndex, onClose, currentLevelApps, config, isCenterActive, hasMoved, folderStack, apps, actualMenuRadius, actualIconSize, deadZoneRadius]);
+  }, [isOpen, position, viewportSize, activeIndex, onClose, currentLevelApps, config, isCenterActive, hasMoved, folderStack, apps, actualMenuRadius, actualIconSize, deadZoneRadius]);
 
   /**
    * The point the wheel AIMS at, written in the event itself — without going through a render. By
@@ -1992,6 +2034,155 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
    * delivered — and that was what launched an app with the radial already closing.
    */
   const gestureConsumedRef = useRef(false);
+
+  /* ------------------------------------------------------------------ */
+  /* Carrying the wheel                                                  */
+  /* ------------------------------------------------------------------ */
+
+  const onMoveRef = useRef(onMove);
+  onMoveRef.current = onMove;
+  const onDragBeginRef = useRef(onDragBegin);
+  onDragBeginRef.current = onDragBegin;
+
+  /**
+   * The press that is holding the middle button, and what has become of it.
+   *
+   * `offset` is the pointer's displacement from the centre at the moment of the press, held fixed
+   * for the whole drag — that is what makes the wheel feel picked up rather than snapped to the
+   * cursor. `moved` is the whole difference between a drag and a click on the hub, and it is read
+   * twice: once to stop the release from confirming the centre, and once to stop the `click` that
+   * follows a moment later from doing the same thing.
+   */
+  const hubDragRef = useRef<{
+    offset: Coordinates;
+    start: Coordinates;
+    moved: boolean;
+  } | null>(null);
+
+  /** Takes the drag's listeners back off the window. In a ref because the handlers install it. */
+  const releaseHubDragRef = useRef<() => void>(() => {});
+
+  /**
+   * Swallows the `click` the browser synthesises after the release that ended a drag.
+   *
+   * The drag's own listeners run in the CAPTURE phase and stop the event at `window`, so neither
+   * the hub's handlers nor the aim listeners ever see the press itself. `click` is a separate
+   * event, dispatched afterwards, and without this it would reach the centre target and be read as
+   * the middle button having been pressed — closing the wheel at the end of every drag.
+   *
+   * Armed for a quarter second rather than "until the next click": a release that lands over
+   * nothing produces no click at all, and a listener left waiting for one would eat a real press
+   * later in the same gesture.
+   */
+  const swallowClickAfterDrag = useCallback(() => {
+    const swallow = (event: MouseEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      window.removeEventListener('click', swallow, true);
+    };
+    window.addEventListener('click', swallow, true);
+    window.setTimeout(() => window.removeEventListener('click', swallow, true), 250);
+  }, []);
+
+  const handleHubDragMove = useCallback(
+    (event: MouseEvent) => {
+      const drag = hubDragRef.current;
+      if (!drag) return;
+
+      if (!drag.moved) {
+        const dx = event.clientX - drag.start.x;
+        const dy = event.clientY - drag.start.y;
+        if (dx * dx + dy * dy < HUB_DRAG_SLOP_PX * HUB_DRAG_SLOP_PX) return;
+        drag.moved = true;
+        /** Nothing that was counting towards a launch survives the wheel moving under it. */
+        disarmDwell();
+        /**
+         * The box the wheel was born in is a few hundred pixels wider than the ring, and mouse
+         * events stop at its edge. Asked for here, on the pixel the hand commits, so the window is
+         * already the size of the screen by the time the drag has gone anywhere.
+         */
+        onDragBeginRef.current?.();
+      }
+
+      /** Capture phase: from here the aim listeners and the hub's own handlers never see this press. */
+      event.stopPropagation();
+
+      const { viewportSize, actualMenuRadius, actualIconSize } = stateRef.current;
+      onMoveRef.current?.(
+        clampWheelCenter(
+          { x: event.clientX - drag.offset.x, y: event.clientY - drag.offset.y },
+          viewportSize,
+          actualMenuRadius + actualIconSize / 2,
+        ),
+      );
+    },
+    [disarmDwell],
+  );
+
+  const handleHubDragEnd = useCallback(
+    (event: MouseEvent) => {
+      const drag = hubDragRef.current;
+      if (!drag || event.button !== 0) return;
+      hubDragRef.current = null;
+      releaseHubDragRef.current();
+      /** Never moved: this was a click on the middle button, and it is still owed its action. */
+      if (!drag.moved) return;
+
+      event.stopPropagation();
+      swallowClickAfterDrag();
+
+      /**
+       * The aim's record of where the pointer is was frozen when the drag began, and the wheel has
+       * moved since. The pointer is inside the hub — it never left it, the wheel followed it — so
+       * the centre is the honest answer, and writing it here is what stops a release a moment later
+       * from confirming a slice the hand never pointed at.
+       */
+      const point = { x: event.clientX, y: event.clientY };
+      lastPointerRef.current = point;
+      lastAnchorPointRef.current = point;
+      setIsCenterActive(true);
+      setActiveIndex(null);
+    },
+    [swallowClickAfterDrag],
+  );
+
+  /**
+   * A press on the hub. Nothing is decided here: it is still a click until the hand has travelled
+   * `HUB_DRAG_SLOP_PX`, because the middle button has an action of its own and every pixel of slop
+   * is lag on a control that is pressed constantly.
+   */
+  const beginHubDrag = useCallback(
+    (event: React.MouseEvent) => {
+      if (event.button !== 0 || !onMoveRef.current || hubDragRef.current) return;
+      /**
+       * Not by direction. There the real pointer is hidden and parked at the centre by main, so
+       * there is no hand on screen to carry anything with: every sample is a direction, not a place.
+       */
+      if (directionModeRef.current) return;
+      const { position } = stateRef.current;
+      hubDragRef.current = {
+        offset: { x: event.clientX - position.x, y: event.clientY - position.y },
+        start: { x: event.clientX, y: event.clientY },
+        moved: false,
+      };
+      window.addEventListener('mousemove', handleHubDragMove, true);
+      window.addEventListener('mouseup', handleHubDragEnd, true);
+      releaseHubDragRef.current = () => {
+        window.removeEventListener('mousemove', handleHubDragMove, true);
+        window.removeEventListener('mouseup', handleHubDragEnd, true);
+      };
+    },
+    [handleHubDragMove, handleHubDragEnd],
+  );
+
+  /** A wheel that goes away mid-drag must not leave two capture listeners on the window. */
+  useEffect(
+    () => () => {
+      hubDragRef.current = null;
+      releaseHubDragRef.current();
+    },
+    [],
+  );
 
   /**
    * Resolves the target from a concrete point, with the same maths as `mousemove`.
@@ -3563,7 +3754,15 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
                   height: `${hubHitSize}px`,
                   transform: 'translate(-50%, -50%)',
                 }}
-                onMouseDown={(e) => e.stopPropagation()}
+                onMouseDown={(e) => {
+                  e.stopPropagation();
+                  /**
+                   * Held and dragged, the middle button carries the whole wheel; released without
+                   * travelling, it is the button it has always been. Which of the two this press
+                   * turns out to be is decided by the hand, in `handleHubDragMove`.
+                   */
+                  beginHubDrag(e);
+                }}
                 onMouseUp={(e) => e.stopPropagation()}
                 onClick={(e) => {
                   e.stopPropagation();
@@ -3771,6 +3970,7 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
             )}
 
             {/* Context pill: where you are in the wheel + the gesture that goes back. */}
+            {config.showWorkspacePill !== false && (
             <div
               className="zn-radial-pill absolute left-0 top-0 pointer-events-none z-30"
               style={{
@@ -3791,8 +3991,15 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
                   boxShadow: '0 0 0 1px rgba(0,0,0,0.45)',
                 }}
               >
-                {/* Inside a workspace its name is enough — "Rovyl" identifies the root. */}
-                {(isRoot ? [currentWorkspace?.name || 'Rovyl'] : folderStack.map((level) => level.label)).map((label, i) => (
+                {/*
+                  Inside a workspace its name is enough — "Rovyl" identifies the root. In picker
+                  mode the root IS the choice of workspace, so naming the one picked last time
+                  there read as "you are in X" before anything had been picked.
+                */}
+                {(isRoot
+                  ? [rootIsPicker ? 'Workspaces' : currentWorkspace?.name || 'Rovyl']
+                  : folderStack.map((level) => level.label)
+                ).map((label, i) => (
                   <React.Fragment key={`${label}-${i}`}>
                     {i > 0 && <span className="text-[11px] leading-none text-white/25">/</span>}
                     <span
@@ -3811,6 +4018,7 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
                 </span>
               </div>
             </div>
+            )}
 
             {/* App Icons — the swap between levels is the bloom itself (see the `bloom` effect). */}
             {currentLevelApps.map((app, index) => {

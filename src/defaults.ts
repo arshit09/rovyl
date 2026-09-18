@@ -346,6 +346,7 @@ export const DEFAULT_UI_CONFIG: UIConfig = {
   },
   showLabels: true,
   alwaysShowAppLabels: false,
+  showWorkspacePill: true,
   showBattery: false,
   showWeather: false,
   clockPosition: "top-center",

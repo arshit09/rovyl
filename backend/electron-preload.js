@@ -150,6 +150,18 @@ contextBridge.exposeInMainWorld("electron", {
     ipcRenderer.send("set-radial-cursor-capture", !!enabled),
   /** Pulls the pointer back to the centre mid-gesture — does not end it, does not touch the return point. */
   parkRadialCursor: () => ipcRenderer.send("park-radial-cursor"),
+  /**
+   * The hub has been picked up: ask for the whole display to carry the wheel across. The answer
+   * comes back on `onRadialDragGeometry` — deliberately not as an `invoke`, because main sends the
+   * geometry BEFORE it moves the window and a promise would resolve after.
+   */
+  requestRadialDragSpace: () => ipcRenderer.send("radial-drag-space"),
+  /** Where this window's client area is about to start, and how big it is about to be. */
+  onRadialDragGeometry: (callback) => {
+    const listener = (_event, geometry) => callback(geometry);
+    ipcRenderer.on("radial-drag-geometry", listener);
+    return () => ipcRenderer.removeListener("radial-drag-geometry", listener);
+  },
   setGameMode: (config) => ipcRenderer.send("set-game-mode", config),
 
   /* ---- The system dock's readings ---- */

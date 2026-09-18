@@ -45,6 +45,13 @@ const STAGE_HEIGHT = 188;
 /** Breathing room so the outermost tile edge never touches the frame. */
 const STAGE_INSET = 14;
 
+/**
+ * The orbital radius slider's own bounds, exported so the row in `PrecisionSettings` and the scale
+ * below cannot drift apart: the preview measures itself against the top of this range, so a row
+ * that offered a different maximum would either overflow the stage or never reach its edge.
+ */
+export const MENU_RADIUS_RANGE = { min: 90, max: 220 } as const;
+
 /** The display the wheel will actually open on. Only `min(w, h)` matters — see `maxScreenRadius`. */
 function screenSize(): { width: number; height: number } {
   const width = window.screen?.width || window.innerWidth || 1920;
@@ -127,10 +134,44 @@ export const WheelPreview: React.FC<{ config: UIConfig; apps: AppItem[] }> = ({ 
   const longestLabel = showLabels
     ? items.reduce((longest, item) => Math.max(longest, (item.label || '').length), 0)
     : 0;
-  const ringExtent = actualMenuRadius + actualIconSize / 2;
-  const labelOffset = actualIconSize / 2 + 10;
-  const verticalExtent = ringExtent + (showLabels ? labelOffset + 26 : 0);
-  const horizontalExtent = ringExtent + (showLabels ? labelOffset + 24 + longestLabel * 7.2 : 0);
+  const extentsOf = (menuRadiusPx: number, iconPx: number) => {
+    const ring = menuRadiusPx + iconPx / 2;
+    const labelOffset = iconPx / 2 + 10;
+    return {
+      vertical: ring + (showLabels ? labelOffset + 26 : 0),
+      horizontal: ring + (showLabels ? labelOffset + 24 + longestLabel * 7.2 : 0),
+    };
+  };
+  const extents = extentsOf(actualMenuRadius, actualIconSize);
+
+  /**
+   * The biggest wheel the slider can ask for, drawn with everything else left as it is.
+   *
+   * This — not the wheel on screen — is what the stage is fitted to, and it is the whole reason
+   * orbital radius has anything to show. Fitting every frame to its own extent divided the setting
+   * straight back out again: the ring grew, the scale shrank by exactly the same factor, and the
+   * tiles landed on the same pixels at 90 px as at 220 px. The one control the preview was added
+   * for was the one it could not move. Measured against a fixed ceiling instead, the wheel grows
+   * across the slider and only touches the frame at the top of the range.
+   *
+   * The wheel being drawn is still taken as a floor for the box, because the ceiling is not a
+   * guarantee: `computeRadialLayout` shrinks icons once a ring outgrows the display, and a clamped
+   * wheel can land wider than the unclamped reference. The stage crops, so the larger of the two
+   * wins and nothing reaches the frame that should not.
+   */
+  const reference = computeRadialLayout({
+    numberOfApps: items.length,
+    iconSizePx,
+    minGap,
+    menuRadius: MENU_RADIUS_RANGE.max,
+    activationThreshold: config.activationThreshold,
+    viewportSize: screenSize(),
+  });
+  const referenceExtents = extentsOf(reference.actualMenuRadius, reference.actualIconSize);
+
+  const verticalExtent = Math.max(extents.vertical, referenceExtents.vertical);
+  const horizontalExtent = Math.max(extents.horizontal, referenceExtents.horizontal);
+
 
   /**
    * The stage is fluid, and the wheel has to fit the width it actually got — the panel is resized
