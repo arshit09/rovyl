@@ -46,6 +46,7 @@ backend/debug_*.json
 # Assistant / editor tooling — local to whoever is working, not part of the project
 .claude/*
 !.claude/skills/
+!.claude/skills/**
 CLAUDE.md
 .cursor/
 .codex-video-review/
