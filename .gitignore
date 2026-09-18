@@ -44,7 +44,8 @@ backend/debug_*.json
 *.sw?
 
 # Assistant / editor tooling — local to whoever is working, not part of the project
-.claude/
+.claude/*
+!.claude/skills/
 CLAUDE.md
 .cursor/
 .codex-video-review/
