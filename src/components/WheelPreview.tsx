@@ -19,6 +19,7 @@ import {
 import { radialScrimGradient } from '../utils/radialScrim';
 import { getIcon } from '../iconMap';
 import { SmartIcon } from './SmartIcon';
+import { uiString } from '../strings';
 import type { AppItem, UIConfig } from '../types';
 
 /**
@@ -86,6 +87,10 @@ export const WheelPreview: React.FC<{ config: UIConfig; apps: AppItem[] }> = ({ 
   const hoverColor = config.radialHoverColor || '#FFFFFF';
   const backdropOpacity = config.backdropOpacity ?? 1;
   const showLabels = config.alwaysShowAppLabels ?? false;
+  const showPill = config.showWorkspacePill !== false;
+  /** The workspace whose shortcuts are drawn, so the pill names the wheel on screen. */
+  const pillName = config.workspaces[config.activeWorkspaceIndex]?.name || 'Rovyl';
+  const pillHint = config.centerButton?.label || uiString('menu.center');
 
   const { actualMenuRadius, actualIconSize } = useMemo(
     () =>
@@ -137,10 +142,13 @@ export const WheelPreview: React.FC<{ config: UIConfig; apps: AppItem[] }> = ({ 
   const extentsOf = (menuRadiusPx: number, iconPx: number) => {
     const ring = menuRadiusPx + iconPx / 2;
     const labelOffset = iconPx / 2 + 10;
-    return {
-      vertical: ring + (showLabels ? labelOffset + 26 : 0),
-      horizontal: ring + (showLabels ? labelOffset + 24 + longestLabel * 7.2 : 0),
-    };
+    const vertical = ring + (showLabels ? labelOffset + 26 : 0);
+    const horizontal = ring + (showLabels ? labelOffset + 24 + longestLabel * 7.2 : 0);
+    if (!showPill) return { vertical, horizontal };
+    /** The pill hangs below the ring (same offset as the pill below); ~32px tall, width estimated like the labels. */
+    const pillBottom = menuRadiusPx + iconPx * 0.75 + 34 + 32;
+    const pillHalfWidth = (48 + (pillName.length + pillHint.length) * 6.2) / 2;
+    return { vertical: Math.max(vertical, pillBottom), horizontal: Math.max(horizontal, pillHalfWidth) };
   };
   const extents = extentsOf(actualMenuRadius, actualIconSize);
 
@@ -171,7 +179,6 @@ export const WheelPreview: React.FC<{ config: UIConfig; apps: AppItem[] }> = ({ 
 
   const verticalExtent = Math.max(extents.vertical, referenceExtents.vertical);
   const horizontalExtent = Math.max(extents.horizontal, referenceExtents.horizontal);
-
 
   /**
    * The stage is fluid, and the wheel has to fit the width it actually got — the panel is resized
@@ -411,6 +418,19 @@ export const WheelPreview: React.FC<{ config: UIConfig; apps: AppItem[] }> = ({ 
             className="zs-wheel-hub"
             style={{ width: hubDiameter, height: hubDiameter, borderColor: `${hoverColor}55` }}
           />
+
+          {showPill && (
+            <div
+              className="zs-wheel-pill"
+              style={{
+                /** `RadialMenu`'s own offset for the pill, so it lands where the real one does. */
+                transform: `translate(-50%, 0) translate(0, ${Math.round(actualMenuRadius + actualIconSize * 0.75 + 34)}px)`,
+              }}
+            >
+              <span>{pillName}</span>
+              <span>{pillHint}</span>
+            </div>
+          )}
 
           {items.map((item, index) => {
             const angleDeg = (index * (360 / items.length)) - 90;

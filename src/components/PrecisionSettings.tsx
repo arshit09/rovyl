@@ -1180,6 +1180,13 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
           onToggle: () => update('alwaysShowAppLabels', !config.alwaysShowAppLabels),
         },
         {
+          key: 'workspacePill', configKey: 'showWorkspacePill', group: 'Wheel', title: 'Workspace name',
+          description: 'Show the pill under the wheel with the current workspace and folder.',
+          keywords: 'pill chip breadcrumb workspace name folder path label below under',
+          kind: 'bool', enabled: config.showWorkspacePill !== false,
+          onToggle: () => update('showWorkspacePill', config.showWorkspacePill === false),
+        },
+        {
           key: 'radialPlacement', configKey: 'radialPlacement', group: 'Position', title: 'Where it opens',
           /**
            * Said as the consequence, because that is the whole of the choice: the same wheel, the

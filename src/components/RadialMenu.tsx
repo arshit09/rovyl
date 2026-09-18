@@ -15,9 +15,11 @@ import {
 import { ScreenDocks, dockStackHeight } from './ScreenDocks';
 import { normalizeShortcutDock, normalizeStatusDock } from '../utils/screenDocks';
 import {
+  enabledWorkspaceCount,
   filterRadialApps,
   getRootRadialApps,
   isWorkspacePickItem,
+  pickWorkspaceSwitchMode,
   parseWorkspacePickIndex,
 } from '../utils/workspaceRadial';
 import { clampDwellMs, directionCommitPx } from '../constants/radialDwell';
