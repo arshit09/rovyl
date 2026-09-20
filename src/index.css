@@ -19,6 +19,8 @@
   * { scrollbar-width: thin; scrollbar-color: rgba(242, 242, 237, .15) transparent; }
   *::-webkit-scrollbar { width: 9px; height: 9px; }
   *::-webkit-scrollbar-thumb { background: rgba(242, 242, 237, .15); border-radius: 999px; }
+  *::-webkit-scrollbar-thumb:hover { background: var(--zn-scroll-hover); }
+  *::-webkit-scrollbar-thumb:active { background: var(--zn-scroll-active); }
   *::-webkit-scrollbar-track { background: transparent; }
 }
 
@@ -40,6 +42,12 @@
 
   --zn-line: rgba(255, 255, 255, .07);
   --zn-line-strong: rgba(255, 255, 255, .13);
+
+  /* The scrollbar thumb rests at the strong hairline. Pointing at it lifts it far enough to
+     read as something you can grab, and no further — a bar this tall turns into a stripe down
+     the edge of the surface the moment it goes bright. */
+  --zn-scroll-hover: rgba(255, 255, 255, .3);
+  --zn-scroll-active: rgba(255, 255, 255, .42);
 
   --zn-text: rgba(255, 255, 255, .93);
   --zn-text-2: rgba(255, 255, 255, .55);
@@ -91,6 +99,9 @@
 
   --zn-line: rgba(0, 0, 0, .085);
   --zn-line-strong: rgba(0, 0, 0, .16);
+
+  --zn-scroll-hover: rgba(0, 0, 0, .34);
+  --zn-scroll-active: rgba(0, 0, 0, .46);
 
   --zn-text: rgba(0, 0, 0, .90);
   --zn-text-2: rgba(0, 0, 0, .56);
@@ -192,6 +203,8 @@
 .zs-shell ::selection { color: var(--zn-on-solid); background: var(--zn-solid); }
 .zs-shell * { scrollbar-color: var(--zn-line-strong) transparent; }
 .zs-shell *::-webkit-scrollbar-thumb { background: var(--zn-line-strong); }
+.zs-shell *::-webkit-scrollbar-thumb:hover { background: var(--zn-scroll-hover); }
+.zs-shell *::-webkit-scrollbar-thumb:active { background: var(--zn-scroll-active); }
 
 .zs-window {
   width: 100%;
@@ -1550,6 +1563,8 @@
   scrollbar-color: var(--zn-line-strong) transparent;
 }
 .zs-fault *::-webkit-scrollbar-thumb { background: var(--zn-line-strong); }
+.zs-fault *::-webkit-scrollbar-thumb:hover { background: var(--zn-scroll-hover); }
+.zs-fault *::-webkit-scrollbar-thumb:active { background: var(--zn-scroll-active); }
 .zs-fault[data-zn-theme="black"] { color-scheme: dark; }
 .zs-fault[data-zn-theme="white"] { color-scheme: light; }
 .zs-fault :where(button):focus-visible { outline: 2px solid var(--zn-focus); outline-offset: 2px; }
