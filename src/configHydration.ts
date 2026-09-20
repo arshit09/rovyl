@@ -77,6 +77,18 @@ export function normalizeStoredConfig(raw: unknown): UIConfig {
   }
 
   /**
+   * "Start with Windows" ships on, but only for installs that begin with it. A config written
+   * before the default changed belongs to somebody who has been using Rovyl without it, and an
+   * update must not put an entry in their startup list on its own.
+   *
+   * Same test as the card above — the key is ABSENT, not `false`. The main process keeps the
+   * identical rule over settings.json, so the toggle and the registry cannot come apart.
+   */
+  if (!('openAtLogin' in loaded)) {
+    config = { ...config, openAtLogin: false };
+  }
+
+  /**
    * "Background dimming" used to top out at half a pool; it now reaches an opaque screen. The saved
    * number therefore means something darker than it did, and the default was the top of the old
    * scale — so left alone, every existing profile would have blacked the screen out on the first

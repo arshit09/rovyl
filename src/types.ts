@@ -492,6 +492,8 @@ export interface ElectronAPI {
   }>;
   installUpdateNow?: () => void;
   wasOpenedAtLogin?: () => Promise<boolean>;
+  /** Resolved in the preload, so the very first render already knows — a login start stays in the tray. */
+  openedAtLogin?: boolean;
   /** The main confirms the app really has an IDE profile with an MRU (do not guess by name). */
   appSupportsRecents?: (appName: string, appCommand: string) => Promise<boolean>;
   onOpenMenu: (

@@ -398,6 +398,12 @@ export const DEFAULT_UI_CONFIG: UIConfig = {
   mouseTriggerMode: 'click',
   mouseTriggerButton: 'middle',
   shortcutTriggerMode: 'toggle',
+  /**
+   * On: a launcher that has to be started by hand is not there when the wheel is reached for, so a
+   * new install signs in ready — into the tray, not into Settings. Existing profiles keep what they
+   * have; `normalizeStoredConfig` holds a config saved before this key at `false`.
+   */
+  openAtLogin: true,
   language: "en",
   performanceMode: false,
   mainStartMenuDiscoveryDone: false,

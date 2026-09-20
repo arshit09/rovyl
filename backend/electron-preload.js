@@ -26,6 +26,19 @@ contextBridge.exposeInMainWorld("electron", {
   },
   /** Tells a Windows startup apart from a manual open — see the scan deferral. */
   wasOpenedAtLogin: () => ipcRenderer.invoke("was-opened-at-login"),
+  /**
+   * The same answer, already here when React first renders.
+   *
+   * A login start belongs in the tray, and that is decided in the first render or not at all — an
+   * awaited answer would show the Settings window and then hide it again at every sign-in.
+   */
+  openedAtLogin: (() => {
+    try {
+      return ipcRenderer.sendSync("get-launch-flags")?.openedAtLogin === true;
+    } catch (e) {
+      return false;
+    }
+  })(),
   appSupportsRecents: (appName, appCommand) => ipcRenderer.invoke("app-supports-recents", appName, appCommand),
   onOpenMenu: (callback) => {
     const listener = (event, data) => callback(data);

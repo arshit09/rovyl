@@ -1120,6 +1120,16 @@ const installPendingUpdateAndExit = () => {
   return true;
 };
 
+/**
+ * Did Windows start this copy at login, or did a person open it?
+ *
+ * `getLoginItemSettings().wasOpenedAtLogin` is documented macOS-only — on Windows it never comes
+ * back true, so the answer has to travel with the launch itself. `syncLoginItemSettings` registers
+ * the Run entry WITH this argument, which is what makes reading it back here authoritative.
+ */
+const LOGIN_LAUNCH_ARG = "--opened-at-login";
+const startedAtLogin = process.argv.includes(LOGIN_LAUNCH_ARG);
+
 // Single instance: prevents two Zenith processes when login startup is slow and the user launches manually.
 const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) {
@@ -3667,17 +3677,46 @@ app.whenReady().then(async () => {
     enableMouseTrigger: true,
     mouseTriggerMode: "click",
     mouseTriggerButton: "middle",
-    openAtLogin: false,
+    /**
+     * On — for installs that begin with it.
+     *
+     * A launcher that has to be started by hand is not there when the wheel is reached for, so a
+     * new install signs in ready. It costs nothing visible: a login start stays in the tray (see
+     * `LOGIN_LAUNCH_ARG`) rather than opening Settings the way a manual launch does.
+     *
+     * Profiles that predate this default are deliberately left alone — see `loadSettings`.
+     */
+    openAtLogin: true,
   };
 
   const syncLoginItemSettings = (openAtLogin) => {
     try {
+      /**
+       * Never from an unpackaged run. The exe is the shared development Electron binary there, and
+       * a Run entry pointing at it starts a checkout — or a throwaway smoke-test profile — with
+       * Windows on the machine of whoever last launched one. Only an installed Rovyl owns a
+       * startup entry; the setting itself is still stored and still shown.
+       */
+      if (!isPackagedBuild) {
+        diagLog(`[Startup] Unpackaged run: login item untouched (openAtLogin = ${openAtLogin}).`);
+        return;
+      }
       if (typeof openAtLogin === "boolean") {
-        const currentLoginSettings = app.getLoginItemSettings();
+        /**
+         * Asked WITH the path and the argument: on Windows that reports whether the registered
+         * entry is this exact command line, so a Run key left by an older version — same exe, no
+         * argument — reads as absent and is rewritten once. Without that, Rovyl would go on
+         * starting at login with nothing to tell that login apart from a double-click.
+         */
+        const loginItem = {
+          path: app.getPath("exe"),
+          args: [LOGIN_LAUNCH_ARG],
+        };
+        const currentLoginSettings = app.getLoginItemSettings(loginItem);
         if (currentLoginSettings.openAtLogin !== openAtLogin) {
           app.setLoginItemSettings({
+            ...loginItem,
             openAtLogin: openAtLogin,
-            path: app.getPath("exe"),
           });
           console.log(
             `Login item settings synced: openAtLogin = ${openAtLogin}`,
@@ -3689,12 +3728,29 @@ app.whenReady().then(async () => {
     }
   };
 
+  /** Set by `loadSettings`: no settings.json on disk, so this run is the install's first. */
+  let isFirstRun = false;
+
   const loadSettings = () => {
     try {
-      if (fs.existsSync(settingsPath)) {
-        const data = fs.readFileSync(settingsPath, "utf-8");
-        currentSettings = { ...currentSettings, ...JSON.parse(data) };
+      if (!fs.existsSync(settingsPath)) {
+        isFirstRun = true;
+        return;
       }
+      const data = fs.readFileSync(settingsPath, "utf-8");
+      const stored = JSON.parse(data);
+      if (!stored || typeof stored !== "object") return;
+      currentSettings = { ...currentSettings, ...stored };
+      /**
+       * "Start with Windows" is on by default, but only for installs that begin that way. A
+       * settings file written before the default changed belongs to somebody who has been using
+       * Rovyl without it, and nobody should find a new entry in their startup list because they
+       * updated.
+       *
+       * The test is the ABSENT key, not the value: an explicit `false` is already carried over by
+       * the spread, and every file this version writes names the key either way.
+       */
+      if (!("openAtLogin" in stored)) currentSettings.openAtLogin = false;
     } catch (e) {
       console.error("Failed to load settings:", e);
     }
@@ -3838,6 +3894,14 @@ app.whenReady().then(async () => {
       }
     })();
   }, 60_000).unref?.();
+
+  /**
+   * First run of a fresh install: write the defaults out now, so starting with Windows is a stored
+   * choice from this moment on. Without it the default would be re-derived on every launch until
+   * something else happened to save, and this file is also what tells the NEXT version that this
+   * profile has already answered the question.
+   */
+  if (isFirstRun) saveSettings({});
 
   if (currentSettings.openAtLogin !== undefined) {
     syncLoginItemSettings(currentSettings.openAtLogin);
@@ -8306,11 +8370,24 @@ function stealForegroundForOverlay() {
  * two cases.
  */
 ipcMain.handle("was-opened-at-login", () => {
+  /** The argument first: `wasOpenedAtLogin` is macOS-only and answers false here whatever happened. */
+  if (startedAtLogin) return true;
   try {
     return app.getLoginItemSettings().wasOpenedAtLogin === true;
   } catch (e) {
     return false;
   }
+});
+
+/**
+ * Read once by the preload, before the renderer's first paint.
+ *
+ * Synchronous on purpose: Settings decides whether to open itself in its very first render, and an
+ * answer that arrives a tick later is a window that appears at every Windows login and then takes
+ * itself away again.
+ */
+ipcMain.on("get-launch-flags", (event) => {
+  event.returnValue = { openedAtLogin: startedAtLogin };
 });
 
 ipcMain.handle("get-app-version", () => app.getVersion());
