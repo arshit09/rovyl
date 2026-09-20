@@ -245,11 +245,12 @@
       }
 
       /* ============================================
-         REVOLUTIONARY SCROLLBAR - 2026 Floating Capsule
+         SCROLLBAR - Floating Capsule
          ============================================ */
 
       ::-webkit-scrollbar {
-        width: 4px;
+        width: 9px;
+        height: 9px;
       }
 
       ::-webkit-scrollbar-track {
@@ -260,24 +261,15 @@
       ::-webkit-scrollbar-thumb {
         background: rgba(255, 255, 255, 0.15);
         border-radius: 100px;
-        box-shadow: 0 0 8px rgba(255, 255, 255, 0.1);
-        transition:
-          background var(--transition-base),
-          box-shadow var(--transition-base);
+        transition: background var(--transition-base);
       }
 
       ::-webkit-scrollbar-thumb:hover {
         background: rgba(255, 255, 255, 0.7);
-        box-shadow:
-          0 0 12px rgba(255, 255, 255, 0.4),
-          0 0 24px rgba(255, 255, 255, 0.15);
       }
 
       ::-webkit-scrollbar-thumb:active {
         background: rgba(255, 255, 255, 0.95);
-        box-shadow:
-          0 0 16px rgba(255, 255, 255, 0.6),
-          0 0 32px rgba(255, 255, 255, 0.2);
       }
 
       /* ============================================
