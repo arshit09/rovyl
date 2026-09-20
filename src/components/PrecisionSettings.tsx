@@ -32,6 +32,7 @@ import {
   Mouse,
   Pencil,
   Plus,
+  RefreshCw,
   RotateCcw,
   Search,
   Palette,
@@ -457,7 +458,7 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
       description,
       kind: 'action' as const,
       actionLabel: checking ? 'Checking…' : updateInfo.state === 'error' ? 'Try again' : 'Check now',
-      actionIcon: ArrowDownToLine,
+      actionIcon: RefreshCw,
       actionDisabled: checking,
       onRun: () => void runUpdateCheck(),
     };
