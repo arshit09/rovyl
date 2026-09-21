@@ -275,8 +275,43 @@ export function sectorBeamAlphas(
   alphas: readonly [number, number],
   count: number,
 ): [number, number] {
-  const temper = Math.min(1, Math.sqrt(Math.max(count, 1) / SECTOR_ALPHA_COUNT));
+  /**
+   * One item is tempered as two: its ring is bent towards the icon by `sectorSoloFadeMask`, which
+   * leaves it lighting roughly half the plane — a two-item wedge's share, not the whole of it.
+   */
+  const temper = Math.min(1, Math.sqrt(Math.max(count, 2) / SECTOR_ALPHA_COUNT));
   return [alphas[0] * temper, alphas[1] * temper];
+}
+
+/**
+ * How tightly a one-item wheel's light gathers towards its icon: the fade round the ring is
+ * `((1 + cos φ) / 2)^power`, with φ the angle away from the icon. At 1.5 the sides at a quarter
+ * turn keep about a third, and the far side has nothing.
+ */
+const SECTOR_SOLO_FALLOFF_POWER = 1.5;
+/** Stops round the whole turn — one every 10°, so the curve bends rather than kinks. */
+const SECTOR_SOLO_SAMPLES = 36;
+
+/**
+ * A one-item wheel's light, bent round the ring towards its icon — a CSS `mask-image`.
+ *
+ * One item owns the whole plane, so its wedge is a full ring, and a ring lit evenly is a halo: it
+ * glows in every direction at once and points at nothing, which is the one thing a highlight is
+ * for. This fades it by ANGLE instead: brightest straight out through the icon, dimming smoothly
+ * both ways round the wheel, and gone on the far side. Both ends of the curve are flat, so there
+ * is no angle at which the fade starts or stops.
+ *
+ * A conic gradient, because SVG has none; it masks the whole `<svg>`, which on a one-item wheel
+ * holds nothing else — there are no seams to take with it.
+ */
+export function sectorSoloFadeMask(centreDeg: number): string {
+  const stops = Array.from({ length: SECTOR_SOLO_SAMPLES + 1 }, (_, index) => {
+    const turn = index / SECTOR_SOLO_SAMPLES;
+    const weight = ((1 + Math.cos(turn * 2 * Math.PI)) / 2) ** SECTOR_SOLO_FALLOFF_POWER;
+    return `rgba(0, 0, 0, ${weight.toFixed(4)}) ${(turn * 360).toFixed(1)}deg`;
+  });
+  /** CSS measures from twelve o'clock; these degrees measure from three. */
+  return `conic-gradient(from ${centreDeg + 90}deg at 50% 50%, ${stops.join(', ')})`;
 }
 
 /**

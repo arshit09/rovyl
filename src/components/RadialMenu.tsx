@@ -37,6 +37,7 @@ import {
   sectorGradientStops,
   sectorIndexForDelta,
   sectorReachStops,
+  sectorSoloFadeMask,
   SECTOR_EDGE_ALPHA,
   SECTOR_FILL_ALPHA,
   SECTOR_SEAM_ALPHA,
@@ -648,6 +649,11 @@ const RadialSectors = React.memo(({
    * `sectorBeamStops` in `src/utils/radialSectors.ts` has the whole of why.
    */
   const lean = sectorBeamLean(count);
+  /** A lone item's ring leans round towards its icon instead of glowing evenly all the way round. */
+  const soloMask = React.useMemo(
+    () => (count === 1 ? sectorSoloFadeMask(sectorCentreDeg(0, 1)) : undefined),
+    [count],
+  );
 
   if (!drawable) return null;
 
@@ -710,6 +716,8 @@ const RadialSectors = React.memo(({
       style={{
         transform: 'translate(-50%, -50%)',
         ['--zn-op' as string]: visible ? (dimmed ? 0 : 1) : 0,
+        WebkitMaskImage: soloMask,
+        maskImage: soloMask,
       }}
       aria-hidden
     >

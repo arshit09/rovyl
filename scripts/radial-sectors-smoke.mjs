@@ -59,6 +59,7 @@ try {
     sectorCentreDeg,
     sectorReachStops,
     sectorGradientStops,
+    sectorSoloFadeMask,
     SECTOR_FILL_ALPHA,
     SECTOR_EDGE_ALPHA,
     SECTOR_SEAM_ALPHA,
@@ -532,6 +533,36 @@ try {
     assert.ok(
       sectorBeamAlphas(SECTOR_FILL_ALPHA, 3)[0] < SECTOR_FILL_ALPHA[0] * 0.8,
       "three items covers a third of the plane per wedge and has to be tempered for it",
+    );
+  });
+
+  /**
+   * A one-item ring is not a halo: its light is strongest through the icon, falls off smoothly both
+   * ways round the wheel, and is gone on the far side — and it is centred on the icon's own bearing.
+   */
+  check(() => {
+    const mask = sectorSoloFadeMask(sectorCentreDeg(0, 1));
+    assert.ok(mask.startsWith("conic-gradient(from 0deg at 50% 50%"), `the fade is not aimed at the icon: ${mask}`);
+    const stops = [...mask.matchAll(/rgba\(0, 0, 0, ([\d.]+)\) ([\d.]+)deg/g)].map((m) => ({
+      alpha: Number(m[1]),
+      deg: Number(m[2]),
+    }));
+    assert.ok(stops.length >= 25, `${stops.length} stops is too few for a fade round a whole turn`);
+    assert.equal(stops[0].alpha, 1, "the icon's own direction has to be the brightest");
+    assert.equal(stops.at(-1).alpha, 1, "the turn has to close where it started, or there is a seam at the icon");
+    const back = stops.find((stop) => stop.deg === 180);
+    assert.ok(back && back.alpha === 0, "the far side of a one-item wheel has to be dark");
+    for (let i = 1; i < stops.length; i += 1) {
+      const rising = stops[i].deg > 180;
+      assert.ok(
+        rising ? stops[i].alpha >= stops[i - 1].alpha : stops[i].alpha <= stops[i - 1].alpha,
+        `the fade is not monotonic at ${stops[i].deg}deg`,
+      );
+    }
+    assert.equal(
+      sectorBeamAlphas(SECTOR_FILL_ALPHA, 1)[0],
+      sectorBeamAlphas(SECTOR_FILL_ALPHA, 2)[0],
+      "a faded one-item ring lights about half the plane, so it is tempered as a two-item wedge",
     );
   });
 

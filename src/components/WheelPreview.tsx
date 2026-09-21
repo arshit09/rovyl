@@ -10,6 +10,7 @@ import {
   sectorCentreDeg,
   sectorGradientStops,
   sectorReachStops,
+  sectorSoloFadeMask,
   SECTOR_EDGE_ALPHA,
   SECTOR_FILL_ALPHA,
   SECTOR_SEAM_ALPHA,
@@ -311,6 +312,11 @@ export const WheelPreview: React.FC<{ config: UIConfig; apps: AppItem[] }> = ({ 
               height={sectorOuterRadius * 2}
               viewBox={`0 0 ${sectorOuterRadius * 2} ${sectorOuterRadius * 2}`}
               shapeRendering="geometricPrecision"
+              /** The wheel's one-item ring, bent towards its icon — see `sectorSoloFadeMask`. */
+              style={items.length === 1 ? {
+                WebkitMaskImage: sectorSoloFadeMask(sectorCentreDeg(0, 1)),
+                maskImage: sectorSoloFadeMask(sectorCentreDeg(0, 1)),
+              } : undefined}
             >
               {/* The wheel's own gradients — beam, lit edges, the reach they are masked by, seams. */}
               <defs>
@@ -393,7 +399,8 @@ export const WheelPreview: React.FC<{ config: UIConfig; apps: AppItem[] }> = ({ 
                   );
                 })}
               </g>
-              {items.map((item, index) => {
+              {/* No seams on one item, as on the wheel: a single wedge has no neighbour to meet. */}
+              {items.length > 1 && items.map((item, index) => {
                 const { startDeg } = sectorBoundsDeg(index, items.length);
                 const near = polarPoint(sectorOuterRadius, sectorInnerRadius, startDeg);
                 /** Seams stop short of the wedges — see `SECTOR_SEAM_REACH`. */
