@@ -1,6 +1,8 @@
 import { LucideIcon } from "lucide-react";
 /** `import type` is erased at compile time: `launchFailure.ts` stays in the card's late chunk only. */
 import type { ExecutionErrorDetails } from "./launchFailure";
+/** Erased at compile time: the drop classifier is only ever loaded by the settings chunk. */
+import type { InspectedDropPath } from "./utils/droppedShortcut";
 
 export type SubscriptionTier = "free" | "plus" | "pro";
 
@@ -692,6 +694,12 @@ export interface ElectronAPI {
    */
   selectFile: (options?: { mode?: "executable" | "any" }) => Promise<string | null>;
   selectFolder: () => Promise<string | null>;
+  /**
+   * What a set of dropped paths are — folder, program, document or internet shortcut — resolved
+   * through `.lnk` and `.url` files. Only main can stat a path, and a drop carries nothing but the
+   * string, so a dropped shortcut's `commandType` comes from here.
+   */
+  inspectDropPaths?: (paths: string[]) => Promise<(InspectedDropPath | null)[]>;
   /** The open dialog for a custom icon: pictures, icon files, programs, or any file's own icon. */
   chooseCustomIconFile?: () => Promise<string | null>;
   /** Accepts `path` or `path,index`, with `%VARIABLES%`. */

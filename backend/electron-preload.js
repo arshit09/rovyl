@@ -221,6 +221,8 @@ contextBridge.exposeInMainWorld("electron", {
   quitApp: () => ipcRenderer.send("quit-app"),
   selectFile: (options) => ipcRenderer.invoke("select-file", options),
   selectFolder: () => ipcRenderer.invoke("select-folder"),
+  /** Drag-and-drop: what the dropped paths are, since only main can ask the disk. */
+  inspectDropPaths: (paths) => ipcRenderer.invoke("inspect-drop-paths", paths),
   /** Custom icons: see the block of the same name in electron-main. */
   chooseCustomIconFile: () => ipcRenderer.invoke("choose-custom-icon-file"),
   readCustomIconSource: (source) => ipcRenderer.invoke("read-custom-icon-source", source),

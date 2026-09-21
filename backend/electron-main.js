@@ -65,6 +65,7 @@ const { fullBleedBounds } = require("./full-bleed-bounds.cjs");
 const { titleFromHtmlBuffer } = require("./page-title.cjs");
 const { decidePendingUpdate } = require("./pending-update.cjs");
 const { createSystemStatusService } = require("./system-status.cjs");
+const { inspectDroppedPath } = require("./drop-inspect.cjs");
 const crypto = require("crypto");
 const { GlobalKeyboardListener } = require("node-global-key-listener");
 const http = require("http");
@@ -9057,6 +9058,37 @@ ipcMain.handle("select-folder", async () => {
     diagLog(`[select-folder] ${e.message}`);
     return null;
   }
+});
+
+/**
+ * IPC: what a set of dropped paths actually are.
+ *
+ * Drag-and-drop hands the renderer a string and nothing else. Whether it names a directory, and
+ * what a `.lnk` or a `.url` points at, are questions for the disk — which the settings window
+ * cannot touch. Answered in a batch because a drop is usually several files at once, and a round
+ * trip each would have the wheel filling in visibly staggered order.
+ *
+ * Capped, and every path answered independently: one unreadable target must not cost the others,
+ * because a drop has no dialog in which to report it. The reply is one entry PER INPUT, `null`
+ * where nothing could be said — the renderer pairs them up by position, and a skipped element
+ * would silently shift every answer after it onto the wrong file.
+ */
+const MAX_INSPECTED_DROP_PATHS = 64;
+
+ipcMain.handle("inspect-drop-paths", async (_event, paths) => {
+  if (!Array.isArray(paths)) return [];
+  return paths.slice(0, MAX_INSPECTED_DROP_PATHS).map((candidate) => {
+    try {
+      return (
+        inspectDroppedPath(candidate, {
+          readShortcutLink: (target) => shell.readShortcutLink(target),
+        }) || null
+      );
+    } catch (e) {
+      diagLog(`[inspect-drop-paths] ${e.message}`);
+      return null;
+    }
+  });
 });
 
 /* ── Custom icons ─────────────────────────────────────────────────────────────────────────────

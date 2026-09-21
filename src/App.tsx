@@ -287,6 +287,27 @@ export default function App() {
     isSettingsOpenRef.current = isSettingsOpen;
   }, [isDashboardOpen, isSettingsOpen]);
 
+  /**
+   * A file let go anywhere in this window that is not a drop zone.
+   *
+   * Chromium's default for that is to NAVIGATE to it — the whole of Settings replaced by a PDF, with
+   * no way back short of restarting. Settings invites dragging now (a program, a folder, a link, all
+   * land as shortcuts), so a near miss is the ordinary case and it has to be nothing at all. These
+   * listeners sit on `window` in the bubble phase, after the zones' own handlers, so a drop that WAS
+   * aimed at one has already been dealt with by the time this runs.
+   */
+  useEffect(() => {
+    const swallow = (event: DragEvent) => {
+      if (event.dataTransfer?.types.includes('Files')) event.preventDefault();
+    };
+    window.addEventListener('dragover', swallow);
+    window.addEventListener('drop', swallow);
+    return () => {
+      window.removeEventListener('dragover', swallow);
+      window.removeEventListener('drop', swallow);
+    };
+  }, []);
+
   useEffect(() => {
     if (!isDashboardOpen && !isSettingsOpen) {
       import('./components/installedApps').then((m) => m.clearInstalledAppsMemory?.()).catch(() => {});

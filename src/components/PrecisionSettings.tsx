@@ -79,6 +79,14 @@ import '../fonts-display.css';
 import { NativeAppIcon, useInstalledApps, clearInstalledAppsMemory, type InstalledApp } from './installedApps';
 import { radialCrowding } from '../utils/workspaceRadial';
 import { startMenuAppIdToLaunchCommand } from '../utils/windowsLaunchCommand';
+import {
+  dropEntriesFrom,
+  guessPathKind,
+  isNonWebScheme,
+  labelFromDroppedPath,
+  type DropPayload,
+  type InspectedDropPath,
+} from '../utils/droppedShortcut';
 import { WheelPreview, MENU_RADIUS_RANGE } from './WheelPreview';
 import { DockShortcutsManager } from './DockShortcuts';
 import { DockPositionPicker } from './DockPositionPicker';
@@ -3301,6 +3309,23 @@ const DEFAULT_FOLDER_ICON = 'Folder';
 const DEFAULT_COMMAND_ICON = 'TerminalSquare';
 
 /**
+ * The name a link with a scheme of its own is given: `steam://rungameid/440` → `steam`,
+ * `mailto:team@example.com` → `team@example.com`.
+ *
+ * There is no page behind these to ask for a title, so the address itself has to supply the label.
+ * The whole thing would be unreadable on a wheel, and the scheme is the part that says what opens.
+ */
+function protocolLinkLabel(address: string): string {
+  const clean = address.trim();
+  const colon = clean.indexOf(':');
+  if (colon < 1) return clean;
+  const scheme = clean.slice(0, colon);
+  const body = clean.slice(colon + 1).replace(/^\/+/, '');
+  if (/^mailto$/i.test(scheme) && body) return body;
+  return scheme;
+}
+
+/**
  * Whether Rovyl finds this shortcut a picture by itself: the program's icon, the document type's,
  * the site's favicon. For these, "Default" means that picture, and a glyph chosen instead has to
  * be marked as the user's (`iconSource: 'custom'`) or the healing pass would put the picture back.
@@ -3918,18 +3943,28 @@ function WorkspaceManager({
     setEditingIndex(openEditor ? newIndex : null);
   };
 
-  const addAppPath = async (path: string, label?: string) => {
-    const cleanPath = path.trim();
-    if (!cleanPath) return;
-    const displayName = label?.trim() || cleanPath.split(/[/\\]/).filter(Boolean).pop()?.replace(/\.(exe|lnk|bat|cmd)$/i, '') || 'Application';
-    let customIconUrl: string | undefined;
-    try { customIconUrl = (await window.electron?.getFileIcon?.(cleanPath)) || undefined; } catch { /* use fallback */ }
-    const safeId = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+  /** `crypto.randomUUID` is absent on a few older webviews, and a shortcut with no id is unreachable. */
+  const newShortcutId = () =>
+    typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
       ? crypto.randomUUID()
       : `${Date.now().toString(36)}-${Math.random().toString(36).substring(2, 9)}`;
 
+  /**
+   * One application shortcut, icon and all — shared by the picker, the Browse button and a drop.
+   *
+   * Returns the item rather than adding it: a drop lands several at once and has to commit them in
+   * a single write, or each one would be appended to a workspace the previous one had already
+   * replaced.
+   */
+  const buildAppItem = async (path: string, label?: string): Promise<AppItem | null> => {
+    const cleanPath = path.trim();
+    if (!cleanPath) return null;
+    const displayName = label?.trim() || cleanPath.split(/[/\\]/).filter(Boolean).pop()?.replace(/\.(exe|lnk|bat|cmd)$/i, '') || 'Application';
+    let customIconUrl: string | undefined;
+    try { customIconUrl = (await window.electron?.getFileIcon?.(cleanPath)) || undefined; } catch { /* use fallback */ }
+
     const nextItem: AppItem = {
-      id: safeId, type: 'app', label: displayName,
+      id: newShortcutId(), type: 'app', label: displayName,
       iconName: 'AppWindow', iconSource: customIconUrl ? 'native' : 'lucide', customIconUrl,
       command: cleanPath, commandType: 'app', description: 'Application',
     };
@@ -3942,7 +3977,14 @@ function WorkspaceManager({
         /* keep the local guess */
       }
     }
-    addItem(isIde ? { ...nextItem, hasRecents: true, terminalCommands: [] } : nextItem, isIde);
+    return isIde ? { ...nextItem, hasRecents: true, terminalCommands: [] } : nextItem;
+  };
+
+  const addAppPath = async (path: string, label?: string) => {
+    const nextItem = await buildAppItem(path, label);
+    if (!nextItem) return;
+    /** An IDE opens its editor straight away: the recents and terminal switches only exist there. */
+    addItem(nextItem, Boolean(nextItem.hasRecents));
   };
 
   const addSelectedApps = async () => {
@@ -4043,21 +4085,44 @@ function WorkspaceManager({
     };
   }, [addMode, url, urlLabelTyped]);
 
-  const addUrl = async () => {
-    const normalized = normalizeSiteUrl(url);
-    if (!normalized) return;
-    const typedLabel = urlLabel.trim();
+  /**
+   * One web shortcut, named and iconned the way the site itself says.
+   *
+   * `address` may carry a scheme that is not the web's at all — `steam://`, `mailto:`, `obsidian://`
+   * all arrive this way from a drop. Those are stored verbatim and nothing is fetched for them:
+   * there is no page behind `mailto:` to ask, and `normalizeSiteUrl` would put `https://` in front
+   * of the scheme and break the one thing the shortcut had to get right.
+   */
+  const buildUrlItem = async (address: string, label?: string): Promise<AppItem | null> => {
+    const typedLabel = label?.trim() || '';
+
+    if (isNonWebScheme(address)) {
+      const clean = address.trim();
+      return {
+        id: newShortcutId(), type: 'app', label: typedLabel || protocolLinkLabel(clean),
+        iconName: 'Globe', iconSource: 'lucide',
+        command: clean, commandType: 'url', description: 'Web link',
+      };
+    }
+
+    const normalized = normalizeSiteUrl(address);
+    if (!normalized) return null;
     /** The icon and the name are two independent fetches; neither should wait on the other. */
     const [icon, title] = await Promise.all([
       resolveWebsiteIconFields(normalized),
       typedLabel ? Promise.resolve(null) : resolveWebsiteTitle(normalized),
     ]);
-    addItem({
-      id: crypto.randomUUID(), type: 'app',
+    return {
+      id: newShortcutId(), type: 'app',
       label: typedLabel || title || hostLabelFromUrl(normalized),
       iconName: 'Globe', iconSource: icon?.iconSource || 'lucide', customIconUrl: icon?.customIconUrl,
       command: normalized, commandType: 'url', description: 'Web link',
-    });
+    };
+  };
+
+  const addUrl = async () => {
+    const nextItem = await buildUrlItem(url, urlLabel);
+    if (nextItem) addItem(nextItem);
   };
 
   const chooseFolder = async () => {
@@ -4067,13 +4132,20 @@ function WorkspaceManager({
     if (!folderLabel) setFolderLabel(path.split(/[/\\]/).filter(Boolean).pop() || 'Folder');
   };
 
-  const addFolder = () => {
-    if (!folderPath) return;
-    addItem({
-      id: crypto.randomUUID(), type: 'app', label: folderLabel.trim() || 'Folder',
-      iconName: 'Folder', iconSource: 'lucide', command: folderPath,
+  const buildFolderItem = (path: string, label?: string): AppItem | null => {
+    const cleanPath = path.trim();
+    if (!cleanPath) return null;
+    return {
+      id: newShortcutId(), type: 'app',
+      label: label?.trim() || labelFromDroppedPath(cleanPath) || 'Folder',
+      iconName: 'Folder', iconSource: 'lucide', command: cleanPath,
       commandType: 'folder', description: 'Folder shortcut',
-    });
+    };
+  };
+
+  const addFolder = () => {
+    const nextItem = buildFolderItem(folderPath, folderLabel);
+    if (nextItem) addItem(nextItem);
   };
 
   /** `Quarterly report.xlsx` → `Quarterly report`. The icon already says which kind of file it is. */
@@ -4095,16 +4167,21 @@ function WorkspaceManager({
    * `iconSource` is only set to 'native' when there is something to show, or the healing pass would
    * spend its retries chasing an icon that never existed.
    */
-  const addFile = async () => {
-    const cleanPath = filePath.trim();
-    if (!cleanPath) return;
+  const buildFileItem = async (path: string, label?: string): Promise<AppItem | null> => {
+    const cleanPath = path.trim();
+    if (!cleanPath) return null;
     let customIconUrl: string | undefined;
     try { customIconUrl = (await window.electron?.getFileIcon?.(cleanPath)) || undefined; } catch { /* use fallback */ }
-    addItem({
-      id: crypto.randomUUID(), type: 'app', label: fileLabel.trim() || fileNameLabel(cleanPath),
+    return {
+      id: newShortcutId(), type: 'app', label: label?.trim() || fileNameLabel(cleanPath),
       iconName: 'File', iconSource: customIconUrl ? 'native' : 'lucide', customIconUrl,
       command: cleanPath, commandType: 'file', description: 'File shortcut',
-    });
+    };
+  };
+
+  const addFile = async () => {
+    const nextItem = await buildFileItem(filePath, fileLabel);
+    if (nextItem) addItem(nextItem);
   };
 
   /** `npm run dev -- --port 3000` → `npm run dev`: short enough for a wheel label. */
@@ -4123,18 +4200,206 @@ function WorkspaceManager({
    * A typed command line. Nothing is checked here beyond it being non-empty: the shell is the only
    * judge of what the line means, and a failed run comes back as a launch card like any other.
    */
-  const addCommand = () => {
-    const line = commandLine.trim();
-    if (!line) return;
-    const dir = commandDir.trim();
-    addItem({
-      id: crypto.randomUUID(), type: 'app', label: commandLabel.trim() || commandNameLabel(line),
-      iconName: DEFAULT_COMMAND_ICON, iconSource: 'lucide', command: line,
+  const buildCommandItem = (
+    line: string,
+    options?: { label?: string; workingDirectory?: string; shell?: 'powershell' | 'cmd'; window?: 'open' | 'hidden' },
+  ): AppItem | null => {
+    const cleanLine = line.trim();
+    if (!cleanLine) return null;
+    const dir = options?.workingDirectory?.trim();
+    return {
+      id: newShortcutId(), type: 'app', label: options?.label?.trim() || commandNameLabel(cleanLine),
+      iconName: DEFAULT_COMMAND_ICON, iconSource: 'lucide', command: cleanLine,
       commandType: 'command', description: 'Command',
-      commandShell, commandWindow,
+      commandShell: options?.shell ?? 'powershell',
+      commandWindow: options?.window ?? 'open',
       ...(dir ? { workingDirectory: dir } : {}),
-    });
+    };
   };
+
+  const addCommand = () => {
+    const nextItem = buildCommandItem(commandLine, {
+      label: commandLabel,
+      workingDirectory: commandDir,
+      shell: commandShell,
+      window: commandWindow,
+    });
+    if (nextItem) addItem(nextItem);
+  };
+
+  /* ── Drag and drop ────────────────────────────────────────────────────────────────────────────
+   *
+   * Anything that can be dragged in Windows can be dropped on this list, and lands as a shortcut
+   * without a single question: a program, a folder, a document, a link out of a browser, an address
+   * or a command line copied from somewhere else. Nothing is asked BY DESIGN — the five Add forms
+   * already exist for the case where the user wants to name the thing before it exists, and a
+   * dialog in front of a drop would undo the only advantage a drop has. The name, the icon and the
+   * type are worked out here; the pencil on the row is where any of them can be corrected, and the
+   * toast carries an Undo for the drop that was a mistake.
+   *
+   * What a PATH actually is can only be answered by the disk, and the renderer cannot reach it —
+   * `inspectDropPaths` asks main, which also resolves `.lnk` and reads the address out of a `.url`.
+   */
+
+  const [isDropTarget, setIsDropTarget] = useState(false);
+  /**
+   * How many drops are still being worked out. A count and not a flag: a second drop let go while
+   * the first is still fetching a favicon would otherwise have the first one's `finally` take the
+   * progress bar down with the second still running.
+   */
+  const [pendingDrops, setPendingDrops] = useState(0);
+  /**
+   * A row being dragged to reorder passes over this list too, carrying `text/plain`. Without this
+   * the section would try to import the wheel's own shortcut as a command line.
+   */
+  const rowDragRef = useRef(false);
+
+  /**
+   * A text field inside the section keeps its own drop.
+   *
+   * Dragging a word from one input into another is ordinary editing, and the section sits under
+   * every one of them — without this, dropping a name into the Name field would ALSO add a command
+   * shortcut spelled the same way.
+   */
+  const isEditableDropTarget = (target: EventTarget | null): boolean => {
+    if (!(target instanceof HTMLElement)) return false;
+    return Boolean(target.closest('input, textarea, [contenteditable="true"]'));
+  };
+
+  const dropCarriesShortcuts = (event: React.DragEvent<HTMLElement>): boolean => {
+    const transfer = event.dataTransfer;
+    if (!transfer || rowDragRef.current) return false;
+    const types = Array.from(transfer.types ?? []);
+    /** A file is always an import, even over a text field: no input can accept one anyway. */
+    if (types.includes('Files')) return true;
+    if (isEditableDropTarget(event.target)) return false;
+    return types.includes('text/uri-list') || types.includes('text/plain');
+  };
+
+  /**
+   * Everything the drop knows, read in the handler itself.
+   *
+   * A `DataTransfer` is emptied the moment the event finishes, so none of this survives an `await`
+   * — the payload is lifted out synchronously and the work happens against the copy.
+   */
+  const readDropPayload = (transfer: DataTransfer): DropPayload => {
+    const paths: string[] = [];
+    for (const file of Array.from(transfer.files ?? [])) {
+      /** Electron 28 still puts the real path on a File; a browser build has none, and skips. */
+      const filePath = (file as File & { path?: string }).path;
+      if (filePath) paths.push(filePath);
+    }
+    let uriList = '';
+    let text = '';
+    try { uriList = transfer.getData('text/uri-list') || ''; } catch { /* not offered */ }
+    try { text = transfer.getData('text/plain') || ''; } catch { /* not offered */ }
+    return { paths, uriList, text };
+  };
+
+  const importDroppedShortcuts = async (payload: DropPayload) => {
+    const entries = dropEntriesFrom(payload);
+    if (!entries.length) return;
+
+    setPendingDrops((count) => count + 1);
+    try {
+      const paths = entries.flatMap((entry) => (entry.kind === 'path' ? [entry.path] : []));
+      let inspected: (InspectedDropPath | null)[] = [];
+      if (paths.length) {
+        try {
+          inspected = (await window.electron?.inspectDropPaths?.(paths)) ?? [];
+        } catch (e) {
+          /** No answer from main is not a failed drop: the names still say enough to build from. */
+        }
+      }
+
+      let cursor = 0;
+      const built = await Promise.all(entries.map((entry) => {
+        if (entry.kind === 'command') return Promise.resolve(buildCommandItem(entry.line));
+        if (entry.kind === 'url') return buildUrlItem(entry.url);
+
+        const answer = inspected[cursor++] ?? null;
+        /**
+         * Main could not be asked, or could not read it. `guessPathKind` never claims `folder` —
+         * a name cannot prove a directory — and a `.url` it cannot open is just a file, so both
+         * fall to the branch that opens whatever Windows has registered for it.
+         */
+        const kind = answer?.kind ?? (guessPathKind(entry.path) === 'app' ? 'app' : 'file');
+        const label = answer?.label || labelFromDroppedPath(entry.path);
+        if (kind === 'url') return buildUrlItem(answer?.url || entry.path, label);
+        if (kind === 'app') return buildAppItem(answer?.path ?? entry.path, label);
+        if (kind === 'folder') return Promise.resolve(buildFolderItem(answer?.path ?? entry.path, label));
+        return buildFileItem(answer?.path ?? entry.path, label);
+      }));
+
+      const items = built.filter((item): item is AppItem => Boolean(item));
+      if (!items.length) return;
+
+      /** One write for the whole drop — appended one at a time, each would overwrite the last. */
+      updateWorkspace(workspaceIndex, (current) => ({ apps: [...current.apps, ...items] }));
+
+      const added = new Set(items.map((item) => item.id));
+      showToast(
+        items.length === 1 ? `Added “${items[0].label}”` : `Added ${items.length} shortcuts`,
+        () => updateWorkspace(workspaceIndex, (current) => ({
+          apps: current.apps.filter((item) => !added.has(item.id)),
+        })),
+      );
+    } catch (e) {
+      console.error('Failed to add dropped shortcuts:', e);
+    } finally {
+      setPendingDrops((count) => Math.max(0, count - 1));
+    }
+  };
+
+  /**
+   * Handlers for the whole Shortcuts section, so a near miss still lands. `dragLeave` fires on every
+   * child boundary crossed, which is why it checks the pointer really left the section.
+   */
+  const shortcutDropHandlers = {
+    onDragEnter: (event: React.DragEvent<HTMLElement>) => {
+      if (!dropCarriesShortcuts(event)) return;
+      event.preventDefault();
+      setIsDropTarget(true);
+    },
+    onDragOver: (event: React.DragEvent<HTMLElement>) => {
+      if (!dropCarriesShortcuts(event)) {
+        /** Over a text field: the sheet must come down, or it would cover what is being typed into. */
+        if (isDropTarget && isEditableDropTarget(event.target)) setIsDropTarget(false);
+        return;
+      }
+      event.preventDefault();
+      event.dataTransfer.dropEffect = 'copy';
+      setIsDropTarget(true);
+    },
+    onDragLeave: (event: React.DragEvent<HTMLElement>) => {
+      if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
+      setIsDropTarget(false);
+    },
+    onDrop: (event: React.DragEvent<HTMLElement>) => {
+      if (!dropCarriesShortcuts(event)) return;
+      event.preventDefault();
+      setIsDropTarget(false);
+      void importDroppedShortcuts(readDropPayload(event.dataTransfer));
+    },
+  };
+
+  /**
+   * The sheet comes down when the drag ends ANYWHERE, not only when it leaves the section.
+   *
+   * `dragleave` covers the pointer moving off, but a drag let go over a child that swallowed the
+   * event, or ended outside the window, sends this section nothing at all — and a full-section
+   * overlay left up over a list nobody is dragging on is a dead end with no way out.
+   */
+  useEffect(() => {
+    if (!isDropTarget) return;
+    const clear = () => setIsDropTarget(false);
+    window.addEventListener('drop', clear);
+    window.addEventListener('dragend', clear);
+    return () => {
+      window.removeEventListener('drop', clear);
+      window.removeEventListener('dragend', clear);
+    };
+  }, [isDropTarget]);
 
   /**
    * Dragging in the shortcut list.
@@ -4497,7 +4762,21 @@ function WorkspaceManager({
         )}
       </AnimatePresence>
 
-      <section className="zs-workspace-shortcuts">
+      {/*
+        The whole section is the drop zone, not the list inside it: a file aimed at an empty
+        workspace, or let go over the add panel beside the list, is the same intention.
+      */}
+      <section className={`zs-workspace-shortcuts${isDropTarget ? ' is-drop-target' : ''}`} {...shortcutDropHandlers}>
+        {/*
+          While a drop is being worked out — paths asked of main, icons extracted, titles fetched.
+          Indeterminate on purpose: the slow part is a favicon or a page title on somebody else's
+          server, and a percentage would be a number made up to fill the bar.
+        */}
+        {pendingDrops > 0 && (
+          <div className="zs-drop-progress" role="progressbar" aria-label="Adding dropped shortcuts">
+            <span />
+          </div>
+        )}
         <div className="zs-workspace-section-head">
           <div><h3>Shortcuts</h3></div>
           <div className="zs-add-actions" aria-label="Add shortcut">
@@ -4729,10 +5008,21 @@ function WorkspaceManager({
                   const rect = header.getBoundingClientRect();
                   event.dataTransfer.setDragImage(header, event.clientX - rect.left, event.clientY - rect.top);
                 }
+                /** Marks the drag as this list's own, so the section does not read it as an import. */
+                rowDragRef.current = true;
                 setItemDragIndex(index);
               }}
-              onDragEnd={() => { setItemDragIndex(null); setItemDropEdge(null); setItemDragArmed(null); }}
+              onDragEnd={() => {
+                rowDragRef.current = false;
+                setItemDragIndex(null); setItemDropEdge(null); setItemDragArmed(null);
+              }}
+              /*
+                Reordering only. Something dragged in from OUTSIDE is left alone here so it reaches
+                the section's own handler — claiming it would mean a file dropped on a row is
+                swallowed by a reorder that has no index to work with.
+              */
               onDragOver={(event) => {
+                if (!rowDragRef.current) return;
                 event.preventDefault();
                 event.dataTransfer.dropEffect = 'move';
                 const rect = event.currentTarget.getBoundingClientRect();
@@ -4743,6 +5033,7 @@ function WorkspaceManager({
               }}
               onDragLeave={() => setItemDropEdge((current) => (current?.index === index ? null : current))}
               onDrop={(event) => {
+                if (!rowDragRef.current) return;
                 event.preventDefault();
                 const from = Number(event.dataTransfer.getData('text/plain'));
                 const edge = itemDropEdge?.index === index ? itemDropEdge.edge : 'above';
@@ -5026,11 +5317,33 @@ function WorkspaceManager({
                 <span>Rovyl fills this workspace by itself. You can add more above at any time.</span>
               </div>
             ) : (
-              <div className="zs-manager-empty is-large"><SquareStack size={22} /><b>This workspace is empty</b><span>Add an application, URL, folder, file, or command above.</span></div>
+              <div className="zs-manager-empty is-large"><SquareStack size={22} /><b>This workspace is empty</b><span>Add an application, URL, folder, file, or command above — or drag one in from anywhere in Windows.</span></div>
             )
           )}
         </div>
         </div>
+
+        {/*
+          Only while something is being carried over the section. A permanent "you can drop things
+          here" panel would be furniture on every workspace, and the sheet says what will happen at
+          the one moment it is worth reading.
+        */}
+        {isDropTarget && (
+          <div className="zs-shortcut-drop" aria-hidden="true">
+            <div className="zs-shortcut-drop-copy">
+              <ArrowDownToLine size={20} strokeWidth={1.8} />
+              <b>Drop to add to {workspace.name}</b>
+              <small>Applications, folders, files, links and commands — added straight away.</small>
+            </div>
+          </div>
+        )}
+        {/*
+          Announced rather than drawn: the sheet above is decoration, and a screen reader needs to
+          hear that shortcuts are being worked out from what was let go.
+        */}
+        <p className="zs-visually-hidden" role="status">
+          {pendingDrops > 0 ? 'Adding dropped shortcuts…' : ''}
+        </p>
       </section>
 
       <button type="button" className="zs-delete-workspace" disabled={!canDelete} onClick={deleteWorkspace}>
