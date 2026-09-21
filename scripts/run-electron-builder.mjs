@@ -7,9 +7,22 @@ const explicitOutput = process.env.ZENITH_BUILD_OUTPUT;
 const defaultLocalBase =
   process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local");
 
+/**
+ * Packing inside a OneDrive-synced folder loses to the sync client: it holds handles on files
+ * electron-builder is still writing, and placeholder ("cloud-only") files break the asar crawl.
+ * So on Windows the output moves out to %LOCALAPPDATA%.
+ *
+ * That is a Windows-only hazard. On Linux and macOS `LOCALAPPDATA` does not exist and the
+ * `AppData\Local` fallback is a meaningless path — and a project checked out under a directory
+ * that merely happens to contain "onedrive" in its name would have sent artifacts there. Off
+ * Windows the output is always <projectRoot>/build-out.
+ */
+const shouldRelocateForOneDrive =
+  process.platform === "win32" && projectRoot.toLowerCase().includes("onedrive");
+
 const outputDir =
   explicitOutput ||
-  (projectRoot.toLowerCase().includes("onedrive")
+  (shouldRelocateForOneDrive
     ? path.join(defaultLocalBase, "Zenith OS", "build-out")
     : path.join(projectRoot, "build-out"));
 

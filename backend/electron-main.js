@@ -73,6 +73,75 @@ const https = require("https");
 const url = require("url");
 
 /**
+ * The platform, asked once.
+ *
+ * Rovyl was written for Windows and reads that way: PowerShell, `Get-StartApps`, `explorer.exe`,
+ * a C# helper, the Start Menu. None of that exists elsewhere, so nearly every Windows-only path
+ * in this file is guarded — and it used to be guarded by 28 separate spellings of
+ * `process.platform === "win32"`. These three names are the same question with one answer, so a
+ * new guard cannot be written a twenty-ninth way.
+ *
+ * `IS_WIN` is exactly the old comparison: on Windows every one of these branches behaves as it
+ * always did, byte for byte.
+ */
+const IS_WIN = process.platform === "win32";
+const IS_MAC = process.platform === "darwin";
+const IS_LINUX = process.platform === "linux";
+
+/**
+ * The Linux halves of the three Windows-only subsystems — app discovery, launching, icons.
+ *
+ * Loaded lazily and defensively on purpose. They are separate modules delivered separately, and
+ * the rule here is that a missing or broken one degrades the feature and never stops the app from
+ * booting: `requireLinuxModule` answers `null` and every caller treats `null` as "not available".
+ * The result (including the `null`) is remembered, so a missing file is not re-probed on every
+ * icon request.
+ *
+ * Nothing is loaded at all off Linux, so Windows never pays for their existence.
+ */
+const linuxModuleCache = new Map();
+const requireLinuxModule = (name) => {
+  if (!IS_LINUX) return null;
+  if (linuxModuleCache.has(name)) return linuxModuleCache.get(name);
+  let mod = null;
+  try {
+    mod = require(`./${name}`);
+  } catch (e) {
+    mod = null;
+    try {
+      console.warn(`[Linux] ${name} unavailable: ${e.message}`);
+    } catch (_) {}
+  }
+  linuxModuleCache.set(name, mod);
+  return mod;
+};
+
+/** `backend/linux-apps.cjs` — `listInstalledApps()`, `findAppByCommand()`. */
+const linuxApps = () => requireLinuxModule("linux-apps.cjs");
+/** `backend/linux-launch.js` — `launchLinuxCommand()` and the persistence/canonicalize helpers. */
+const linuxLaunch = () => requireLinuxModule("linux-launch.js");
+/** `backend/linux-icons.cjs` — `resolveIconToDataUrl()`, `resolveIconPath()`. */
+const linuxIcons = () => requireLinuxModule("linux-icons.cjs");
+
+/**
+ * Calls one function on one of those modules, and answers `fallback` for every way it can be
+ * absent: module missing, export missing, export throws, returned promise rejects.
+ */
+const callLinuxModule = async (loader, fnName, args, fallback) => {
+  const mod = loader();
+  const fn = mod && typeof mod[fnName] === "function" ? mod[fnName] : null;
+  if (!fn) return fallback;
+  try {
+    return await fn(...args);
+  } catch (e) {
+    try {
+      diagLog(`[Linux] ${fnName} failed: ${e.message}`);
+    } catch (_) {}
+    return fallback;
+  }
+};
+
+/**
  * Whether this is a real packaged build — the question `app.isPackaged` stopped answering.
  *
  * Electron derives `isPackaged` from the executable's file name: anything that is not
@@ -432,11 +501,132 @@ if (process.env.ZENITH_DISABLE_HARDWARE_ACCELERATION === "1") {
   diagLog("[GPU] Hardware acceleration on for the transparent radial.");
 }
 
+/**
+ * Fallback copy of `linux-launch.js`'s TERMINAL_CANDIDATES, used only when that module could not
+ * be loaded. Keep the two in step. `-e` is the old xterm convention most of these honour; kitty
+ * and foot take the program bare, gnome-terminal and wezterm want a separator, and xfce4-terminal,
+ * tilix and terminator read `-e` as a single command string - `-x` is their argv form.
+ *
+ * `$TERMINAL` comes first because a user who set it has already answered this question.
+ */
+const LINUX_TERMINALS = [
+  { exe: "kitty", exec: [] },
+  { exe: "alacritty", exec: ["-e"] },
+  { exe: "wezterm", exec: ["start", "--"] },
+  { exe: "foot", exec: [] },
+  { exe: "ghostty", exec: ["-e"] },
+  { exe: "konsole", exec: ["-e"] },
+  { exe: "gnome-terminal", exec: ["--"] },
+  { exe: "xfce4-terminal", exec: ["-x"] },
+  { exe: "tilix", exec: ["-x"] },
+  { exe: "terminator", exec: ["-x"] },
+  { exe: "x-terminal-emulator", exec: ["-e"] },
+  { exe: "xterm", exec: ["-e"] },
+];
+
+/** `null` when nothing on this machine can open a terminal window — the caller says so and stops. */
+let cachedLinuxTerminal;
+const getLinuxTerminal = () => {
+  if (cachedLinuxTerminal !== undefined) return cachedLinuxTerminal;
+
+  /**
+   * `linux-launch.js` owns this table. Asking it keeps one answer to "how does this emulator take
+   * a command" instead of two that drift — they already disagreed about kitty and foot once, and
+   * a wrong flag here does not error, it just opens a bare shell and drops the user's command.
+   * `LINUX_TERMINALS` below stays as the fallback for a build where that module is missing.
+   */
+  const detect = linuxLaunch()?.detectTerminal;
+  if (typeof detect === "function") {
+    try {
+      const found = detect();
+      cachedLinuxTerminal = found ? { exe: found.bin, exec: found.exec } : null;
+      diagLog(
+        cachedLinuxTerminal
+          ? `[Terminal] Using ${cachedLinuxTerminal.exe}`
+          : "[Terminal] No terminal emulator found on PATH",
+      );
+      return cachedLinuxTerminal;
+    } catch (e) {
+      diagLog(`[Terminal] linux-launch detectTerminal failed: ${e.message}`);
+    }
+  }
+
+  const { execFileSync } = require("child_process");
+  const onPath = (exe) => {
+    try {
+      execFileSync("sh", ["-c", `command -v ${JSON.stringify(exe)}`], { stdio: "ignore" });
+      return true;
+    } catch (e) {
+      return false;
+    }
+  };
+  const preferred = String(process.env.TERMINAL || "").trim();
+  const candidates = preferred
+    ? [{ exe: preferred, exec: ["-e"] }, ...LINUX_TERMINALS]
+    : LINUX_TERMINALS;
+  cachedLinuxTerminal = null;
+  for (const candidate of candidates) {
+    if (onPath(candidate.exe)) {
+      cachedLinuxTerminal = candidate;
+      break;
+    }
+  }
+  diagLog(
+    cachedLinuxTerminal
+      ? `[Terminal] Using ${cachedLinuxTerminal.exe}`
+      : "[Terminal] No terminal emulator found on PATH",
+  );
+  return cachedLinuxTerminal;
+};
+
+/** The login shell, for running a typed command line the way the user's own prompt would. */
+const getLinuxShell = () => {
+  const fromEnv = String(process.env.SHELL || "").trim();
+  return fromEnv && path.isAbsolute(fromEnv) ? fromEnv : "/bin/sh";
+};
+
+/**
+ * One terminal window per command, in `workingDir`.
+ *
+ * Argv, not a command line: no two emulators agree on how to quote one, but every one of them
+ * takes `-e <program> <args…>`, so the shell is the program and the user's text is a single `-c`
+ * argument to it. Nothing between here and that shell parses the text.
+ *
+ * `exec $SHELL -i` afterwards is what `-NoExit` / `/k` buy on Windows — the window stays on the
+ * output instead of closing with the command that produced it. An empty string in `cmds` is the
+ * "just open a terminal here" case and gets the interactive shell alone.
+ */
+const spawnLinuxTerminals = (cmds, workingDir) => {
+  const emulator = getLinuxTerminal();
+  if (!emulator) {
+    diagLog("  ✗ [AutoCommands] No terminal emulator installed — skipping");
+    return false;
+  }
+  const shellExe = getLinuxShell();
+  const stayOpen = `exec ${JSON.stringify(shellExe)} -i`;
+  for (const cmd of cmds) {
+    const script = cmd ? `${cmd}\n${stayOpen}` : stayOpen;
+    diagLog(`  → [AutoCommands] Spawning window: ${emulator.exe} ${cmd || "(empty)"}`);
+    try {
+      const child = spawn(emulator.exe, [...emulator.exec, shellExe, "-c", script], {
+        cwd: workingDir,
+        detached: true,
+        stdio: "ignore",
+      });
+      child.on("error", (err) => diagLog(`  ✗ [AutoCommands] ${emulator.exe}: ${err.message}`));
+      child.unref();
+    } catch (err) {
+      diagLog(`  ✗ [AutoCommands] ${emulator.exe}: ${err.message}`);
+    }
+  }
+  return true;
+};
+
 // Helper function to detect preferred terminal emulator
 let cachedTerminal = null;
 const getPreferredTerminal = () => {
   if (cachedTerminal) return cachedTerminal;
-  
+
   try {
     const { execSync } = require("child_process");
     // 1. Windows Terminal (wt.exe)
@@ -1013,7 +1203,7 @@ let pendingUpdateInstallStarted = false;
 
 /** `true` when an installer now owns the machine and this process is on its way out. */
 const installPendingUpdateAndExit = () => {
-  if (!isPackagedBuild || process.platform !== "win32" || isStoreBuild()) return false;
+  if (!isPackagedBuild || !IS_WIN || isStoreBuild()) return false;
 
   const pending = readPendingUpdate();
   if (!pending) return false;
@@ -1134,6 +1324,73 @@ const installPendingUpdateAndExit = () => {
  */
 const LOGIN_LAUNCH_ARG = "--opened-at-login";
 const startedAtLogin = process.argv.includes(LOGIN_LAUNCH_ARG);
+
+/**
+ * "Start with the system" on Linux, where Electron's own login-item API does nothing.
+ *
+ * The desktop session reads `$XDG_CONFIG_HOME/autostart` (default `~/.config/autostart`) and
+ * launches every `.desktop` in it. The entry carries `LOGIN_LAUNCH_ARG`, which is what
+ * `startedAtLogin` above and the `was-opened-at-login` handler actually test — `wasOpenedAtLogin`
+ * is macOS-only and would answer `false` on every platform that matters here.
+ */
+const linuxAutostartPath = () => {
+  const base =
+    process.env.XDG_CONFIG_HOME && path.isAbsolute(process.env.XDG_CONFIG_HOME)
+      ? process.env.XDG_CONFIG_HOME
+      : path.join(os.homedir(), ".config");
+  return path.join(base, "autostart", "rovyl.desktop");
+};
+
+const readLinuxAutostart = () => {
+  try {
+    return fs.existsSync(linuxAutostartPath());
+  } catch (_) {
+    return false;
+  }
+};
+
+const writeLinuxAutostart = (enabled) => {
+  const file = linuxAutostartPath();
+  try {
+    if (!enabled) {
+      if (fs.existsSync(file)) fs.unlinkSync(file);
+      return true;
+    }
+    /**
+     * Desktop-entry `Exec` quoting: wrap, and backslash-escape the four reserved characters —
+     * double quote, backtick, dollar, backslash.
+     *
+     * They are spelled as escapes rather than written literally on purpose. The comment stripper
+     * in `scripts/verify-radial-windowing.mjs` does not know regex literals from string literals,
+     * so a bare `"` or backtick inside this character class opens a string it never closes and
+     * desyncs its scan of the rest of this file — which surfaces as that script failing the build
+     * over an unrelated identifier hundreds of lines away.
+     */
+    const quoted = '"' + String(app.getPath("exe")).replace(/([\u0022\u0060$\\])/g, "\\$1") + '"';
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(
+      file,
+      [
+        "[Desktop Entry]",
+        "Type=Application",
+        "Name=Rovyl",
+        "Comment=Radial app launcher",
+        `Exec=${quoted} ${LOGIN_LAUNCH_ARG}`,
+        "Terminal=false",
+        "Icon=rovyl",
+        "X-GNOME-Autostart-enabled=true",
+        "",
+      ].join("\n"),
+      "utf8",
+    );
+    return true;
+  } catch (e) {
+    try {
+      console.error("[Autostart] could not update the XDG entry:", e.message);
+    } catch (_) {}
+    return false;
+  }
+};
 
 // Single instance: prevents two Zenith processes when login startup is slow and the user launches manually.
 const gotTheLock = app.requestSingleInstanceLock();
@@ -1408,7 +1665,26 @@ function startShortcutRecording() {
 
   if (keyboardListener) return;
 
-  keyboardListener = new GlobalKeyboardListener();
+  /**
+   * `node-global-key-listener` ships one key server per platform, and the package in
+   * `node_modules` carries `WinKeyServer.exe` and `MacKeyServer` — there is no `X11KeyServer`
+   * binary to spawn. The constructor throws, and it used to throw from inside the
+   * `start-shortcut-recording` IPC handler, where an unhandled rejection is what the renderer
+   * gets back instead of a recording session.
+   *
+   * Recording still WORKS without it: the native mouse hook feeds `onNativeRecordMouse` above,
+   * and the settings renderer records keyboard combinations from its own DOM `keydown` while it
+   * has focus. What is lost is capturing a combination while another window is focused, which is
+   * a global hook and has no portable equivalent. Degrade, do not crash.
+   */
+  try {
+    keyboardListener = new GlobalKeyboardListener();
+  } catch (e) {
+    keyboardListener = null;
+    recordingActive = true;
+    diagLog(`[ShortcutRecord] Global keyboard capture unavailable on this platform: ${e.message}`);
+    return;
+  }
   recordingActive = true;
 
   keyboardListener.addListener((e, down) => {
@@ -1478,7 +1754,12 @@ function stopShortcutRecording() {
   onNativeRecordMouse = null;
   writeRadialMouseBlocker("RECORD OFF");
   if (keyboardListener) {
-    keyboardListener.kill();
+    /** A listener whose key server never started answers `kill()` with a throw. */
+    try {
+      keyboardListener.kill();
+    } catch (e) {
+      diagLog(`[ShortcutRecord] kill: ${e.message}`);
+    }
     keyboardListener = null;
   }
 }
@@ -2563,7 +2844,7 @@ let radialCursorRestorePoint = null;
 let radialCursorParkPoint = null;
 
 function captureRadialCursor(center) {
-  if (process.platform !== "win32") return;
+  if (!IS_WIN) return;
   if (!radialCursorCaptureWanted || !center) return;
   if (!radialCursorParked) {
     try {
@@ -2608,7 +2889,7 @@ function releaseRadialCursor() {
 }
 
 function ensureRadialMouseBlocker() {
-  if (process.platform !== "win32" || radialMouseBlocker) return;
+  if (!IS_WIN || radialMouseBlocker) return;
   radialMouseBlockerReady = false;
   const nativeHelper = getNativeHelperExePath();
   const child = nativeHelper
@@ -2721,7 +3002,7 @@ function settleMouseButtonsUp() {
  * is exactly what it was before, rather than a tray menu that will not open.
  */
 function waitForMouseButtonsUp(timeoutMs = 400) {
-  if (process.platform !== "win32") return Promise.resolve();
+  if (!IS_WIN) return Promise.resolve();
   if (!radialMouseBlocker || !radialMouseBlockerReady || !radialMouseBlocker.stdin?.writable) {
     return Promise.resolve();
   }
@@ -2749,7 +3030,7 @@ function waitForMouseButtonsUp(timeoutMs = 400) {
 }
 
 function setRadialMouseBlocking(bounds, monitorBounds) {
-  if (process.platform !== "win32") return;
+  if (!IS_WIN) return;
   ensureRadialMouseBlocker();
   writeRadialMouseBlocker(
     `BLOCK ${bounds.x} ${bounds.y} ${bounds.width} ${bounds.height} ${monitorBounds.x} ${monitorBounds.y} ${monitorBounds.width} ${monitorBounds.height}`,
@@ -2772,7 +3053,7 @@ function setRadialMouseBlocking(bounds, monitorBounds) {
  * underneath untouched — which is what makes left and right bindable at all.
  */
 function setRadialTriggerCapture(virtualKey, mode, slop, clickHoldMs, clickDragPx, modMask) {
-  if (process.platform !== "win32") return;
+  if (!IS_WIN) return;
   ensureRadialMouseBlocker();
   writeRadialMouseBlocker(
     `TRIGGER ${virtualKey} ${mode} ${slop} ${clickHoldMs} ${clickDragPx} ${modMask || 0}`,
@@ -2780,7 +3061,7 @@ function setRadialTriggerCapture(virtualKey, mode, slop, clickHoldMs, clickDragP
 }
 
 function clearRadialTriggerCapture() {
-  if (process.platform !== "win32") return;
+  if (!IS_WIN) return;
   if (!radialMouseBlocker) return;
   writeRadialMouseBlocker("TRIGGER OFF");
 }
@@ -2855,7 +3136,72 @@ const SYSTEM_PANEL_URIS = {
   clock: "ms-settings:dateandtime",
 };
 
+/**
+ * The same four panels on Linux, where there is no `ms-settings:` and no one settings app.
+ *
+ * A LIST per panel, best first, and the first one actually installed wins — because which of these
+ * exists is a property of the desktop, not of the distribution: Plasma has `kcmshell6`, GNOME has
+ * `gnome-control-center`, and `pavucontrol` / `nm-connection-editor` are the toolkit-independent
+ * ones that turn up everywhere else. Nothing installed means nothing opens, which is the honest
+ * outcome and not a crash.
+ *
+ * Argv, never a shell line: none of this is user input, but neither is any other spawn in this
+ * file, and the rule holds.
+ */
+const LINUX_SYSTEM_PANEL_COMMANDS = {
+  volume: [
+    ["pavucontrol"],
+    ["pavucontrol-qt"],
+    ["gnome-control-center", "sound"],
+    ["kcmshell6", "kcm_pulseaudio"],
+    ["kcmshell5", "kcm_pulseaudio"],
+  ],
+  network: [
+    ["nm-connection-editor"],
+    ["gnome-control-center", "wifi"],
+    ["kcmshell6", "kcm_networkmanagement"],
+    ["kcmshell5", "kcm_networkmanagement"],
+  ],
+  battery: [
+    ["gnome-control-center", "power"],
+    ["kcmshell6", "powerdevilprofilesconfig"],
+    ["kcmshell5", "powerdevilprofilesconfig"],
+    ["xfce4-power-manager-settings"],
+  ],
+  clock: [
+    ["gnome-control-center", "datetime"],
+    ["kcmshell6", "kcm_clock"],
+    ["kcmshell5", "clock"],
+  ],
+};
+
+const openLinuxSystemPanel = (panel) => {
+  const candidates = LINUX_SYSTEM_PANEL_COMMANDS[panel];
+  if (!candidates) return;
+  const { execFileSync } = require("child_process");
+  for (const [exe, ...args] of candidates) {
+    try {
+      execFileSync("sh", ["-c", `command -v ${JSON.stringify(exe)}`], { stdio: "ignore" });
+    } catch (e) {
+      continue;
+    }
+    try {
+      const child = spawn(exe, args, { detached: true, stdio: "ignore" });
+      child.on("error", (err) => diagLog(`[SystemStatus] ${exe}: ${err.message}`));
+      child.unref();
+      return;
+    } catch (e) {
+      diagLog(`[SystemStatus] ${exe}: ${e.message}`);
+    }
+  }
+  diagLog(`[SystemStatus] no settings app found for ${panel}`);
+};
+
 ipcMain.on("open-system-panel", (_event, panel) => {
+  if (IS_LINUX) {
+    openLinuxSystemPanel(panel);
+    return;
+  }
   const uri = SYSTEM_PANEL_URIS[panel];
   if (!uri) return;
   /**
@@ -2864,7 +3210,13 @@ ipcMain.on("open-system-panel", (_event, panel) => {
    * is a window the user cannot reach.
    */
   try {
-    void shell.openExternal(uri);
+    /**
+     * `.catch` and not just the `try`: `openExternal` REJECTS rather than throws when the shell
+     * has no handler for the scheme, and a bare `void` on that is an unhandled rejection in main.
+     */
+    void shell.openExternal(uri).catch((e) => {
+      diagLog(`[SystemStatus] could not open ${panel}: ${e.message}`);
+    });
   } catch (e) {
     diagLog(`[SystemStatus] could not open ${panel}: ${e.message}`);
   }
@@ -3421,13 +3773,13 @@ const shouldOpenMenu = async () => {
   }
 
   let fgCtx = { exe: null, title: "", cmdline: "", bounds: null };
-  if (process.platform === "win32") {
+  if (IS_WIN) {
     fgCtx = await getForegroundContextWindows();
   }
 
   if (mode === "all") {
     if (
-      process.platform === "win32" &&
+      IS_WIN &&
       fgCtx.bounds &&
       fgCtx.exe &&
       !isZenithOwnExePath(fgCtx.exe) &&
@@ -3443,7 +3795,7 @@ const shouldOpenMenu = async () => {
   if (tokens.length === 0 && !autoDetectGames) return true;
 
   const listedPs =
-    process.platform === "win32" &&
+    IS_WIN &&
     fgCtx.exe &&
     !isZenithOwnExePath(fgCtx.exe) &&
     tokensMatchForeground(fgCtx.exe, fgCtx.title, fgCtx.cmdline, tokens);
@@ -3543,7 +3895,7 @@ function notifyRendererUpdateState(state, version, extra = {}) {
 const UPDATE_RECHECK_INTERVAL_MS = 6 * 60 * 60_000;
 
 function configureAutoUpdates() {
-  if (!isPackagedBuild || process.platform !== "win32") return;
+  if (!isPackagedBuild || !IS_WIN) return;
 
   /**
    * Store build: we do not even register the listeners. Not calling `checkForUpdates` is not
@@ -3723,6 +4075,23 @@ app.whenReady().then(async () => {
         return;
       }
       if (typeof openAtLogin === "boolean") {
+        /**
+         * Electron's login-item API is Windows and macOS only. On Linux `setLoginItemSettings` is
+         * a silent no-op and `getLoginItemSettings` always answers `false`, so the comparison
+         * below never converged: every save saw a mismatch, rewrote nothing, and logged that it
+         * had synced, while the toggle in Settings did nothing at all. XDG autostart is the
+         * mechanism that actually exists here.
+         */
+        if (IS_LINUX) {
+          if (readLinuxAutostart() !== openAtLogin) {
+            const wrote = writeLinuxAutostart(openAtLogin);
+            console.log(
+              `Login item settings synced (XDG autostart): openAtLogin = ${openAtLogin}${wrote ? "" : " (failed)"}`,
+            );
+          }
+          return;
+        }
+
         /**
          * Asked WITH the path and the argument: on Windows that reports whether the registered
          * entry is this exact command line, so a Run key left by an older version — same exe, no
@@ -4023,12 +4392,25 @@ app.whenReady().then(async () => {
         fs.mkdirSync(path.dirname(configPath), { recursive: true });
       }
 
-      if (process.platform === "win32" && config && typeof config === "object") {
+      if (IS_WIN && config && typeof config === "object") {
         try {
           toWrite = JSON.parse(JSON.stringify(config));
           win32Launch.normalizePersistedPayloadWin32(toWrite);
         } catch (e) {
           diagLog(`[Persist] win32 command normalize (clone) failed: ${e.message}`);
+        }
+      } else if (IS_LINUX && config && typeof config === "object") {
+        /** The Linux half of the same job, and absent until `linux-launch.js` lands — then the
+         *  config is written through unchanged, which is what it did before this branch existed. */
+        const normalize = linuxLaunch()?.normalizePersistedPayloadLinux;
+        if (typeof normalize === "function") {
+          try {
+            toWrite = JSON.parse(JSON.stringify(config));
+            normalize(toWrite);
+          } catch (e) {
+            toWrite = config;
+            diagLog(`[Persist] linux command normalize (clone) failed: ${e.message}`);
+          }
         }
       }
 
@@ -4124,12 +4506,25 @@ app.whenReady().then(async () => {
     try {
       await fsp.mkdir(path.dirname(configPath), { recursive: true });
 
-      if (process.platform === "win32" && config && typeof config === "object") {
+      if (IS_WIN && config && typeof config === "object") {
         try {
           toWrite = JSON.parse(JSON.stringify(config));
           win32Launch.normalizePersistedPayloadWin32(toWrite);
         } catch (e) {
           diagLog(`[Persist] win32 command normalize (clone) failed: ${e.message}`);
+        }
+      } else if (IS_LINUX && config && typeof config === "object") {
+        /** The Linux half of the same job, and absent until `linux-launch.js` lands — then the
+         *  config is written through unchanged, which is what it did before this branch existed. */
+        const normalize = linuxLaunch()?.normalizePersistedPayloadLinux;
+        if (typeof normalize === "function") {
+          try {
+            toWrite = JSON.parse(JSON.stringify(config));
+            normalize(toWrite);
+          } catch (e) {
+            toWrite = config;
+            diagLog(`[Persist] linux command normalize (clone) failed: ${e.message}`);
+          }
         }
       }
 
@@ -4786,7 +5181,7 @@ app.whenReady().then(async () => {
       const recents = workspaceUris.map(uri => {
         // Convert file:///c%3A/path to C:\path
         let decoded = decodeURIComponent(uri.replace("file:///", ""));
-        if (process.platform === 'win32') {
+        if (IS_WIN) {
           if (decoded.startsWith("/")) decoded = decoded.substring(1);
           decoded = decoded.replace(/\//g, "\\");
         }
@@ -5126,6 +5521,16 @@ app.whenReady().then(async () => {
     if (!tray || tray.isDestroyed()) return;
     try {
       tray.setToolTip(triggersArePaused() ? "Rovyl — trigger paused" : "Rovyl");
+      /**
+       * On Linux the menu is not ours to pop, so it cannot be built at the moment it opens — it
+       * has to be ATTACHED, and therefore refreshed whenever the state behind it changes. These
+       * call sites are exactly the places that know that happened, which is why the rebuild lives
+       * here. See the tray setup below for why Linux is different.
+       */
+      if (IS_LINUX) {
+        trayMenu = buildTrayMenu();
+        tray.setContextMenu(trayMenu);
+      }
     } catch (e) {
       diagLog(`[Tray] refresh: ${e.message}`);
     }
@@ -5142,25 +5547,44 @@ app.whenReady().then(async () => {
     tray = new Tray(resizedIcon);
     tray.setToolTip("Rovyl");
 
-    /**
-     * No `setContextMenu`: that is what makes Electron emit `right-click` instead of popping the
-     * menu inside the button-down. See `popUpTrayMenu`.
-     */
-    tray.on("right-click", () => {
-      void popUpTrayMenu();
-    });
+    if (IS_LINUX) {
+      /**
+       * The opposite decision from Windows, for the opposite reason.
+       *
+       * There is no tray protocol on Linux, only StatusNotifierItem over D-Bus, and the host that
+       * draws the indicator is a separate process — GNOME's extension, Plasma's applet, waybar.
+       * That host owns the click: it never forwards one to us, so `click` / `right-click` /
+       * `double-click` are documented as not emitted, and a tray built the Windows way is an icon
+       * with no way to open anything. The menu has to be EXPORTED over D-Bus instead, which is
+       * what `setContextMenu` does — and `refreshTrayMenu` re-exports it whenever the state it
+       * shows changes, since it can no longer be rebuilt at the moment it opens.
+       *
+       * Left-click behaviour is then the host's to decide; most open the same menu. Settings stays
+       * reachable from the menu's own item either way.
+       */
+      trayMenu = buildTrayMenu();
+      tray.setContextMenu(trayMenu);
+    } else {
+      /**
+       * No `setContextMenu`: that is what makes Electron emit `right-click` instead of popping the
+       * menu inside the button-down. See `popUpTrayMenu`.
+       */
+      tray.on("right-click", () => {
+        void popUpTrayMenu();
+      });
 
-    /**
-     * On Windows a context menu does NOT swallow the left button — that constraint is macOS's.
-     * Both listeners below share one cooldown on purpose: whether a double-click really yields
-     * click+double-click or click+click, the outcome is the same.
-     */
-    tray.on("click", () => {
-      void openSettingsFromTray();
-    });
-    tray.on("double-click", () => {
-      void openSettingsFromTray();
-    });
+      /**
+       * On Windows a context menu does NOT swallow the left button — that constraint is macOS's.
+       * Both listeners below share one cooldown on purpose: whether a double-click really yields
+       * click+double-click or click+click, the outcome is the same.
+       */
+      tray.on("click", () => {
+        void openSettingsFromTray();
+      });
+      tray.on("double-click", () => {
+        void openSettingsFromTray();
+      });
+    }
 
     // Startup feedback
     console.log("Rovyl started successfully in the background.");
@@ -5200,8 +5624,30 @@ app.whenReady().then(async () => {
   let shortcutHoldActive = false;
   let keyboardListener = null;
 
+  /** Said once: hold mode asks for this on every open, and one line per open is a log nobody reads. */
+  let keyboardListenerUnavailableLogged = false;
+
   function ensureKeyboardListener() {
     if (keyboardListener) return keyboardListener;
+    /**
+     * Windows only, and deliberately not merely "try it and catch". The package ships
+     * `WinKeyServer.exe` and `MacKeyServer` and no X11 server, so off Windows the constructor is a
+     * guaranteed throw — running it anyway would cost a spawn attempt on every single open of the
+     * wheel in hold mode, to reach the same answer.
+     *
+     * Hold-to-release is not lost with it: the overlay listens for its own `keyup` (see the
+     * shortcut-release effect in `src/components/RadialMenu.tsx`), which works wherever the
+     * overlay has focus. This listener is what covers the case where it does not.
+     */
+    if (!IS_WIN) {
+      if (!keyboardListenerUnavailableLogged) {
+        keyboardListenerUnavailableLogged = true;
+        diagLog(
+          "[ShortcutHold] Global key-release capture is Windows-only; hold mode falls back to the overlay's own keyup.",
+        );
+      }
+      return null;
+    }
     try {
       const keyServerPath = isPackagedBuild
         ? path.join(
@@ -5611,7 +6057,7 @@ app.whenReady().then(async () => {
   ipcMain.handle("open-system-uninstall", async () => {
     const displayName = "Rovyl";
     try {
-      if (process.platform === "win32") {
+      if (IS_WIN) {
         if (isDev) {
           await shell.openExternal("ms-settings:appsfeatures");
           return { ok: true, mode: "settings", dev: true };
@@ -5657,7 +6103,7 @@ app.whenReady().then(async () => {
         await shell.openExternal("ms-settings:appsfeatures");
         return { ok: true, mode: "settings" };
       }
-      if (process.platform === "darwin") {
+      if (IS_MAC) {
         shell.showItemInFolder(app.getPath("exe"));
         return { ok: true, mode: "finder" };
       }
@@ -5834,7 +6280,28 @@ app.whenReady().then(async () => {
    * is what counts again.
    */
   function readStableMachineId() {
-    if (process.platform !== "win32") return null;
+    /**
+     * `/etc/machine-id` is the same promise `MachineGuid` makes: written when the system is
+     * installed, unchanged by reinstalling an application or wiping its profile. Without it the
+     * licence device id falls back to a random value cached in the data folder — and deleting
+     * that folder would spend another activation off the limit of three, which is the exact bug
+     * the Windows branch below exists to prevent.
+     *
+     * `/var/lib/dbus/machine-id` is the same value on systems that predate systemd, and is the
+     * symlink target on many that do not.
+     */
+    if (IS_LINUX) {
+      for (const candidate of ["/etc/machine-id", "/var/lib/dbus/machine-id"]) {
+        try {
+          const raw = fs.readFileSync(candidate, "utf8").trim().toLowerCase();
+          if (/^[0-9a-f]{32}$/.test(raw)) return raw;
+        } catch (e) {
+          /* try the next one */
+        }
+      }
+      return null;
+    }
+    if (!IS_WIN) return null;
     const attempts = [
       () =>
         execFileSync(
@@ -6789,7 +7256,7 @@ const resolveShellPath = (cmd) => {
 
 /** Cursor from Windows Start Menu is often stored as AUMID "Anysphere.Cursor" — not a valid CMD executable. */
 function resolveCursorExePath() {
-  if (process.platform !== "win32") return "cursor";
+  if (!IS_WIN) return "cursor";
   const candidates = [
     path.join(process.env.LOCALAPPDATA || "", "Programs", "cursor", "Cursor.exe"),
     path.join(process.env.PROGRAMFILES || "C:\\Program Files", "Cursor", "Cursor.exe"),
@@ -6804,7 +7271,7 @@ function resolveCursorExePath() {
 }
 
 function resolveVsCodeExePath() {
-  if (process.platform !== "win32") return "code";
+  if (!IS_WIN) return "code";
   const candidates = [
     path.join(process.env.LOCALAPPDATA || "", "Programs", "Microsoft VS Code", "Code.exe"),
     path.join(process.env.PROGRAMFILES || "C:\\Program Files", "Microsoft VS Code", "Code.exe"),
@@ -6823,7 +7290,7 @@ function resolveVsCodeExePath() {
  * called just "Antigravity".
  */
 function resolveAntigravityExePath() {
-  if (process.platform !== "win32") return "antigravity";
+  if (!IS_WIN) return "antigravity";
   const local = process.env.LOCALAPPDATA || "";
   const programFiles = process.env.PROGRAMFILES || "C:\\Program Files";
   const candidates = [
@@ -6853,7 +7320,7 @@ function resolveAntigravityExePath() {
  * through here untouched.
  */
 function resolveElectronAumidExe(rawCommand) {
-  if (process.platform !== "win32" || !rawCommand || typeof rawCommand !== "string") return null;
+  if (!IS_WIN || !rawCommand || typeof rawCommand !== "string") return null;
   const command = rawCommand.trim().replace(/^"|"$/g, "");
   const match = /^electron\.app\.([^\s"!\\/]+)$/i.exec(command);
   if (!match) return null;
@@ -7136,7 +7603,7 @@ const launchFailed = (error, details) => ({ ok: false, error, details });
  * always recognized whole.
  */
 const missingTargetFailure = (trimmedCommand, resolvedCommand, commandType) => {
-  if (process.platform !== "win32" || commandType === "url") return null;
+  if (!IS_WIN || commandType === "url") return null;
   const line = String(resolvedCommand || "").trim();
   if (!line) return null;
 
@@ -7268,8 +7735,14 @@ const runTypedCommand = async (line, options = {}) => {
   if (wanted) {
     let isDir = false;
     try {
-      /** Same rule as `describeExecutionFailure`: a dead UNC share would freeze main on the probe. */
-      isDir = /^[A-Za-z]:[\\/]/.test(wanted) ? fs.statSync(wanted).isDirectory() : true;
+      /**
+       * Same rule as `describeExecutionFailure`: a dead UNC share would freeze main on the probe.
+       * There is no UNC on Linux and no drive letter to recognise one by, so an absolute path
+       * there is simply stat'd — the case the Windows rule has to be careful about cannot arise.
+       */
+      isDir = IS_LINUX
+        ? (path.isAbsolute(wanted) ? fs.statSync(wanted).isDirectory() : true)
+        : /^[A-Za-z]:[\\/]/.test(wanted) ? fs.statSync(wanted).isDirectory() : true;
     } catch (e) {
       isDir = false;
     }
@@ -7281,6 +7754,90 @@ const runTypedCommand = async (line, options = {}) => {
       });
     }
     cwd = wanted;
+  }
+
+  /**
+   * The same contract on Linux, reached by the same reasoning: the user's line is handed to ONE
+   * shell as a single `-c` argument and nothing else ever parses it.
+   *
+   * A shown run needs a terminal emulator to be shown in, and those take argv (`-e sh -c <line>`),
+   * so the line survives untouched there too — see `runAutoCommands`. With no emulator installed
+   * there is no window to open, and saying so is a better answer than silently running the command
+   * where its output cannot be read.
+   */
+  if (IS_LINUX) {
+    const shellExe = getLinuxShell();
+    const linuxMethod = hidden ? "command-hidden" : "command-terminal";
+    let linuxExe;
+    let linuxArgs;
+
+    if (hidden) {
+      linuxExe = shellExe;
+      linuxArgs = ["-c", line];
+    } else {
+      const emulator = getLinuxTerminal();
+      if (!emulator) {
+        return failure(
+          "No terminal emulator is installed, so there is nowhere to show this command. Install one (kitty, alacritty, gnome-terminal, konsole, xterm…) or set the command to run hidden.",
+          { method: linuxMethod, errorCode: "ENOENT", exeExists: false },
+        );
+      }
+      linuxExe = emulator.exe;
+      linuxArgs = [
+        ...emulator.exec,
+        shellExe,
+        "-c",
+        `${line}\nexec ${JSON.stringify(shellExe)} -i`,
+      ];
+    }
+
+    diagLog(`[Command] linux${hidden ? " (hidden)" : ` via ${linuxExe}`} in ${cwd}: ${line}`);
+
+    const linuxOutcome = await new Promise((resolve) => {
+      let settled = false;
+      const settle = (value) => {
+        if (settled) return;
+        settled = true;
+        resolve(value);
+      };
+      let child;
+      try {
+        child = spawn(linuxExe, linuxArgs, { cwd, detached: true, stdio: "ignore" });
+      } catch (err) {
+        settle({ error: err });
+        return;
+      }
+      child.on("error", (err) => settle({ error: err }));
+      /** Same deal as Windows: a typo exits at once and is worth a card, a long job is left alone. */
+      const timer = setTimeout(() => {
+        try {
+          child.unref();
+        } catch (_) {}
+        settle({ ok: true });
+      }, HIDDEN_COMMAND_WATCH_MS);
+      timer.unref?.();
+      child.on("exit", (code) => {
+        clearTimeout(timer);
+        settle(code === 0 || code === null ? { ok: true } : { exitCode: code });
+      });
+    });
+
+    if (linuxOutcome.error) {
+      diagLog(`[Command] ✗ Failed to start: ${linuxOutcome.error.message}`);
+      return failure(linuxOutcome.error.message, {
+        method: linuxMethod,
+        errorCode: linuxOutcome.error.code ?? null,
+      });
+    }
+    if (linuxOutcome.exitCode !== undefined) {
+      diagLog(`[Command] ✗ Exited with code ${linuxOutcome.exitCode}`);
+      return failure(`The command exited with code ${linuxOutcome.exitCode}.`, {
+        method: linuxMethod,
+        errorCode: linuxOutcome.exitCode,
+      });
+    }
+    diagLog("[Command] ✓ Started");
+    return launchOk(linuxMethod);
   }
 
   const comspec = process.env.ComSpec || "cmd.exe";
@@ -7365,6 +7922,140 @@ const runTypedCommand = async (line, options = {}) => {
 };
 
 // IPC: receives a command from React to run an app
+/**
+ * The stored command, stripped of Windows packaging the renderer put on it.
+ *
+ * `startMenuAppIdToLaunchCommand` in `src/utils/windowsLaunchCommand.ts` wraps every id that is
+ * not a drive-letter path in `shell:AppsFolder\…` — including, on Linux, a perfectly good
+ * `firefox` or `/usr/bin/gimp` that discovery just found. That file is the renderer's and is not
+ * ours to change, so the moniker is taken back off here, where the command is about to be run.
+ * `appsFolderAppId` is the same parser the Windows ladder uses, so the two cannot drift.
+ */
+const stripAppsFolderMoniker = (command) => {
+  const line = String(command || "").trim();
+  try {
+    const id = win32Launch.appsFolderAppId(line);
+    if (id) return id;
+  } catch (e) {
+    /* not a moniker */
+  }
+  return line;
+};
+
+/**
+ * An app launch on Linux, handed to `backend/linux-launch.js`.
+ *
+ * Returns `null` — not a failure — when that module is not there, so the caller can fall through
+ * to something portable rather than the app refusing to launch anything at all while the module
+ * is still being written.
+ */
+const launchOnLinux = async (trimmedCommand, commandType, options = {}) => {
+  /**
+   * Key simulation is `keybd_event` from `user32.dll` driven by `simulate-keys.ps1`. There is no
+   * equivalent that works on both X11 and Wayland — Wayland deliberately has no client-side
+   * synthetic input — so this is a card, not a silent nothing.
+   */
+  if (trimmedCommand.startsWith("shortcut:")) {
+    return launchFailed(
+      `Failed to run "${trimmedCommand}". Error: Key simulation is not available on Linux.`,
+      {
+        command: trimmedCommand,
+        resolvedCommand: trimmedCommand,
+        commandType,
+        method: "simulate-keys",
+        errorCode: "ENOSYS",
+        exeExists: null,
+        raw: "Rovyl simulates keystrokes through the Windows keybd_event API. Wayland does not let an application synthesise input for other windows, and there is no portable X11 replacement, so keyboard shortcuts stored as actions cannot be replayed here.",
+      },
+    );
+  }
+
+  const launcher = linuxLaunch();
+  const command = stripAppsFolderMoniker(trimmedCommand);
+
+  if (!launcher || typeof launcher.launchLinuxCommand !== "function") {
+    /**
+     * No module yet. A target that is simply a file on disk still has a portable answer, and
+     * `shell.openPath` is it; anything else is honestly reported rather than guessed at.
+     */
+    diagLog("[Exec] linux-launch unavailable");
+    if (path.isAbsolute(command) && fs.existsSync(command)) return null;
+    return launchFailed(
+      `Failed to run "${command}". Error: Linux launching is unavailable in this build.`,
+      {
+        command: trimmedCommand,
+        resolvedCommand: command,
+        commandType,
+        method: "linux-launch",
+        errorCode: "ENOSYS",
+        exeExists: null,
+        raw: "backend/linux-launch.js could not be loaded, so Rovyl has no way to start applications on this platform.",
+      },
+    );
+  }
+
+  let toRun = command;
+  /** Canonicalization is the module's own opinion about its own commands; a throw is not fatal. */
+  if (typeof launcher.canonicalizeLinuxLaunchCommand === "function") {
+    try {
+      const canon = launcher.canonicalizeLinuxLaunchCommand(command);
+      if (canon && canon !== command) {
+        diagLog(`[Exec] Canonicalized launch line: "${command}" → "${canon}"`);
+        toRun = canon;
+      }
+    } catch (e) {
+      diagLog(`[Exec] Canonicalize skipped: ${e.message}`);
+    }
+  }
+
+  diagLog(`[Exec] linux-launch: ${toRun}`);
+  let result;
+  try {
+    result = await launcher.launchLinuxCommand(toRun, {
+      workingDirectory: options?.workingDirectory,
+      launchMode: options?.launchMode,
+      commandType,
+    });
+  } catch (e) {
+    result = { ok: false, error: e?.message || String(e) };
+  }
+
+  if (!result || result.ok !== true) {
+    const message = (result && result.error) || "Unknown error";
+    diagLog(`[Exec] ✗ linux-launch: ${message}`);
+    return launchFailed(`Failed to run "${toRun}". Error: ${message}`, {
+      command: trimmedCommand,
+      resolvedCommand: toRun,
+      commandType,
+      method: "linux-launch",
+      errorCode: null,
+      exeExists: null,
+      raw: String(message).slice(0, 4000),
+    });
+  }
+
+  diagLog(`[Exec] ✓ linux-launch (pid ${result.pid ?? "?"})`);
+
+  /** Terminal side-orders, the same options the Windows branches honour. */
+  const wantsTerminal =
+    !!options?.openTerminal ||
+    (Array.isArray(options?.terminalCommands) && options.terminalCommands.length > 0);
+  if (wantsTerminal) {
+    const cmds = (Array.isArray(options?.terminalCommands) ? options.terminalCommands : [])
+      .filter((c) => c && String(c).trim() !== "");
+    let cwd = os.homedir();
+    const wanted = String(options?.workingDirectory || "").trim();
+    try {
+      if (wanted && fs.statSync(wanted).isDirectory()) cwd = wanted;
+    } catch (e) {
+      /* keep home */
+    }
+    spawnLinuxTerminals(cmds.length ? cmds : [""], cwd);
+  }
+
+  return launchOk("linux-launch");
+};
+
 const runExecuteCommand = async (command, commandType, options = {}) => {
   if (!command || typeof command !== "string" || command.trim() === "") {
     console.warn("EXEC_ERROR: Received empty or invalid command");
@@ -7378,6 +8069,27 @@ const runExecuteCommand = async (command, commandType, options = {}) => {
    * expansion, IDE flags, requoting. It leaves before any of that.
    */
   if (commandType === "command") return await runTypedCommand(trimmedCommand, options);
+
+  /**
+   * Linux takes its own road from here, and it has to: every rewrite below is a Windows rewrite.
+   * `resolveShellPath` expands shell CLSIDs, `normalizeAumidIdeCommands` rewrites AUMIDs,
+   * `canonicalizeWin32LaunchCommand` requotes for `cmd`, and the ladder itself ends at
+   * `explorer.exe shell:AppsFolder\…`. None of that means anything here, and running it would turn
+   * `/usr/bin/firefox` into something no Linux shell recognises.
+   *
+   * URLs, files and folders are NOT taken: those branches already reach `shell.openExternal` /
+   * `shell.openPath`, which are Electron's own portable wrappers (xdg-open underneath) and work
+   * as they stand. Only an `app` — the case the whole Windows ladder exists for — is claimed.
+   */
+  if (
+    IS_LINUX &&
+    (trimmedCommand.startsWith("shortcut:") ||
+      (commandType !== "url" && commandType !== "folder" && commandType !== "file"))
+  ) {
+    const linuxOutcome = await launchOnLinux(trimmedCommand, commandType, options);
+    if (linuxOutcome) return linuxOutcome;
+    /** No module: fall through, so a plain absolute path still gets `shell.openPath` below. */
+  }
 
   // CRITICAL: Resolve GUIDs to real paths FIRST, before any detection logic
   let resolvedCommand = resolveShellPath(trimmedCommand);
@@ -7410,7 +8122,7 @@ const runExecuteCommand = async (command, commandType, options = {}) => {
       ? removeIdeNewWindowFlag(resolvedCommand)
       : addIdeNewWindowFlag(resolvedCommand);
   }
-  if (process.platform === "win32" && !isBarePathTarget) {
+  if (IS_WIN && !isBarePathTarget) {
     try {
       const canon = win32Launch.canonicalizeWin32LaunchCommand(resolvedCommand);
       if (canon !== resolvedCommand) {
@@ -7666,7 +8378,7 @@ const runExecuteCommand = async (command, commandType, options = {}) => {
 
         case "exec_direct": {
           const terminal = getPreferredTerminal();
-          if (process.platform === "win32") {
+          if (IS_WIN) {
             const { exe, args } = win32Launch.splitWin32SpawnExeAndArgs(String(cmd).trim());
             const tail =
               args.length > 0
@@ -7788,13 +8500,26 @@ const runExecuteCommand = async (command, commandType, options = {}) => {
     const finalCmds = (commandsToRun.length === 0 && openEmptyIfNoCmds) ? [""] : commandsToRun;
     
     if (finalCmds.length === 0) return;
-    
+
     const terminal = getPreferredTerminal();
     let workingDir = process.cwd();
     const resolvedWd = extractTerminalWorkingDir(explicitWorkingDirectory) || extractTerminalWorkingDir(targetPath);
     if (resolvedWd) workingDir = resolvedWd;
 
     diagLog(`  → [AutoCommands] Starting execution of ${finalCmds.length} command(s) in ${workingDir}`);
+
+    /**
+     * Same job, argv instead of a `cmd` line. No emulator on Linux agrees on a quoting rule for a
+     * whole command line, but every one of them takes `-e <program> <args…>` — so the shell is the
+     * program and the user's text is one argument to it, and nothing in between parses it.
+     *
+     * `exec $SHELL -i` after it is what `-NoExit` / `/k` buy on Windows: the window stays open on
+     * the output instead of vanishing with the command that produced it.
+     */
+    if (IS_LINUX) {
+      spawnLinuxTerminals(finalCmds, workingDir);
+      return;
+    }
 
     for (const cmd of finalCmds) {
       let shellCmd;
@@ -8200,7 +8925,7 @@ function foregroundFocusAssetPath() {
 }
 
 function ensureForegroundFocusHelper() {
-  if (process.platform !== "win32" || foregroundFocusHelper) return;
+  if (!IS_WIN || foregroundFocusHelper) return;
   foregroundFocusHelperReady = false;
   const nativeHelper = getNativeHelperExePath();
   const child = nativeHelper
@@ -8420,7 +9145,7 @@ function performIdleMemoryCleanup() {
  * wheel closed, not to bound normal operation.
  */
 function getForegroundSnapshotFast() {
-  if (process.platform !== "win32") return Promise.resolve(null);
+  if (!IS_WIN) return Promise.resolve(null);
   return new Promise((resolve) => {
     ensureForegroundFocusHelper();
     if (!foregroundFocusHelper || !foregroundFocusHelperReady || !foregroundFocusHelper.stdin?.writable) {
@@ -8487,7 +9212,7 @@ function stopForegroundFocusHelper() {
  * nothing at all.
  */
 function stealForegroundForOverlay() {
-  if (process.platform !== "win32") return;
+  if (!IS_WIN) return;
   if (!overlayWindow || overlayWindow.isDestroyed() || !overlayWindow.isVisible()) return;
   const now = Date.now();
   if (now < foregroundStealBusyUntil) return;
@@ -8549,7 +9274,7 @@ ipcMain.handle("get-app-version", () => app.getVersion());
  */
 const buildChannel = () => {
   if (isStoreBuild()) return "store";
-  if (!isPackagedBuild || process.platform !== "win32") return "unsupported";
+  if (!isPackagedBuild || !IS_WIN) return "unsupported";
   return "direct";
 };
 
@@ -8714,7 +9439,71 @@ ipcMain.on("set-window-opacity", (event, opacity) => {
 });
 
 
+/**
+ * The apps a first run should offer, picked out of everything installed.
+ *
+ * The Windows scripts do this in PowerShell against `Get-StartApps`: a list of names worth
+ * suggesting, matched loosely, capped at five, with the Start Menu's own noise (Help, Uninstall,
+ * Feedback…) excluded. This is that same selection over `linux-apps` entries, so the first-run
+ * experience is the same shape on both platforms rather than an empty wheel.
+ *
+ * `Path` AND `Command` both carry the launch command, because the two callers read different
+ * ones: `get-installed-apps`'s picker reads `Path`, `buildMainAppsFromStartMenuDiscovery` in
+ * `src/App.tsx` prefers `Command`.
+ */
+const LINUX_DISCOVERY_NOISE =
+  /\b(help|feedback|contact|support|manual|uninstall|installer|setup|about|release notes|preferences|settings)\b/i;
+
+const pickLinuxDiscoveryApps = async (priorityTerms, limit) => {
+  const entries = await callLinuxModule(linuxApps, "listInstalledApps", [], []);
+  const usable = (Array.isArray(entries) ? entries : []).filter(
+    (e) =>
+      e &&
+      e.noDisplay !== true &&
+      e.terminal !== true &&
+      e.command &&
+      e.name &&
+      !LINUX_DISCOVERY_NOISE.test(String(e.name)),
+  );
+
+  const chosen = [];
+  const seen = new Set();
+  const take = (entry) => {
+    const key = String(entry.command);
+    if (seen.has(key)) return;
+    seen.add(key);
+    chosen.push({
+      Name: String(entry.name),
+      Path: String(entry.command),
+      Command: String(entry.command),
+      TargetPath: "",
+    });
+  };
+
+  for (const term of priorityTerms) {
+    if (chosen.length >= limit) break;
+    const lower = term.toLowerCase();
+    const hit = usable.find((e) => String(e.name).toLowerCase().includes(lower));
+    if (hit) take(hit);
+  }
+  /** Still short: fill from whatever else is installed rather than hand back a half-empty wheel. */
+  for (const entry of usable) {
+    if (chosen.length >= limit) break;
+    take(entry);
+  }
+  return chosen.slice(0, limit);
+};
+
 ipcMain.handle("get-onboarding-apps", async () => {
+  if (IS_LINUX) {
+    const picked = await pickLinuxDiscoveryApps(
+      ["Chrome", "Chromium", "Firefox", "Discord", "Spotify", "Steam", "Code", "Files", "Terminal", "Calculator"],
+      5,
+    );
+    diagLog(`[Onboarding] linux-apps returned ${picked.length} suggestions`);
+    return picked;
+  }
+
   return new Promise((resolve) => {
     const targetApps = ["Chrome", "Edge", "Discord", "Spotify", "Steam", "VS Code", "Visual Studio Code", "Notepad", "Calculadora", "Calculator"];
     const psScriptContent = `
@@ -8753,6 +9542,20 @@ ipcMain.handle("get-onboarding-apps", async () => {
 
 // IPC: Get recommended apps for initial workspace (Discovery)
 ipcMain.handle("get-startup-apps", async () => {
+  if (IS_LINUX) {
+    diagLog("[Discovery] Running Smart Discovery for initial apps (linux-apps)...");
+    const picked = await pickLinuxDiscoveryApps(
+      [
+        "Firefox", "Chrome", "Chromium", "Code", "Discord", "Spotify", "Telegram",
+        "Steam", "Obsidian", "Slack", "Thunderbird", "GIMP", "Files", "Terminal",
+        "Calculator",
+      ],
+      5,
+    );
+    diagLog(`[Discovery] Success: Found ${picked.length} apps`);
+    return picked;
+  }
+
   return new Promise((resolve) => {
     diagLog("[Discovery] Running Smart Discovery for initial apps...");
 
@@ -9152,6 +9955,12 @@ function parseCustomIconSource(source) {
  * answer for the renderer to show, not an exception.
  */
 function runLibraryIcons(filePath, index, list) {
+  /**
+   * PE resource tables, read through `System.Drawing` — there is nothing to read off Windows. The
+   * caller already treats `null` as "this file carries no icons of its own" and falls back, so
+   * answering that directly is the same outcome without spawning a PowerShell that is not there.
+   */
+  if (!IS_WIN) return Promise.resolve(null);
   return new Promise((resolve) => {
     const args = [
       "-NoProfile",
@@ -9246,7 +10055,9 @@ ipcMain.handle("read-custom-icon-source", async (_event, source) => {
     if (!parsed) return { ok: false, error: "No file was given." };
     const { filePath, index } = parsed;
     if (!path.isAbsolute(filePath)) {
-      return { ok: false, error: "Use the full path to the file, such as C:\\Icons\\app.png." };
+      /** The example has to be a path the reader could actually type on the machine they are on. */
+      const example = IS_WIN ? "C:\\Icons\\app.png" : "/home/you/Pictures/app.png";
+      return { ok: false, error: `Use the full path to the file, such as ${example}.` };
     }
     let stat;
     try {
@@ -9282,7 +10093,14 @@ ipcMain.handle("read-custom-icon-source", async (_event, source) => {
     }
 
     const ref = await getFileIconCached(filePath);
-    if (!ref) return { ok: false, error: `Windows has no icon for ${path.basename(filePath)}.` };
+    if (!ref) {
+      return {
+        ok: false,
+        error: IS_WIN
+          ? `Windows has no icon for ${path.basename(filePath)}.`
+          : `No icon could be found for ${path.basename(filePath)}.`,
+      };
+    }
     return { ok: true, kind: "shell", path: filePath, ref };
   } catch (e) {
     diagLog(`[CustomIcon] read: ${e.message}`);
@@ -9941,9 +10759,75 @@ async function getFileIconCached(filePath) {
   }
 }
 
+/**
+ * The icon for a launch command on Linux, from the freedesktop icon theme.
+ *
+ * `extract-icon.ps1` pulls a bitmap out of a PE resource or asks the shell for an AUMID's tile.
+ * Neither exists here: an icon is a NAME (`firefox`) resolved against the current theme's search
+ * path, and `backend/linux-icons.cjs` owns that lookup. What this function owns is turning a
+ * stored command back into the name to look up.
+ *
+ * Three tries, cheapest first: the command as an icon name, the desktop entry's own `Icon=` found
+ * by `findAppByCommand`, and the executable's basename — `/usr/bin/firefox` is nearly always
+ * themed as `firefox`. `null` at the end is a real answer, and the wheel draws its own placeholder
+ * for it.
+ */
+async function extractLinuxIcon(filePath) {
+  const command = stripAppsFolderMoniker(filePath);
+  if (!command) return null;
+
+  const icons = linuxIcons();
+  if (!icons || typeof icons.resolveIconToDataUrl !== "function") {
+    diagLog("[IconRequest] linux-icons unavailable");
+    return null;
+  }
+
+  const tried = new Set();
+  const attempt = async (name) => {
+    const key = String(name || "").trim();
+    if (!key || tried.has(key)) return null;
+    tried.add(key);
+    return await callLinuxModule(linuxIcons, "resolveIconToDataUrl", [key, 128], null);
+  };
+
+  /** A path first: an absolute `.png`/`.svg` is already the answer and needs no theme lookup. */
+  const first = await attempt(command);
+  if (first) return first;
+
+  const entry = await callLinuxModule(linuxApps, "findAppByCommand", [command], null);
+  if (entry && entry.icon) {
+    const themed = await attempt(entry.icon);
+    if (themed) return themed;
+  }
+
+  /** The executable on its own, without arguments or directories. */
+  const exe = command.split(/\s+/)[0];
+  const byBasename = await attempt(path.basename(exe));
+  if (byBasename) return byBasename;
+
+  return null;
+}
+
 async function extractIconUncached(filePath) {
   try {
     diagLog(`[IconRequest] Fetching icon for: ${filePath}`);
+
+    /**
+     * Linux takes its own route and does not fall through. Everything below — the AUMID handling,
+     * the `SystemRoot` special cases, `extract-icon.ps1` — is Windows, and `app.getFileIcon` on
+     * Linux answers an ELF binary with the generic "executable" glyph, which reads as a WRONG
+     * icon rather than a missing one. A `null` the wheel draws a placeholder for is the better
+     * answer.
+     */
+    if (IS_LINUX) {
+      const linuxIcon = await extractLinuxIcon(filePath);
+      if (linuxIcon) {
+        diagLog(`[IconRequest] Success via linux-icons for ${filePath}`);
+        return rememberFileIcon(filePath, linuxIcon);
+      }
+      diagLog(`[IconRequest] No icon available for ${filePath}`);
+      return null;
+    }
 
     // 1. Resolve shell paths
     /**
@@ -10103,7 +10987,43 @@ function getPowerShellExePath() {
   );
 }
 
+/**
+ * A `linux-apps` entry as the app picker reads it.
+ *
+ * `src/components/installedApps.tsx` keeps a row only when it has `Path` and one of
+ * `DisplayName`/`Name`, so those three are what this has to produce — the same shape
+ * `Get-StartApps` yields on Windows, so neither the picker nor the cache can tell them apart.
+ * `Path` is the launch command, because that is what the picker stores as the shortcut's command
+ * and hands straight back to `execute-command`.
+ *
+ * `NoDisplay` entries are the desktop files that exist only to register a MIME handler or a URL
+ * scheme; the desktop's own menu hides them and so does this.
+ */
+const linuxAppsToPickerRows = (entries) =>
+  (Array.isArray(entries) ? entries : [])
+    .filter((e) => e && e.noDisplay !== true && e.command && (e.name || e.id))
+    .map((e) => ({
+      Name: String(e.name || e.id),
+      DisplayName: String(e.name || e.id),
+      Path: String(e.command),
+      /** The picker only shows it; `get-file-icon` is what actually resolves it. */
+      IconPath: e.icon ? String(e.icon) : "",
+    }));
+
 function scanInstalledApps() {
+  /**
+   * `.desktop` files instead of `Get-StartApps`. Same contract: an empty array for every failure,
+   * never a throw — `get-installed-apps` deliberately does not cache an empty answer, so a scan
+   * that comes back empty because the module is not there yet is simply retried later.
+   */
+  if (IS_LINUX) {
+    return callLinuxModule(linuxApps, "listInstalledApps", [], []).then((entries) => {
+      const rows = linuxAppsToPickerRows(entries);
+      diagLog(`[Scanner] linux-apps returned ${rows.length} entries`);
+      return rows;
+    });
+  }
+
   return new Promise((resolve) => {
     const { exec } = require("child_process");
 

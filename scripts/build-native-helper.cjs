@@ -14,6 +14,16 @@ function findCscExe() {
 }
 
 function buildNativeHelper() {
+  /**
+   * The helper is a Win32 WinForms executable compiled by the .NET Framework csc.exe. There is
+   * nothing to compile and nothing that would load it off Windows, so this is a clean no-op —
+   * it must not fail the Linux build, and it must not report a missing source or compiler.
+   */
+  if (process.platform !== "win32") {
+    console.log("[build-native-helper] Skipping \u2014 not win32.");
+    return;
+  }
+
   const projectRoot = path.join(__dirname, "..");
   const src = path.join(projectRoot, "backend", "native-helper", "rovyl-helper.cs");
   const binDir = path.join(projectRoot, "resources", "bin");
