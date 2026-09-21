@@ -61,3 +61,9 @@ build/appx/
 
 # Markdown preview exports
 TODO.html
+
+# makepkg byproducts — packaging/arch/PKGBUILD is the source, everything it
+# produces (the extracted tree, the staged $pkgdir, the package itself) is not.
+packaging/arch/pkg/
+packaging/arch/src/
+packaging/arch/*.pkg.tar.*

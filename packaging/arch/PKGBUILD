@@ -1,0 +1,76 @@
+# Maintainer: HenryCa <arshit09@users.noreply.github.com>
+#
+# Packages the electron-builder output at build-out/linux-unpacked. Run `npm run
+# dist:linux` (or `dist:linux:appimage`) first so that directory exists, then
+# `makepkg -f` in this directory.
+#
+# This exists instead of electron-builder's own `pacman` target because that
+# target shells out to a bundled fpm whose Ruby 2.3 needs libcrypt.so.1. Arch
+# ships libcrypt.so.2 (libxcrypt), so fpm hangs unless libxcrypt-compat is
+# installed. makepkg is the native tool and needs no such shim.
+
+pkgname=rovyl
+pkgver=1.16.0
+pkgrel=1
+pkgdesc="Radial app launcher - a wheel of apps, files and commands summoned under the cursor"
+arch=('x86_64')
+url="https://github.com/arshit09/rovyl"
+license=('GPL-3.0-or-later')
+# Electron's own runtime deps. nss/alsa-lib are dlopen'd at startup; without
+# them the app dies before it paints.
+depends=('gtk3' 'nss' 'alsa-lib' 'libxss' 'libnotify' 'at-spi2-core')
+optdepends=(
+  'xdg-utils: opening URLs, files and folders from the wheel'
+  'gtk-update-icon-cache: desktop icon refresh'
+  'xdotool: key simulation on X11'
+  'libappindicator-gtk3: system tray icon on desktops that need it'
+)
+options=('!strip' '!debug')
+
+_unpacked="${ROVYL_UNPACKED:-$(realpath "$startdir/../../build-out/linux-unpacked" 2>/dev/null)}"
+_icons="$(realpath "$startdir/../../build/icons" 2>/dev/null)"
+
+prepare() {
+  if [ ! -x "$_unpacked/rovyl" ]; then
+    echo "==> build-out/linux-unpacked/rovyl not found."
+    echo "==> Run 'npm run dist:linux' from the repo root first."
+    return 1
+  fi
+}
+
+package() {
+  install -dm755 "$pkgdir/opt/$pkgname"
+  cp -a "$_unpacked/." "$pkgdir/opt/$pkgname/"
+
+  # Chromium's setuid sandbox. Without the setuid bit Electron refuses to start
+  # unless it is handed --no-sandbox, which is a worse trade than this bit.
+  chmod 4755 "$pkgdir/opt/$pkgname/chrome-sandbox"
+
+  install -dm755 "$pkgdir/usr/bin"
+  ln -s "/opt/$pkgname/$pkgname" "$pkgdir/usr/bin/$pkgname"
+
+  for size in 16 24 32 48 64 128 256 512; do
+    if [ -f "$_icons/${size}x${size}.png" ]; then
+      install -Dm644 "$_icons/${size}x${size}.png" \
+        "$pkgdir/usr/share/icons/hicolor/${size}x${size}/apps/$pkgname.png"
+    fi
+  done
+
+  install -Dm644 /dev/stdin "$pkgdir/usr/share/applications/$pkgname.desktop" <<DESKTOP
+[Desktop Entry]
+Type=Application
+Name=Rovyl
+GenericName=Radial Launcher
+Comment=Radial app launcher
+Exec=/usr/bin/$pkgname %U
+Icon=$pkgname
+Terminal=false
+Categories=Utility;
+Keywords=launcher;radial;wheel;shortcut;
+StartupNotify=false
+StartupWMClass=Rovyl
+DESKTOP
+
+  install -Dm644 "$startdir/../../LICENSE" \
+    "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

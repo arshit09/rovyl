@@ -6,9 +6,12 @@
 
 A radial launcher for Windows. Hold the middle mouse button anywhere, aim, release.
 
+Also runs on Linux, with the mouse trigger [not yet ported](#linux).
+
 [![Download Rovyl for Windows](https://img.shields.io/badge/Download%20for%20Windows-2ea44f?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/arshit09/rovyl/releases/latest)
 
 ![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078d4?style=flat-square)
+![Linux](https://img.shields.io/badge/Linux-Arch%20%7C%20AppImage-f6c915?style=flat-square&logo=linux&logoColor=black)
 ![Electron](https://img.shields.io/badge/Electron-28-47848f?style=flat-square&logo=electron&logoColor=white)
 ![React](https://img.shields.io/badge/React-18-149eca?style=flat-square&logo=react&logoColor=white)
 
@@ -38,7 +41,7 @@ never puts a window between you and your work.
 - **Opens over anything** — any window, including fullscreen apps
 - **Where you want it** — centred on the main screen, on the monitor your pointer is on, or right under the pointer
 - **Launch anything** — applications, folders, files, websites, custom commands
-- **Automatic discovery** — reads your Start Menu and extracts real app icons
+- **Automatic discovery** — reads your Start Menu on Windows, your `.desktop` entries on Linux, and extracts real app icons
 - **Custom icons** — any workspace or shortcut can wear a glyph, a picture (PNG, JPG, SVG, WebP, ICO…) or any icon inside an EXE or DLL
 - **Workspaces** — separate wheels for work, games, streaming; switch from the picker or with a number key
 - **Your trigger** — middle mouse button, a side button, a global hotkey, or both; each can be turned off
@@ -48,6 +51,7 @@ never puts a window between you and your work.
 - **Launch without clicking** — optional: hides the pointer, picks by direction, and opens on its own
 - **Focus protection** — stays out of the way while you are in a fullscreen game
 - **Fully offline** — no account, no telemetry, no ads, nothing leaves your machine
+- **Runs on Linux** — an Arch package and an AppImage; discovery, launching and icons are native, the mouse trigger is not ported ([details](#linux))
 
 ## Install
 
@@ -70,7 +74,71 @@ steps:
 4. Follow the installer. Rovyl then lives in your system tray and updates itself from this
    repository, so this is the only manual download you need.
 
-**From source** — see [Building](#building) below.
+**Linux** — see [Linux](#linux) below. **From source** — see [Building](#building).
+
+## Linux
+
+Rovyl runs on Linux. It discovers your applications from `.desktop` entries, launches them
+the way your desktop would, and resolves their icons through your icon theme. What is missing
+is the part that needs to see input meant for other windows.
+
+**Working**
+
+- The wheel, workspaces, docks, settings and custom icons
+- App discovery from `.desktop` entries, including Flatpak and Snap
+- Launching applications, files, folders, URLs and shell commands, in a terminal when asked
+- Icons resolved through the XDG icon theme, following the `Inherits` chain
+- "Start with the system", as an XDG autostart entry
+
+**Not implemented**
+
+- **The middle-mouse hold trigger.** This is the big one: the wheel is opened from the tray,
+  a desktop shortcut or a global hotkey instead. The Windows trigger is a low-level mouse
+  hook that also has to swallow the click that opened the wheel, and detection and swallowing
+  have to be the same mechanism — there is no cross-desktop way to do that.
+- **Fullscreen-game detection**, so the wheel does not currently stand aside for a game.
+- **Icons extracted from binaries**, which has no meaning outside Windows; the icon theme
+  replaces it.
+- **Auto-update.** The updater is Windows-only, so upgrading means installing the new package
+  or replacing the AppImage.
+
+A global hotkey uses Electron's own `globalShortcut`, which works on X11. Wayland denies
+unprivileged clients that access, so on a Wayland session expect to open the wheel from the
+tray.
+
+> Tested on Arch with GNOME on Wayland: the app builds, starts, discovers 110 applications
+> and resolves every icon they declare. **X11 has not been tested**, and neither has any
+> desktop other than GNOME. Everything unavailable reports itself as unavailable rather than
+> failing silently, so a gap should show as a message, not as nothing happening.
+
+### Arch Linux
+
+```bash
+git clone https://github.com/arshit09/rovyl
+cd rovyl
+npm install
+npm run dist:arch
+sudo pacman -U build-out/rovyl-*.pkg.tar.zst
+```
+
+`dist:arch` builds the app, then runs `makepkg` against
+[`packaging/arch/PKGBUILD`](packaging/arch/PKGBUILD). It needs `base-devel`. The package
+installs to `/opt/rovyl` with a launcher on `PATH`, a desktop entry and hicolor icons.
+
+> electron-builder has a `pacman` target of its own and this deliberately does not use it.
+> That target shells out to a bundled `fpm` whose Ruby 2.3 links `libcrypt.so.1`, while Arch
+> ships `libcrypt.so.2`. The miss does not raise — `fpm` blocks forever, so the build looks
+> like it is still compressing when it has in fact stopped. `makepkg` is Arch's own tool and
+> needs no such shim.
+
+### Other distributions
+
+```bash
+npm run dist:linux      # build-out/Rovyl-<version>.AppImage
+chmod +x build-out/Rovyl-*.AppImage && ./build-out/Rovyl-*.AppImage
+```
+
+The AppImage carries its own Electron and runs anywhere with glibc and GTK3.
 
 ## How it works
 
@@ -126,8 +194,11 @@ By default the wheel opens on a picker of your workspaces. Prefer number keys? G
 
 ## Building
 
-Requires **Windows 10 or 11** and **Node 20+**. Windows-only by design: the trigger, the
-icon pipeline and the window handling all depend on Win32 behaviour.
+Requires **Node 20+**, on **Windows 10/11** or **Linux**. Windows is where the trigger, the
+icon pipeline and the window handling behave in full; the Linux port reimplements discovery,
+launching and icons against XDG and degrades the rest (see [Linux](#linux)). Building a
+Windows installer still requires Windows — the ICO, `rcedit` branding and NSIS steps no-op
+elsewhere — and the Arch package likewise requires Arch.
 
 ```bash
 git clone https://github.com/arshit09/rovyl
@@ -146,9 +217,10 @@ Google sign-in needs credentials of your own — copy `.env.example` to `.env.lo
 fill in a client ID from your own Google Cloud project. There is deliberately no default,
 so a fork never inherits someone else's OAuth client.
 
-> The dev app and the packaged app share `%APPDATA%\Rovyl`, because Electron derives it
-> from `productName`. A dev session therefore reads and writes your real configuration.
-> Pass `--user-data-dir` to work against a clean profile.
+> The dev app and the packaged app share one profile — `%APPDATA%\Rovyl` on Windows,
+> `~/.config/Rovyl` on Linux — because Electron derives it from `productName`. A dev session
+> therefore reads and writes your real configuration. Set `ROVYL_USER_DATA` to work against a
+> clean profile.
 
 <details>
 <summary><b>All scripts</b></summary>
@@ -161,12 +233,16 @@ so a fork never inherits someone else's OAuth client.
 | `npm run dev` | Vite only |
 | `npm run electron` | Electron only, waits for port 5173 |
 | `npm run build` | Native helper → `tsc` → Vite build → radial and renderer-budget checks → icons and Store assets |
+| `npm run build:linux` | The platform-neutral half of `build`, plus Linux PNG icons |
 | `npm run dist` | `build` + electron-builder, installer in `build-out/` |
 | `npm run dist:store` | `build` + electron-builder, MSIX package for the Store |
+| `npm run dist:linux` | `build:linux` + electron-builder, AppImage in `build-out/` |
+| `npm run dist:arch` | `dist:linux` + `makepkg`, Arch package in `build-out/` |
 | `npm run release` | Cuts a release (`release:check` to dry-run) |
 | `npm run verify:radial-windowing` | Checks the wheel/Settings window-split invariants |
 | `npm run verify:renderer-budget` | Keeps the wheel's bundle within its size budget |
-| `npm run test:win32-launch` | Command parsing and quoting |
+| `npm run test:win32-launch` | Windows command parsing and quoting |
+| `npm run test:linux-apps` | XDG discovery, `Exec` expansion, launching and icon lookup |
 | `npm run test:persistence-shape` | Persistence blob normalisation |
 | `npm run test:window-split` | Starts the real app on a throwaway profile and opens the wheel |
 
