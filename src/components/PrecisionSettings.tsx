@@ -21,6 +21,7 @@ import {
   File as FileGlyph,
   FilePlus2,
   FolderOpen,
+  Github,
   Globe2,
   HelpCircle,
   GripVertical,
@@ -79,6 +80,7 @@ import '../fonts-display.css';
 import { NativeAppIcon, useInstalledApps, clearInstalledAppsMemory, type InstalledApp } from './installedApps';
 import { radialCrowding } from '../utils/workspaceRadial';
 import { startMenuAppIdToLaunchCommand } from '../utils/windowsLaunchCommand';
+import { openExternalSiteUrl } from '../utils/openExternalSiteUrl';
 import {
   dropEntriesFrom,
   guessPathKind,
@@ -947,6 +949,13 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
           onChange: (value) => update('language', value as UIConfig['language']),
         },
         ...(canUpdate ? [{ key: 'update', group: '', keywords: 'updates version', ...updateRow }] : []),
+        {
+          key: 'github', group: '', title: 'GitHub',
+          description: 'Source code, releases, and issues.',
+          kind: 'action', actionLabel: 'Open', actionIcon: Github,
+          keywords: 'source code repository repo issues releases',
+          onRun: () => openExternalSiteUrl('https://github.com/arshit09/rovyl'),
+        },
       ],
       trigger: [
         /**
