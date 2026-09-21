@@ -34,12 +34,15 @@ try {
 
   const {
     selectMenuPlacement,
+    helpTipPlacement,
     typeAheadIndex,
     nextTypeAheadBuffer,
     menuHeight,
     MENU_MIN_WIDTH,
+    MENU_ROW_HEIGHT,
     MENU_MARGIN,
     MENU_GAP,
+    TIP_WIDTH,
     TYPE_AHEAD_RESET_MS,
   } = await import(pathToFileURL(join(outDir, "entry.mjs")).href);
 
@@ -252,6 +255,88 @@ try {
     assert.equal(nextTypeAheadBuffer("d", "e", 120), "de", "brisk typing extends the buffer");
     assert.equal(nextTypeAheadBuffer("d", "e", TYPE_AHEAD_RESET_MS + 1), "e", "a pause starts a new buffer");
     assert.equal(nextTypeAheadBuffer("", "d", 9e9), "d", "the very first keystroke is its own buffer");
+  });
+
+  /**
+   * The help bubble. It hangs off the mark inside the popup, so the arithmetic is against a 13px
+   * glyph near the right edge of a panel — every interesting case is an edge case, and the two
+   * that matter both fail silently: a bubble that hangs off the panel is simply cut in half, and
+   * one that does not flip near the floor is a sentence nobody can read.
+   */
+  /**
+   * The Shortcut behavior popup as it really opens: two options, right-aligned to a row that ends
+   * near the right edge of the panel, each with a 13px mark at the end of it.
+   */
+  const POPUP = { top: 342, bottom: 414 };
+  const MARK_TOGGLE = { top: 356, bottom: 369, left: 1180, right: 1193 };
+  const MARK_HOLD = { top: 388, bottom: 401, left: 1180, right: 1193 };
+  const TIP_H = 56;
+  const centreOf = (mark) => (mark.left + mark.right) / 2;
+
+  check(() => {
+    const tip = helpTipPlacement(MARK_HOLD, POPUP, SHELL, TIP_H);
+    assert.equal(tip.drop, "down", "with room below, the bubble hangs under the popup");
+    assert.equal(tip.top, POPUP.bottom + MENU_GAP - SHELL.top, "one gap under it");
+    assert.ok(tip.top + SHELL.top - MARK_HOLD.bottom < MENU_ROW_HEIGHT, "which is right under the last mark");
+  });
+
+  check(() => {
+    /** The first mark's bubble must land in the same place, not on the option below it. */
+    const tip = helpTipPlacement(MARK_TOGGLE, POPUP, SHELL, TIP_H);
+    assert.equal(tip.top, POPUP.bottom + MENU_GAP - SHELL.top, "it drops to the foot of the popup");
+    assert.ok(tip.top + SHELL.top >= POPUP.bottom, "and covers none of the list");
+  });
+
+  check(() => {
+    /** Tied to the mark by its column, wherever it ended up vertically. */
+    const roomy = { top: 356, bottom: 369, left: 500, right: 513 };
+    const tip = helpTipPlacement(roomy, { top: 342, bottom: 414 }, SHELL, TIP_H);
+    assert.equal(tip.left + TIP_WIDTH / 2, centreOf(roomy) - SHELL.left, "centred on the mark");
+  });
+
+  check(() => {
+    /** At the end of the option, centring would overhang the panel, so the clamp takes over. */
+    const tip = helpTipPlacement(MARK_HOLD, POPUP, SHELL, TIP_H);
+    assert.ok(
+      tip.left + TIP_WIDTH <= SHELL.width - MENU_MARGIN,
+      `bubble runs past the panel: ${tip.left + TIP_WIDTH} > ${SHELL.width - MENU_MARGIN}`,
+    );
+    assert.ok(tip.left + TIP_WIDTH / 2 < centreOf(MARK_HOLD) - SHELL.left, "clamped, so no longer centred");
+  });
+
+  check(() => {
+    /** Mirrored: in Arabic the popup is over at the left, and the clamp is the other one. */
+    const rtl = { top: 356, bottom: 369, left: 40, right: 53 };
+    assert.equal(
+      helpTipPlacement(rtl, POPUP, SHELL, TIP_H).left,
+      MENU_MARGIN,
+      "held off the near edge as well as the far one",
+    );
+  });
+
+  check(() => {
+    /** A popup near the floor: below would cut the sentence off, so it goes above the whole list. */
+    const floorPopup = { top: SHELL.top + SHELL.height - 80, bottom: SHELL.top + SHELL.height - 8 };
+    const mark = { top: floorPopup.bottom - 26, bottom: floorPopup.bottom - 13, left: 500, right: 513 };
+    const tip = helpTipPlacement(mark, floorPopup, SHELL, TIP_H);
+    assert.equal(tip.drop, "up", "no room below flips the bubble above");
+    assert.equal(tip.top + TIP_H, floorPopup.top - MENU_GAP - SHELL.top, "clear of the popup's top edge");
+  });
+
+  check(() => {
+    /** Neither side fits: it stays inside the shell rather than hanging off the top of it. */
+    const squeezed = { top: 0, left: 0, width: 900, height: TIP_H };
+    const mark = { top: 20, bottom: 33, left: 500, right: 513 };
+    const tip = helpTipPlacement(mark, { top: 10, bottom: 40 }, squeezed, TIP_H);
+    assert.equal(tip.drop, "up", "below does not fit");
+    assert.equal(tip.top, MENU_MARGIN, "and above is clamped to the shell");
+  });
+
+  check(() => {
+    /** A shell too narrow for any of it still yields a box inside the shell, not outside it. */
+    const narrow = { top: 0, left: 0, width: TIP_WIDTH, height: 400 };
+    const tip = helpTipPlacement(MARK_HOLD, POPUP, narrow, TIP_H);
+    assert.equal(tip.left, MENU_MARGIN, "pinned to the near edge rather than off the far one");
   });
 
   console.log(`select-menu-smoke: OK (${n} assertions)`);

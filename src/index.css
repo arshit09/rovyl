@@ -733,11 +733,45 @@
   color: var(--zn-text-3); font: 450 11px/1.2 var(--font-ui);
 }
 .zs-select-option > svg { flex: none; margin-inline-start: auto; color: var(--zn-solid); }
+/* Space held for the check on the rows that do not have one — see the option's own note. */
+.zs-select-option > svg.is-blank { visibility: hidden; }
 .zs-select-option.is-active { background: var(--zn-hover); }
 .zs-select-option.is-active > b { color: var(--zn-text); }
 /* Chosen is stated by the check, not by a fill — a filled row plus a highlighted row reads as two
    selections when the keyboard has moved away from what is set. */
 .zs-select-option[aria-selected="true"] > b { color: var(--zn-text); }
+
+/* The help mark: what the label used to say in parentheses, folded into one glyph.
+
+   It takes the auto margin so it ends the row, and hands it back to the check when a check is
+   there too — two auto margins would split the free space between them and leave the mark
+   stranded in the middle of the option instead of next to the glyph it belongs beside. */
+.zs-select-help {
+  flex: none; display: inline-flex; align-items: center;
+  margin-inline-start: auto;
+  color: var(--zn-text-3);
+  transition: color .15s var(--zn-ease);
+}
+.zs-select-help + svg { margin-inline-start: var(--zn-1); }
+.zs-select-help:hover { color: var(--zn-text); }
+/* Hover reaches the mark long before the pointer is on the 13px glyph itself. */
+.zs-select-option.is-active .zs-select-help { color: var(--zn-text-2); }
+
+/* The bubble it opens. Under the popup and in the shell, not inside the list, because the list
+   scrolls and would clip it — same portal and same measured coordinates as the popup itself.
+
+   `width` is not decoration: the bubble's rendered height is measured to decide whether it still
+   fits under the popup, so the width has to be settled here before that measurement is taken. It
+   is `TIP_WIDTH` in `selectMenu.ts`, and the two are kept in step by hand. */
+.zs-select-tip {
+  position: absolute; z-index: 62;
+  width: 240px; padding: var(--zn-2) var(--zn-3);
+  border-radius: var(--zn-r-panel); background: var(--zn-surface);
+  box-shadow: inset 0 0 0 1px var(--zn-line-strong), var(--zn-elev);
+  color: var(--zn-text-2); font: 450 11px/1.5 var(--font-ui);
+  /* The pointer is on its way to a click; the bubble must not be what receives it. */
+  pointer-events: none;
+}
 
 .zs-slider { display: flex; align-items: center; gap: var(--zn-3); }
 /* The field's vertical slack is larger than the track's: it is the thumb that overhangs

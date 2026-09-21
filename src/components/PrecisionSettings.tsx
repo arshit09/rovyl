@@ -22,6 +22,7 @@ import {
   FilePlus2,
   FolderOpen,
   Globe2,
+  HelpCircle,
   GripVertical,
   Image as ImageGlyph,
   Loader2,
@@ -87,7 +88,8 @@ import {
   normalizeBackKey,
   rejectBackKey,
 } from '../constants/radialBackKey';
-import { nextTypeAheadBuffer, selectMenuPlacement, typeAheadIndex } from './selectMenu';
+import { helpTipPlacement, nextTypeAheadBuffer, selectMenuPlacement, typeAheadIndex } from './selectMenu';
+import type { TipPlacement } from './selectMenu';
 import { LANGUAGES, normalizeLanguage, translations, useTranslation } from '../i18n/useTranslation';
 
 interface PrecisionSettingsProps {
@@ -172,7 +174,11 @@ interface SettingItem {
   step?: number;
   raw?: number;
   format?: (value: number) => string;
-  choices?: Array<{ value: string; label: string; hint?: string }>;
+  /**
+   * `hint` is support text drawn beside the label; `help` is a sentence too long to draw at
+   * all, reachable from the option's own help affordance.
+   */
+  choices?: Array<{ value: string; label: string; hint?: string; help?: string }>;
   current?: string;
   /** `dockPosition` only: the other dock's region, drawn faint so a shared corner is a choice. */
   occupied?: { position: DockPosition; label: string };
@@ -944,8 +950,22 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
                 key: 'shortcutMode', configKey: 'shortcutTriggerMode' as const, group: 'Keyboard',
                 title: t('shortcutBehavior'),
                 description: t('shortcutBehaviorDesc'),
-                kind: 'segmented', current: config.shortcutTriggerMode ?? 'toggle',
-                choices: [{ value: 'toggle', label: t('shortcutToggle') }, { value: 'hold', label: t('shortcutHold') }],
+                /**
+                 * A dropdown, where every other two-way choice in this panel is a segmented
+                 * control — because the two labels here cannot stay short in every language.
+                 * "Toggle" and "Hold" mean nothing without saying what they do, so the labels
+                 * carried their explanation in parentheses, and two parenthesised sentences side
+                 * by side stretched the control across the row and wrapped in half the locales.
+                 *
+                 * The dropdown separates the two jobs the segmented control was doing at once:
+                 * the label names the mode, and the sentence moves behind each option's help
+                 * affordance, where it is one hover away instead of permanently in the way.
+                 */
+                kind: 'select', current: config.shortcutTriggerMode ?? 'toggle',
+                choices: [
+                  { value: 'toggle', label: t('shortcutToggle'), help: t('shortcutToggleHelp') },
+                  { value: 'hold', label: t('shortcutHold'), help: t('shortcutHoldHelp') },
+                ],
                 onChange: (value) => update('shortcutTriggerMode', value as UIConfig['shortcutTriggerMode']),
               },
             ] as SettingItem[])
@@ -2050,8 +2070,9 @@ function normalizeHexInput(value: string): string | null {
 }
 
 /**
- * The panel's dropdown. One row uses it — Language — and it exists because that row outgrew the
- * segmented control at seven options.
+ * The panel's dropdown. Two rows use it — Language, which outgrew the segmented control at seven
+ * options, and Shortcut behavior, whose two options could not be named in the width a segmented
+ * control had for them.
  *
  * A native `<select>` was the first version and the honest starting point: accessible,
  * keyboard-complete and free. What it is not is ours — Chromium draws the popup from the OS theme,
@@ -2063,6 +2084,10 @@ function normalizeHexInput(value: string): string | null {
  * than moved focus, type-ahead with an idle reset, Home/End, Escape cancelling versus Tab
  * committing, focus returning to the trigger on close, and the active option kept in view. Those
  * are not embellishments on a dropdown — for anyone not using a mouse, they ARE the dropdown.
+ *
+ * An option may also carry a `help` sentence, drawn as a mark it opens on hover rather than as
+ * text in the list. That is for the labels that mean nothing on their own — Toggle, Hold — where
+ * the alternative is a parenthesis on every row and a popup that is mostly explanation.
  */
 /**
  * The shell, which is both where the popup is painted and what it is measured against.
@@ -2094,6 +2119,26 @@ function SelectSettingControl({ item, describedBy }: { item: SettingItem; descri
   const listId = `${item.key}-listbox`;
 
   /**
+   * The option whose help sentence is showing, and where that bubble was painted.
+   *
+   * Two pieces of state rather than one because the bubble cannot be placed until it has been
+   * measured: `.zs-select-tip` fixes the width, the browser decides the height from the sentence,
+   * and only then is it known whether it fits below the mark. So `helpFor` asks for the bubble,
+   * `tipAt` is filled in by a layout effect once it exists, and until it does the bubble renders
+   * hidden. Both happen before paint, so nothing is ever seen in the wrong place.
+   */
+  const [helpFor, setHelpFor] = useState<number | null>(null);
+  const [tipAt, setTipAt] = useState<TipPlacement>();
+  const tipRef = useRef<HTMLDivElement>(null);
+  const helpIconRefs = useRef(new Map<number, HTMLSpanElement>());
+  /**
+   * Whether the list is being driven by keys, so the help can follow the highlight for someone
+   * who has no pointer to hover with — without the bubble popping up every time a pointer merely
+   * crosses an option on its way somewhere else.
+   */
+  const [byKeyboard, setByKeyboard] = useState(false);
+
+  /**
    * Anchored to the trigger, measured against the shell, re-measured rather than remembered.
    *
    * Two constraints meet here. The row lives inside `.zs-scroll`, so a popup positioned within the
@@ -2123,9 +2168,17 @@ function SelectSettingControl({ item, describedBy }: { item: SettingItem; descri
   }, [choices.length]);
 
   useLayoutEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen) {
+      setHelpFor(null);
+      setByKeyboard(false);
+      return;
+    }
     measure();
-    const reposition = () => measure();
+    /** The bubble is anchored to a row that just moved, so it is dismissed rather than chased. */
+    const reposition = () => {
+      setHelpFor(null);
+      measure();
+    };
     /** Capture: the scroll that moves this row is `.zs-scroll`'s, and it does not reach `window`. */
     window.addEventListener('scroll', reposition, true);
     window.addEventListener('resize', reposition);
@@ -2140,13 +2193,61 @@ function SelectSettingControl({ item, describedBy }: { item: SettingItem; descri
     if (isOpen) setActiveIndex(selectedIndex);
   }, [isOpen, selectedIndex]);
 
-  useEffect(() => {
-    if (isOpen) listRef.current?.focus({ preventScroll: true });
-  }, [isOpen]);
+  /**
+   * Focus follows the list's own mounting, not `isOpen`, because those are not the same moment.
+   *
+   * The popup renders on `isOpen && placement`, and `placement` is only filled in by the layout
+   * effect above — so the very first open commits once WITHOUT a list, and React flushes that
+   * commit's passive effects before it starts the re-render that adds one. An effect keyed on
+   * `isOpen` therefore ran against a `listRef` that was still null, exactly once per mount: the
+   * first time anyone opened the dropdown the keyboard stayed outside it, arrow keys scrolled the
+   * panel instead of walking the options, and Escape sailed past to close Settings. Every
+   * subsequent open worked, because by then `placement` was already set — which is precisely the
+   * shape of bug that gets reported as "sometimes".
+   *
+   * A callback ref cannot miss it: it is called with the node the moment the node exists.
+   */
+  const attachList = useCallback((node: HTMLDivElement | null) => {
+    listRef.current = node;
+    node?.focus({ preventScroll: true });
+  }, []);
 
   useEffect(() => {
     if (isOpen) optionRefs.current.get(activeIndex)?.scrollIntoView({ block: 'nearest' });
   }, [isOpen, activeIndex]);
+
+  /**
+   * Arrowing onto an option with a help sentence shows it; arrowing off it takes it away.
+   *
+   * Keyed on the sentence rather than on `choices`, which is rebuilt on every render and would
+   * make this an effect that runs every time anything in the panel changes.
+   */
+  const activeHelp = choices[activeIndex]?.help;
+  useEffect(() => {
+    if (!isOpen || !byKeyboard) return;
+    setHelpFor(activeHelp ? activeIndex : null);
+  }, [isOpen, byKeyboard, activeIndex, activeHelp]);
+
+  useLayoutEffect(() => {
+    if (helpFor === null) {
+      setTipAt(undefined);
+      return;
+    }
+    const container = portalTarget();
+    const list = listRef.current;
+    const icon = helpIconRefs.current.get(helpFor);
+    const tip = tipRef.current;
+    if (!container || !list || !icon || !tip) return;
+    const bounds = container.getBoundingClientRect();
+    setTipAt(
+      helpTipPlacement(
+        icon.getBoundingClientRect(),
+        list.getBoundingClientRect(),
+        { top: bounds.top, left: bounds.left, width: bounds.width, height: bounds.height },
+        tip.offsetHeight,
+      ),
+    );
+  }, [helpFor]);
 
   const close = useCallback((returnFocus = true) => {
     setIsOpen(false);
@@ -2182,6 +2283,7 @@ function SelectSettingControl({ item, describedBy }: { item: SettingItem; descri
   );
 
   const onListKeyDown = (event: React.KeyboardEvent) => {
+    setByKeyboard(true);
     const step = (delta: number) => {
       event.preventDefault();
       setActiveIndex((index) => Math.min(choices.length - 1, Math.max(0, index + delta)));
@@ -2244,8 +2346,18 @@ function SelectSettingControl({ item, describedBy }: { item: SettingItem; descri
          * never closes. Deciding on mousedown means the shade has already swallowed the gesture
          * and the trigger never hears about it. The keyboard path is `onKeyDown` below, so nothing
          * is lost by not having a click handler.
+         *
+         * `preventDefault` is the other half, and it is about where the keyboard ends up. A
+         * mousedown's default action focuses the button it landed on, and that happens after the
+         * effect below has already moved focus into the list — so opening with the mouse left
+         * focus sitting on the trigger, where arrow keys scrolled the panel instead of walking
+         * the options and Escape reached the panel and closed Settings outright. Declining the
+         * default focus leaves the list's own the only one, and closing still hands it back.
          */
-        onMouseDown={() => setIsOpen((open) => !open)}
+        onMouseDown={(event) => {
+          event.preventDefault();
+          setIsOpen((open) => !open);
+        }}
         onKeyDown={onTriggerKeyDown}
       >
         <span>{selected ? labelOf(selected) : ''}</span>
@@ -2264,7 +2376,7 @@ function SelectSettingControl({ item, describedBy }: { item: SettingItem; descri
           <div className="zs-select-shade" role="presentation" onMouseDown={() => close(false)} />
           <motion.div
             id={listId}
-            ref={listRef}
+            ref={attachList}
             className="zs-select-list"
             role="listbox"
             tabIndex={-1}
@@ -2286,17 +2398,84 @@ function SelectSettingControl({ item, describedBy }: { item: SettingItem; descri
                 }}
                 role="option"
                 aria-selected={index === selectedIndex}
+                /**
+                 * The help sentence is part of what this option IS, so it belongs in the name a
+                 * screen reader reads — the bubble below is how the same sentence reaches someone
+                 * looking at the list, and neither should be the only way to get it.
+                 */
+                aria-label={choice.help ? `${choice.label}. ${choice.help}` : undefined}
                 className={`zs-select-option${index === activeIndex ? ' is-active' : ''}`}
                 /** Pointer moves the highlight; it does not move focus off the listbox. */
-                onMouseMove={() => setActiveIndex(index)}
+                onMouseMove={() => {
+                  setByKeyboard(false);
+                  setActiveIndex(index);
+                }}
                 onClick={() => commit(index)}
               >
                 <b>{choice.label}</b>
                 {choice.hint && choice.hint !== choice.label && <small>{choice.hint}</small>}
-                {index === selectedIndex && <Check size={14} strokeWidth={2.2} aria-hidden="true" />}
+                {choice.help && (
+                  /*
+                    A span, not a button, and deliberately so: an option may not contain anything
+                    focusable — a `<button>` inside `role="option"` breaks the listbox for the
+                    assistive tech that would be the only thing to benefit from it, and it has
+                    nothing to announce anyway once the sentence is already in the option's name.
+                    What is left is a pointer affordance, which is exactly what this is.
+                  */
+                  <span
+                    className="zs-select-help"
+                    ref={(node) => {
+                      if (node) helpIconRefs.current.set(index, node);
+                      else helpIconRefs.current.delete(index);
+                    }}
+                    aria-hidden="true"
+                    onMouseEnter={() => {
+                      setByKeyboard(false);
+                      setHelpFor(index);
+                    }}
+                    onMouseLeave={() => setHelpFor((open) => (open === index ? null : open))}
+                  >
+                    <HelpCircle size={13} strokeWidth={1.9} />
+                  </span>
+                )}
+                <Check
+                  size={14}
+                  strokeWidth={2.2}
+                  aria-hidden="true"
+                  /**
+                   * Always drawn, invisible unless chosen, because the help mark sits beside it:
+                   * a check that only exists on one row shortens that row's end by its own width
+                   * and the marks come out on two different columns, which reads as a mistake
+                   * rather than as a check.
+                   */
+                  className={index === selectedIndex ? undefined : 'is-blank'}
+                />
               </div>
             ))}
           </motion.div>
+
+          {helpFor !== null && choices[helpFor]?.help && (
+            /*
+              Hidden until placed, and never in the way once it is.
+
+              `pointer-events: none` in the stylesheet is the backstop: the bubble is placed clear
+              of the popup, but it appears under a pointer already on its way to a click, and a
+              surface that swallowed that click would turn "read what this does" into "the option
+              stopped responding".
+            */
+            <div
+              ref={tipRef}
+              className="zs-select-tip"
+              role="presentation"
+              style={{
+                left: tipAt?.left ?? 0,
+                top: tipAt?.top ?? 0,
+                visibility: tipAt ? 'visible' : 'hidden',
+              }}
+            >
+              {choices[helpFor].help}
+            </div>
+          )}
         </>,
         portalTarget() ?? document.body,
       )}

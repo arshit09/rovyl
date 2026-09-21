@@ -21,6 +21,28 @@ export interface MenuRect {
   width: number;
 }
 
+/** The help mark the bubble belongs to. Only its column decides anything. */
+export interface TipAnchor {
+  left: number;
+  right: number;
+}
+
+/** The popup's vertical extent, which the bubble clears rather than covers. */
+export interface TipSpan {
+  top: number;
+  bottom: number;
+}
+
+/**
+ * `left`/`top` are what the bubble is painted at; `drop` is the decision behind them, returned
+ * so the tests can assert the choice itself rather than re-deriving a coordinate to compare.
+ */
+export interface TipPlacement {
+  left: number;
+  top: number;
+  drop: 'down' | 'up';
+}
+
 /**
  * The box the popup must stay inside, in viewport coordinates — the settings shell, not the window.
  *
@@ -64,6 +86,53 @@ export const MENU_MARGIN = 8;
 
 export function menuHeight(count: number): number {
   return Math.min(count * MENU_ROW_HEIGHT + MENU_LIST_PADDING, MENU_MAX_HEIGHT);
+}
+
+/**
+ * The help bubble's width, and the other number this file shares with the stylesheet.
+ *
+ * `.zs-select-tip` states the same width, and it has to: the bubble is measured for its height
+ * before it is positioned, so the CSS must already have decided how wide it is or the height
+ * measured is the height of a different box than the one that gets painted.
+ */
+export const TIP_WIDTH = 240;
+
+/**
+ * Where an option's help bubble goes: under the mark it belongs to, centred on it, clear of the
+ * popup.
+ *
+ * Under, rather than out beside the popup, because the mark is what the pointer is resting on and
+ * the bubble should read as coming out of it — parked off to one side of the whole list it was a
+ * panel that happened to appear, with nothing tying it to the row that opened it.
+ *
+ * "Clear of" is the part that is not obvious, and it is why the drop is measured from the popup's
+ * foot and not from the mark's own bottom edge. Hanging it off the mark covers whatever options
+ * are below, and on a two-option list that means the first mark hides the second option outright
+ * — a popup that appears to lose a row when you ask it a question. Dropping from the foot puts it
+ * directly under the last mark and only a row lower for the ones above, and the column keeps it
+ * tied to the mark either way.
+ *
+ * It flips above when there is no room below, clearing the popup's top edge the same way. The left
+ * edge is clamped into the shell — the mark sits at the end of the option, so a bubble centred on
+ * it always wants to hang off the right of the panel, and in Arabic off the left.
+ */
+export function helpTipPlacement(
+  anchor: TipAnchor,
+  list: TipSpan,
+  bounds: MenuBounds,
+  height: number,
+): TipPlacement {
+  const minLeft = bounds.left + MENU_MARGIN;
+  const maxLeft = bounds.left + bounds.width - MENU_MARGIN - TIP_WIDTH;
+  const centred = (anchor.left + anchor.right) / 2 - TIP_WIDTH / 2;
+  /** `Math.max` last, so a shell narrower than the bubble pins it to the near edge, not the far one. */
+  const left = Math.max(minLeft, Math.min(centred, maxLeft));
+  const below = list.bottom + MENU_GAP;
+  const floor = bounds.top + bounds.height - MENU_MARGIN;
+  const drop: 'down' | 'up' = below + height <= floor ? 'down' : 'up';
+  const top =
+    drop === 'down' ? below : Math.max(bounds.top + MENU_MARGIN, list.top - MENU_GAP - height);
+  return { drop, left: left - bounds.left, top: top - bounds.top };
 }
 
 /**
