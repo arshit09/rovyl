@@ -1428,7 +1428,8 @@
 .zs-delete-workspace:disabled { opacity: .3; cursor: not-allowed; }
 
 .zs-toast {
-  position: absolute; right: var(--zn-5); bottom: var(--zn-5); z-index: 30;
+  /* Bottom-left: the bottom-right corner is where the panels keep their action buttons. */
+  position: absolute; left: var(--zn-5); bottom: var(--zn-5); z-index: 30;
   display: flex; align-items: center; gap: var(--zn-2);
   padding: var(--zn-2) var(--zn-3);
   color: var(--zn-on-solid); border-radius: var(--zn-r-control); background: var(--zn-solid);
@@ -1554,7 +1555,8 @@
    ════════════════════════════════════════════════════════════════════════ */
 .zs-fault-stack {
   position: fixed;
-  right: var(--zn-5);
+  /* Bottom-left, like the toast: the bottom-right corner is where the panels keep their buttons. */
+  left: var(--zn-5);
   bottom: var(--zn-5);
   /* A definite width: without it the card's `min(380px, 100%)` resolved against a
      shrink-to-fit container, and the percentage has nothing to measure against. */
@@ -1562,7 +1564,7 @@
   max-height: calc(100vh - var(--zn-5) * 2);
   z-index: 1000;
   display: grid;
-  justify-items: end;
+  justify-items: start;
   gap: var(--zn-2);
   /* The `App` root is `pointer-events-none` in desktop mode. */
   pointer-events: none;
@@ -1570,7 +1572,7 @@
 /* Island mode: the window has `setIgnoreMouseEvents(true)` and is a square centred on the
    monitor — pinned to the corner the card landed mid-screen. There it is only a notice. */
 .zs-fault-stack.is-glance {
-  left: var(--zn-5);
+  right: var(--zn-5);
   width: auto;
   justify-items: center;
 }
