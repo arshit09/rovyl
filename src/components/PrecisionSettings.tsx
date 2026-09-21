@@ -901,18 +901,32 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
     };
 
     return {
+      /**
+       * One unnamed group: three rows under three headings was a heading per row, which labels
+       * nothing the row's own title does not already say.
+       */
       general: [
-        ...(canUpdate ? [{ key: 'update', group: 'Updates', ...updateRow }] : []),
+        {
+          key: 'openAtLogin', configKey: 'openAtLogin', group: '', title: 'Start with Windows',
+          description: 'Rovyl is ready as soon as you sign in to Windows.',
+          kind: 'bool', enabled: Boolean(config.openAtLogin),
+          keywords: 'startup login boot sign in',
+          onToggle: () => {
+            const next = !config.openAtLogin;
+            update('openAtLogin', next);
+            window.electron?.setLoginItemSettings?.({ openAtLogin: next });
+          },
+        },
         {
           /**
            * A select, not the segmented control this was while it held two languages: seven
            * 62px-minimum buttons are ~460px of row, which is wider than the control column and
            * would wrap into a block of chips no eye can scan.
            *
-           * The group name stays the English "Language" on purpose — it is the one string in this
+           * The English "Language" stays in the keywords on purpose — it is the one string in this
            * panel that has to stay findable by someone who cannot read the rest of it.
            */
-          key: 'language', configKey: 'language', group: 'Language', title: t('language'),
+          key: 'language', configKey: 'language', group: '', title: t('language'),
           description: t('languageDesc'),
           kind: 'select', current: normalizeLanguage(config.language),
           choices: LANGUAGES.map((entry) => ({
@@ -926,21 +940,13 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
            * which every table already carries under the `language` key.
            */
           keywords: [
+            'Language',
             ...LANGUAGES.map((entry) => `${entry.label} ${entry.english}`),
             ...Object.values(translations).map((table) => table.language),
           ].join(' '),
           onChange: (value) => update('language', value as UIConfig['language']),
         },
-        {
-          key: 'openAtLogin', configKey: 'openAtLogin', group: 'Startup', title: 'Start with Windows',
-          description: 'Rovyl is ready as soon as you sign in to Windows.',
-          kind: 'bool', enabled: Boolean(config.openAtLogin),
-          onToggle: () => {
-            const next = !config.openAtLogin;
-            update('openAtLogin', next);
-            window.electron?.setLoginItemSettings?.({ openAtLogin: next });
-          },
-        },
+        ...(canUpdate ? [{ key: 'update', group: '', keywords: 'updates version', ...updateRow }] : []),
       ],
       trigger: [
         /**
@@ -1770,8 +1776,8 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
                     <WheelPreview config={config} apps={previewApps} />
                   )}
                   {results.map((group) => (
-                    <section className="zs-group" key={group.name}>
-                      <h2 className="zs-group-title">{group.name}</h2>
+                    <section className="zs-group" key={group.name || 'ungrouped'}>
+                      {group.name && <h2 className="zs-group-title">{group.name}</h2>}
                       {group.name === 'Your workspaces' && !trimmedQuery ? (
                         /** Outside search the grid rules; while searching, the rows go on giving results. */
                         <WorkspaceCards
