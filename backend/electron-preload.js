@@ -286,13 +286,8 @@ contextBridge.exposeInMainWorld("electron", {
   importConfig: () => ipcRenderer.invoke("import-config"),
   getAppRecents: (appName, appCommand) =>
     ipcRenderer.invoke("get-app-recents", appName, appCommand),
-  setWorkspaceShortcutsState: (isOpen, workspaceSwitchMode, numberKeysClaimed) =>
-    ipcRenderer.send(
-      "set-workspace-shortcuts",
-      isOpen,
-      workspaceSwitchMode,
-      numberKeysClaimed,
-    ),
+  setWorkspaceShortcutsState: (isOpen, numberKeysClaimed, keys) =>
+    ipcRenderer.send("set-workspace-shortcuts", isOpen, numberKeysClaimed, keys),
   startGoogleAuth: () => ipcRenderer.send("start-google-auth"),
   onGoogleAuthSuccess: (callback) => {
     const listener = (event, user) => callback(user);

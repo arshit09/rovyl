@@ -5397,47 +5397,105 @@ app.whenReady().then(async () => {
   };
 
   const unregisterWorkspaceShortcuts = () => {
-    diagLog("[Shortcuts] Unregistering global numeric workspace shortcuts (1-9)");
-    for (let i = 1; i <= 9; i++) {
-      globalShortcut.unregister(i.toString());
-    }
+    if (workspaceShortcutBindings.length === 0) return;
+    diagLog(
+      `[Shortcuts] Unregistering global workspace keys: ${workspaceShortcutBindings
+        .map((b) => b.key)
+        .join(", ")}`,
+    );
+    workspaceShortcutBindings.forEach(({ key }) => {
+      try {
+        globalShortcut.unregister(key);
+      } catch (e) {
+        diagLog(`[Shortcuts] Exception unregistering workspace key ${key}: ${e.message}`);
+      }
+    });
   };
 
   // PERF: Workspace shortcuts registered via permanent listeners — flag gates IPC send
   // We extract this to a function so it can be re-called when main shortcuts are refreshed (unregisterAll)
   const registerWorkspaceShortcuts = () => {
-    diagLog("[Shortcuts] Registering global numeric workspace shortcuts (1-9)");
-    // RESTORED: Registration of 1-9 as global shortcuts is the ONLY reliable way
-    // to capture keys when the Zenith window fails to take keyboard focus away 
+    if (workspaceShortcutBindings.length === 0) return;
+    diagLog(
+      `[Shortcuts] Registering global workspace keys: ${workspaceShortcutBindings
+        .map((b) => `${b.key}→${b.index}`)
+        .join(", ")}`,
+    );
+    // RESTORED: Registration of these as global shortcuts is the ONLY reliable way
+    // to capture keys when the Zenith window fails to take keyboard focus away
     // from a background text field.
-    for (let i = 1; i <= 9; i++) {
+    workspaceShortcutBindings.forEach(({ key, index }) => {
       try {
         // Unregister first if already registered to avoid double-registration errors (though Electron handles it gracefully)
-        if (globalShortcut.isRegistered(i.toString())) {
-            globalShortcut.unregister(i.toString());
+        if (globalShortcut.isRegistered(key)) {
+            globalShortcut.unregister(key);
         }
 
-        const success = globalShortcut.register(i.toString(), () => {
-          diagLog(`[Shortcuts] Global numeric shortcut triggered: ${i}`);
+        const success = globalShortcut.register(key, () => {
+          diagLog(`[Shortcuts] Global workspace key triggered: ${key}`);
           if (workspaceShortcutsMenuOpen) {
-            diagLog(`[Shortcuts] Sending switch-workspace IPC: ${i - 1}`);
-            sendToOverlay("switch-workspace", i - 1);
+            diagLog(`[Shortcuts] Sending switch-workspace IPC: ${index}`);
+            sendToOverlay("switch-workspace", index);
           }
         });
-        if (!success) diagLog(`[Shortcuts] Failed to register workspace shortcut ${i}`);
+        /**
+         * A recorded key Windows will not hand over is not fatal. The wheel keeps its own keydown
+         * handler for exactly these bindings, so the key still works whenever the radial holds
+         * focus — which is the common case. Only the focus-stolen case is lost, and losing it
+         * quietly beats refusing a key the user chose.
+         */
+        if (!success) diagLog(`[Shortcuts] Failed to register workspace key ${key}`);
       } catch (e) {
-        diagLog(`[Shortcuts] Exception registering workspace shortcut ${i}: ${e.message}`);
+        diagLog(`[Shortcuts] Exception registering workspace key ${key}: ${e.message}`);
       }
-    }
+    });
   };
 
   let workspaceShortcutsMenuOpen = false;
   /**
-   * When false, 1–9 are not registered while the radial is open — either because the workspace
-   * switcher is the picker wheel, or because the wheel has claimed the digits for launching by
-   * number. See the `set-workspace-shortcuts` handler.
+   * False only for a renderer too old to send its key list while quick launch is claiming the
+   * digits — back then the workspace keys WERE the digits, so the claim silenced all of them.
+   * A current renderer sends the list with the claimed digits already removed, and this stays true.
    */
   let workspaceShortcutsUseNumeric = true;
+  /**
+   * Which key belongs to which workspace, as the renderer computed it (`workspaceKeyBindings`).
+   * It used to be the hardcoded 1–9 against the position; a workspace key can now be any single
+   * key, so the list has to come from the config rather than be assumed.
+   *
+   * Seeded with that old assumption so the wheel behaves exactly as it shipped until the first
+   * `set-workspace-shortcuts` arrives — which it does before the wheel can open.
+   */
+  let workspaceShortcutBindings = Array.from({ length: 9 }, (_, i) => ({
+    key: String(i + 1),
+    index: i,
+  }));
+
+  /** The renderer's array, taken only if every entry is a single key pointing at a real index. */
+  const sanitizeWorkspaceBindings = (keys, numberKeysClaimed) => {
+    if (!Array.isArray(keys)) return null;
+    const seen = new Set();
+    const clean = [];
+    for (const entry of keys) {
+      if (!entry || typeof entry !== "object") continue;
+      const key = typeof entry.key === "string" ? entry.key.trim() : "";
+      const index = Number(entry.index);
+      /** One character, the same rule `normalizeWorkspaceKey` enforces on the way in. */
+      if (Array.from(key).length !== 1) continue;
+      if (!Number.isInteger(index) || index < 0) continue;
+      /**
+       * Quick launch owns the digits, and a registered global shortcut never reaches the renderer
+       * — so registering one here would mean pressing 2 switches workspace while the wheel waits
+       * for a keystroke that was eaten upstairs. The renderer strips them too; this is the same
+       * rule stated where the registration happens, so nothing has to trust the send.
+       */
+      if (numberKeysClaimed === true && key >= "0" && key <= "9") continue;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      clean.push({ key, index });
+    }
+    return clean;
+  };
 
   // Register initial shortcut
   registerGlobalShortcut();
@@ -6201,20 +6259,36 @@ app.whenReady().then(async () => {
     }, 5 * 60 * 1000);
   });
 
-  ipcMain.on("set-workspace-shortcuts", (event, isOpen, mode, numberKeysClaimed) => {
+  ipcMain.on("set-workspace-shortcuts", (event, isOpen, numberKeysClaimed, keys) => {
+    const nextBindings = sanitizeWorkspaceBindings(keys, numberKeysClaimed);
     /**
-     * Two features cannot own one key. A registered global shortcut is consumed by main and never
-     * reaches the renderer, so while the wheel is launching by number (`radialNumberLaunch`) the
-     * digits have to stay UNregistered — otherwise pressing 2 switches workspace and the wheel
-     * never hears the keystroke it was told to act on.
+     * Two features cannot own one key, and with a list in hand that is already settled: the digits
+     * quick launch claims were dropped as the list was read. Without one — an older renderer, which
+     * only ever meant the positional 1–9 — the claim still has to be applied to the whole set.
      */
-    const useNumeric = mode !== "picker" && numberKeysClaimed !== true;
+    const useNumeric = nextBindings !== null || numberKeysClaimed !== true;
+    /**
+     * A send without the list is that older renderer: keep whatever is already held rather than
+     * dropping to no bindings at all, which would leave the wheel with no keys.
+     */
+    const bindings = nextBindings || workspaceShortcutBindings;
+    const sameBindings =
+      bindings.length === workspaceShortcutBindings.length &&
+      bindings.every((b, i) => b.key === workspaceShortcutBindings[i].key && b.index === workspaceShortcutBindings[i].index);
     if (
       workspaceShortcutsMenuOpen === isOpen &&
-      workspaceShortcutsUseNumeric === useNumeric
+      workspaceShortcutsUseNumeric === useNumeric &&
+      sameBindings
     ) {
       return;
     }
+    /**
+     * Release the OLD keys before adopting the new ones. A workspace re-keyed from 2 to K while
+     * the wheel was open would otherwise leave 2 registered forever, swallowing that digit system
+     * wide — `unregisterWorkspaceShortcuts` only knows the list it is holding.
+     */
+    if (!sameBindings) unregisterWorkspaceShortcuts();
+    workspaceShortcutBindings = bindings;
     workspaceShortcutsMenuOpen = isOpen;
     workspaceShortcutsUseNumeric = useNumeric;
     if (!isOpen) {

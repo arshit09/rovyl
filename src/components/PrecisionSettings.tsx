@@ -88,6 +88,18 @@ import {
   normalizeBackKey,
   rejectBackKey,
 } from '../constants/radialBackKey';
+import {
+  WORKSPACE_KEY_NONE,
+  type WorkspaceKeyClash,
+  clearWorkspaceKeyClash,
+  findWorkspaceKeyClash,
+  isDefaultWorkspaceKey,
+  normalizeWorkspaceKey,
+  positionalWorkspaceKey,
+  rejectWorkspaceKey,
+  workspaceKeyAt,
+  workspaceKeyBindings,
+} from '../constants/workspaceHotkey';
 import { helpTipPlacement, nextTypeAheadBuffer, selectMenuPlacement, typeAheadIndex } from './selectMenu';
 import type { TipPlacement } from './selectMenu';
 import { LANGUAGES, normalizeLanguage, translations, useTranslation } from '../i18n/useTranslation';
@@ -841,8 +853,6 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
     const mouseTriggerOn = config.enableMouseTrigger !== false;
     const numberLaunchOn = config.radialNumberLaunch === true;
     const backKey = normalizeBackKey(config.radialBackKey);
-    /** The other claimant on 1–9 — see the description of the quick-launch row. */
-    const workspaceHotkeysOn = (config.workspaceSwitchMode ?? 'picker') !== 'picker';
 
     /**
      * Turning off the last trigger would leave no way in, so the other one comes on in the same
@@ -910,13 +920,6 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
             update('openAtLogin', next);
             window.electron?.setLoginItemSettings?.({ openAtLogin: next });
           },
-        },
-        {
-          key: 'workspaceSwitchMode', configKey: 'workspaceSwitchMode', group: 'Workspaces', title: 'Workspace switching',
-          description: 'Use the visual wheel picker or number keys.',
-          kind: 'segmented', current: config.workspaceSwitchMode ?? 'picker',
-          choices: [{ value: 'picker', label: 'Picker' }, { value: 'hotkeys', label: 'Keys' }],
-          onChange: (value) => update('workspaceSwitchMode', value as UIConfig['workspaceSwitchMode']),
         },
       ],
       trigger: [
@@ -1092,16 +1095,13 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
           /**
            * Three things have to be here and nowhere else: that there is no Enter (it is the whole
            * point, and every other keyboard path on the wheel needs one), that the count follows
-           * the wheel rather than any list in this panel, and — when it applies — what it takes
-           * away. `workspaceSwitchMode: 'hotkeys'` also owns 1–9, and a feature that quietly
-           * disables another one is a bug report waiting to be filed.
+           * the wheel rather than any list in this panel, and what it takes away. The workspace
+           * keys also own 1–9 by default, and a feature that quietly disables another one is a bug
+           * report waiting to be filed.
            */
-          description:
-            numberLaunchOn && workspaceHotkeysOn
-              ? 'Press 1–9 to run the shortcut in that position — no Enter. The digits are the wheel’s now, so switching workspace by number is off; use the wheel or the scroll wheel instead.'
-              : workspaceHotkeysOn
-                ? 'Press 1–9 to run the shortcut in that position, counting clockwise from the top — no Enter. It takes the number keys away from workspace switching.'
-                : 'Press 1–9 to run the shortcut in that position, counting clockwise from the top — no Enter, no aiming. Also turns on the key that steps back out of a folder.',
+          description: numberLaunchOn
+            ? 'Press 1–9 to run the shortcut in that position — no Enter. The digits are the wheel’s now, so a workspace still on its default number key cannot be reached; give it a letter instead.'
+            : 'Press 1–9 to run the shortcut in that position, counting clockwise from the top — no Enter, no aiming. It takes the number keys away from workspaces still using them, and turns on the key that steps back out of a folder.',
           kind: 'bool', enabled: numberLaunchOn,
           onToggle: () => update('radialNumberLaunch', !numberLaunchOn),
         },
@@ -1379,7 +1379,9 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
           key: workspace.id,
           group: 'Your workspaces',
           title: workspace.name,
-          description: workspace.hotkey ? `Key ${workspace.hotkey}` : 'Picker / mouse wheel',
+          description: workspaceKeyAt(workspace, index)
+            ? `Key ${workspaceKeyAt(workspace, index)}`
+            : 'Picker / mouse wheel',
           kind: 'open' as const,
           /** Same vocabulary as the editor: current / available / paused. */
           value: config.activeWorkspaceIndex === index ? 'Current' : workspace.enabled ? 'Available' : 'Paused',
@@ -2883,6 +2885,8 @@ function SettingsEditor({
         updateWorkspace={updateWorkspace}
         makeActive={() => update('activeWorkspaceIndex', index)}
         language={config.language}
+        config={config}
+        setConfig={setConfig}
         /**
          * The same delete as the list's, and it was not before. This branch filtered the array
          * inline and skipped `withPositionalHotkeys`, so removing anything but the last workspace
@@ -3563,7 +3567,7 @@ function WorkspaceCards({
             <WorkspaceWheelPreview workspace={workspace} accent={accent} />
             <span className="zs-ws-card-head">
               <b>{workspace.name}</b>
-              {workspace.hotkey ? <em>{workspace.hotkey}</em> : null}
+              {workspaceKeyAt(workspace, index) ? <em>{workspaceKeyAt(workspace, index)}</em> : null}
             </span>
             {/*
               Only the states worth saying. A tally of shortcuts sat here, read off a thumbnail
@@ -3611,12 +3615,21 @@ function WorkspaceManager({
   selectionMode,
   discoveryPhase,
   language,
+  config,
+  setConfig,
 }: {
   workspace: Workspace;
   workspaceIndex: number;
   isActive: boolean;
   canDelete: boolean;
   updateWorkspace: WorkspaceUpdater;
+  /**
+   * The whole config, for the key recorder alone. A workspace key has to be checked against every
+   * other binding in Rovyl — the other workspaces, the back key, the app shortcuts — and taking a
+   * key away from one of them writes outside this workspace.
+   */
+  config: UIConfig;
+  setConfig: PrecisionSettingsProps['setConfig'];
   makeActive: () => void;
   deleteWorkspace: () => void;
   /** Set when the user clicked "Fix shortcut" on a failed launch: expand that row and show it. */
@@ -4189,11 +4202,18 @@ function WorkspaceManager({
               <Check size={15} strokeWidth={2.2} />
             </button>
           </div>
-          {/* Past the ninth workspace `withPositionalHotkeys` assigns 0, which is not a key. */}
-          {workspace.hotkey ? (
-            <p className="zs-workspace-meta"><span>Key {workspace.hotkey}</span></p>
-          ) : null}
         </div>
+        {/**
+         * The key used to be a read-only line saying "Key 3" — the position, restated. It is a
+         * control now, on a row of its own rather than squeezed into the identity grid: the
+         * clash warning needs the width, and it has two buttons under it.
+         */}
+        <WorkspaceKeyRecorder
+          workspaceIndex={workspaceIndex}
+          config={config}
+          setConfig={setConfig}
+          showToast={showToast}
+        />
 {/**
          * Two states, two icons, two tooltips.
          *
@@ -4930,6 +4950,272 @@ function BackKeyRecorder({
           <AlertTriangle size={13} strokeWidth={1.9} aria-hidden />
           <span>{error}</span>
         </p>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Records the key that switches to ONE workspace while the wheel is open.
+ *
+ * Like `BackKeyRecorder` and unlike `ShortcutRecorder`, nothing is asked of Windows here. The key
+ * is not a system-wide accelerator the user is claiming against every other application — it only
+ * means anything while Rovyl's wheel is up, and main registers it for the duration. So there is
+ * nobody to probe; the only question is whether something in ROVYL already answers to it.
+ *
+ * That question is answered before the value is written, because the failure it prevents is
+ * invisible: two features registering one key means the second one silently loses, and a settings
+ * field that saves and does nothing is the worst state available. On a clash the user is told what
+ * holds the key and given the two real choices — take it, or press something else.
+ */
+function WorkspaceKeyRecorder({
+  workspaceIndex,
+  config,
+  setConfig,
+  showToast,
+}: {
+  workspaceIndex: number;
+  config: UIConfig;
+  setConfig: PrecisionSettingsProps['setConfig'];
+  showToast: (message: string, undo?: () => void) => void;
+}) {
+  const workspace = config.workspaces[workspaceIndex];
+  const [recording, setRecording] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [clash, setClash] = useState<{ key: string; with: WorkspaceKeyClash } | null>(null);
+
+  const current = workspace ? workspaceKeyAt(workspace, workspaceIndex) : '';
+  const positional = positionalWorkspaceKey(workspaceIndex);
+  const isDefault = workspace ? isDefaultWorkspaceKey(workspace) : true;
+
+  /** Through a ref: the listener is bound once per recording session and must see today's config. */
+  const contextRef = useRef({ config, workspaceIndex });
+  contextRef.current = { config, workspaceIndex };
+
+  const assign = useCallback(
+    (key: string, clearing: WorkspaceKeyClash | null) => {
+      setConfig((currentConfig) => {
+        const cleared = clearing ? clearWorkspaceKeyClash(currentConfig, clearing) : currentConfig;
+        return {
+          ...cleared,
+          workspaces: cleared.workspaces.map((entry, index) =>
+            index === workspaceIndex ? { ...entry, hotkeyKey: key } : entry,
+          ),
+        };
+      });
+    },
+    [setConfig, workspaceIndex],
+  );
+
+  useEffect(() => {
+    if (!recording) return;
+    const handler = (e: KeyboardEvent) => {
+      /** A bare modifier is the user still reaching for the key, not the key. Keep listening. */
+      if (['Shift', 'Control', 'Alt', 'Meta', 'AltGraph'].includes(e.key)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      /** Escape leaves the recorder rather than being refused as a reserved key. */
+      if (e.key === 'Escape') {
+        setRecording(false);
+        setError(null);
+        return;
+      }
+      const reason = rejectWorkspaceKey(e.key, e.ctrlKey, e.altKey, e.metaKey);
+      if (reason) {
+        /** Still recording: a refusal is an invitation to try another key, not a dead card. */
+        setError(reason);
+        return;
+      }
+
+      const key = normalizeWorkspaceKey(e.key);
+      const { config: live, workspaceIndex: index } = contextRef.current;
+      setRecording(false);
+      setError(null);
+
+      if (key === workspaceKeyAt(live.workspaces[index], index)) return;
+
+      const found = findWorkspaceKeyClash(live, key, index);
+      if (found) {
+        /** Nothing is written yet. The next click decides whether to take the key or try again. */
+        setClash({ key, with: found });
+        return;
+      }
+      assign(key, null);
+    };
+    /** Capture, so the panel's own shortcuts and focused controls do not eat the keystroke first. */
+    window.addEventListener('keydown', handler, { capture: true });
+    return () => window.removeEventListener('keydown', handler, { capture: true });
+  }, [recording, assign]);
+
+  if (!workspace) return null;
+
+  const beginRecording = () => {
+    setClash(null);
+    setError(null);
+    setRecording(true);
+  };
+
+  /**
+   * Only when the key will NOT do what the slot shows — said here rather than left to be
+   * discovered by pressing it and watching nothing happen. A key that works needs no caption.
+   */
+  const note = (() => {
+    /**
+     * Before the recording check, not after it. A refusal leaves the recorder LISTENING — trying
+     * another key is the whole response to it — so a note hidden while recording is a note that
+     * never appears, and the key just seems not to register.
+     */
+    if (error) return error;
+    if (recording || !current) return null;
+
+    /**
+     * The clash the recorder never agreed to. Reordering the list moves the positional defaults, so
+     * a workspace can end up holding a digit somebody recorded elsewhere — and `workspaceKeyBindings`
+     * hands that key to the recorded one, leaving this row showing a key that does something else.
+     * It is said here because this is where anybody would come to look.
+     *
+     * Only on the side that LOSES. From the winner's row the key works, and saying that something
+     * else also wants it would be a warning about a state that is already resolved.
+     */
+    const owns = workspaceKeyBindings(config).some(
+      (binding) => binding.index === workspaceIndex && binding.key === current,
+    );
+    const standing = findWorkspaceKeyClash(config, current, workspaceIndex);
+    if (standing && !(standing.kind === 'workspace' && owns)) {
+      return standing.kind === 'workspace'
+        ? `${current} is also the wheel key for ${standing.label}, which was recorded, so it goes there. Record another key for this workspace.`
+        : standing.kind === 'back'
+          ? `${current} is also the key that steps out of a folder. Record another key for this workspace.`
+          : `${current} is also the shortcut for ${standing.label}. Record another key for this workspace.`;
+    }
+
+    const isDigit = current >= '0' && current <= '9';
+    if (isDigit && config.radialNumberLaunch === true) {
+      return `Launching by number owns the digits, so ${current} runs the ${current}th shortcut instead of coming here. Record a letter to reach this workspace while that is on.`;
+    }
+
+    return null;
+  })();
+
+  return (
+    <div className="zs-ws-key">
+      <div className="zs-ws-key-row">
+        <span className="zs-ws-key-label">Wheel key</span>
+        <button
+          type="button"
+          className={`zs-ws-key-slot${recording ? ' is-recording' : ''}`}
+          aria-label={`Wheel key for ${workspace.name}`}
+          /** Stopping clears the refusal with it — it described a key that is no longer being asked for. */
+          onClick={() => {
+            if (!recording) return beginRecording();
+            setRecording(false);
+            setError(null);
+          }}
+        >
+          {recording ? (
+            <em>Press any key…</em>
+          ) : current ? (
+            <kbd>{current === ' ' ? 'Space' : current}</kbd>
+          ) : (
+            <kbd className="is-empty">None</kbd>
+          )}
+        </button>
+        {/*
+          Two ways back, and only the one that is not already true is offered: the key this
+          position ships with, or no key at all.
+        */}
+        {!isDefault && positional && (
+          <button
+            type="button"
+            className="zs-btn is-quiet"
+            onClick={() => {
+              setClash(null);
+              setError(null);
+              setRecording(false);
+              setConfig((currentConfig) => ({
+                ...currentConfig,
+                workspaces: currentConfig.workspaces.map((entry, index) =>
+                  index === workspaceIndex ? { ...entry, hotkeyKey: undefined } : entry,
+                ),
+              }));
+            }}
+          >
+            Use {positional}
+          </button>
+        )}
+        {current && (
+          <button
+            type="button"
+            className="zs-btn is-quiet"
+            onClick={() => {
+              setClash(null);
+              setError(null);
+              setRecording(false);
+              assign(WORKSPACE_KEY_NONE, null);
+            }}
+          >
+            Remove
+          </button>
+        )}
+      </div>
+
+      {/* The invitation, until there is a reason to say something more specific than "any key". */}
+      {recording && !error && (
+        <p className="zs-shortcut-note" role="status">
+          <span>Any single key — a letter, a digit or a symbol. Escape cancels.</span>
+        </p>
+      )}
+
+      {clash ? (
+        /**
+         * The warning names the holder and stops there. Nothing has been written, so neither
+         * button is a correction — one takes the key, the other goes back to recording, and
+         * closing the editor without choosing leaves everything as it was.
+         */
+        <div className="zs-ws-key-clash" role="alert">
+          <p>
+            <AlertTriangle size={13} strokeWidth={1.9} aria-hidden />
+            <span>
+              <b>{clash.key === ' ' ? 'Space' : clash.key}</b> is already{' '}
+              {clash.with.kind === 'workspace'
+                ? `the wheel key for ${clash.with.label}`
+                : clash.with.kind === 'back'
+                  ? 'the key that steps out of a folder'
+                  : `the shortcut for ${clash.with.label}`}
+              . One key cannot do both.
+            </span>
+          </p>
+          <div className="zs-ws-key-clash-actions">
+            <button
+              type="button"
+              className="zs-btn is-primary"
+              onClick={() => {
+                const taking = clash;
+                setClash(null);
+                assign(taking.key, taking.with);
+                showToast(
+                  taking.with.kind === 'workspace'
+                    ? `${taking.key} moved from ${taking.with.label} to ${workspace.name}`
+                    : taking.with.kind === 'back'
+                      ? `${taking.key} is now ${workspace.name}. The back key was removed.`
+                      : `${taking.key} is now ${workspace.name}. It no longer opens ${taking.with.label}.`,
+                );
+              }}
+            >
+              Use it here
+            </button>
+            <button type="button" className="zs-btn" onClick={beginRecording}>
+              Record another key
+            </button>
+          </div>
+        </div>
+      ) : (
+        note && (
+          <p className="zs-shortcut-note is-warn" role="status">
+            <AlertTriangle size={13} strokeWidth={1.9} aria-hidden />
+            <span>{note}</span>
+          </p>
+        )
       )}
     </div>
   );

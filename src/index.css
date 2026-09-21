@@ -1009,18 +1009,57 @@
 /* Identity on a single line; the states live below and do not stretch this area. */
 .zs-workspace-identity {
   min-width: 0; display: grid;
-  grid-template-columns: 48px minmax(180px, 1fr) auto auto;
+  grid-template-columns: 48px minmax(180px, 1fr) auto;
   grid-template-rows: auto;
   align-items: end; column-gap: var(--zn-3);
 }
 .zs-workspace-identity > .zs-workspace-icon-button { grid-area: 1 / 1; align-self: end; width: 48px; height: 48px; }
 .zs-workspace-identity > .zs-workspace-name-field { grid-area: 1 / 2; align-self: end; }
 .zs-workspace-identity > .zs-workspace-flags { grid-area: 1 / 3; align-self: end; margin-bottom: 1px; }
-.zs-workspace-meta {
-  grid-area: 1 / 4; align-self: end; margin: 0 0 9px;
-  display: flex; align-items: center; gap: var(--zn-2);
-  color: var(--zn-text-3); font-size: 10.5px;
+
+/* The wheel key: a row of its own under the identity, because the clash warning needs the width. */
+.zs-ws-key { display: flex; flex-direction: column; gap: var(--zn-2); }
+.zs-ws-key-row { display: flex; align-items: center; gap: var(--zn-2); }
+.zs-ws-key-label { color: var(--zn-text-2); font-size: 11.5px; font-weight: 500; }
+/* The key IS the button — a field showing what it holds, not a label with a button beside it. */
+.zs-ws-key-slot {
+  min-width: 96px; height: var(--zn-ctl);
+  display: inline-flex; align-items: center; justify-content: center; gap: var(--zn-2);
+  padding: 0 var(--zn-3); border: 1px solid var(--zn-line); border-radius: var(--zn-r-control);
+  background: var(--zn-sunken); cursor: pointer;
+  transition: border-color .15s var(--zn-ease), background .15s var(--zn-ease);
 }
+.zs-ws-key-slot:hover { border-color: var(--zn-line-strong); background: var(--zn-raised); }
+.zs-ws-key-slot kbd {
+  min-width: 26px; padding: 5px 8px; color: var(--zn-text);
+  border: 1px solid var(--zn-line-strong); border-radius: var(--zn-r-chip); background: var(--zn-raised);
+  font: 500 12px/1 var(--font-display); text-align: center;
+}
+.zs-ws-key-slot kbd.is-empty { color: var(--zn-text-3); border-style: dashed; background: transparent; }
+.zs-ws-key-slot em { color: var(--zn-text-2); font: 450 11.5px/1 var(--font-ui); font-style: normal; }
+/* Listening. The border does the work — a filled field would read as a value that is already set. */
+.zs-ws-key-slot.is-recording { border-color: var(--zn-solid); background: var(--zn-raised); }
+.zs-ws-key-slot.is-recording em { color: var(--zn-text); }
+
+/* Amber like `.zs-shortcut-note.is-warn`, for the same reason: nothing failed, and nothing has
+   been written — the key belongs to something else and the next click decides what happens. */
+.zs-ws-key-clash {
+  display: flex; flex-direction: column; gap: var(--zn-3);
+  padding: var(--zn-3); border: 1px solid rgba(224, 160, 60, .28);
+  border-radius: var(--zn-r-chip); background: rgba(224, 160, 60, .07);
+}
+.zs-ws-key-clash > p {
+  display: grid; grid-template-columns: 13px minmax(0, 1fr); align-items: start; gap: var(--zn-2);
+  margin: 0; color: rgba(233, 189, 120, .92); font-size: 10.5px; line-height: 1.5;
+}
+.zs-ws-key-clash > p svg { margin-top: 1px; color: rgba(233, 189, 120, .9); }
+.zs-ws-key-clash > p b { color: var(--zn-text); font-weight: 600; }
+.zs-ws-key-clash-actions { display: flex; flex-wrap: wrap; gap: var(--zn-2); }
+[data-zn-theme="white"] .zs-ws-key-clash {
+  border-color: rgba(146, 92, 6, .3); background: rgba(180, 120, 20, .09);
+}
+[data-zn-theme="white"] .zs-ws-key-clash > p { color: rgba(122, 76, 4, .95); }
+[data-zn-theme="white"] .zs-ws-key-clash > p svg { color: rgba(146, 92, 6, .9); }
 .zs-workspace-name-field { min-width: 0; display: flex; flex-direction: column; gap: var(--zn-2); }
 .zs-workspace-name-field > span { color: var(--zn-text-2); font-size: 11.5px; font-weight: 500; }
 .zs-workspace-name-field > input {
@@ -1693,10 +1732,8 @@
   .zs-row { gap: var(--zn-4); }
   .zs-options-grid { grid-template-columns: 1fr; }
   .zs-workspace-overview { gap: var(--zn-3); }
-  /* Narrow: identity on top, states and count drop to the second line. */
+  /* Narrow: the name gives up its minimum rather than pushing the states off the row. */
   .zs-workspace-identity { grid-template-columns: 48px minmax(0, 1fr) auto; }
-  .zs-workspace-identity > .zs-workspace-flags { grid-area: 1 / 3; }
-  .zs-workspace-meta { grid-area: 2 / 2; align-self: start; margin: var(--zn-1) 0 0; }
   .zs-workspace-state { grid-template-columns: 1fr; }
   .zs-workspace-section-head { align-items: flex-start; flex-direction: column; }
   .zs-add-form { grid-template-columns: 1fr; }

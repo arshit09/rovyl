@@ -19,11 +19,11 @@ import {
   filterRadialApps,
   getRootRadialApps,
   isWorkspacePickItem,
-  pickWorkspaceSwitchMode,
   parseWorkspacePickIndex,
 } from '../utils/workspaceRadial';
 import { clampDwellMs, directionCommitPx } from '../constants/radialDwell';
 import { isBackKeyEvent, normalizeBackKey } from '../constants/radialBackKey';
+import { workspaceKeyAt, workspaceKeyBindings } from '../constants/workspaceHotkey';
 import { radialScrimGradient } from '../utils/radialScrim';
 import { HUB_DRAG_SLOP_PX, clampWheelCenter } from '../utils/radialDrag';
 import {
@@ -1663,13 +1663,13 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
 
   // Sync root radial when workspace config / active workspace apps change while
   // menu stays open. Also pre-paint, for the same reason as the open reset:
-  // in picker mode the root level is a synthetic workspace list, not `apps`, so
-  // a passive effect showed one wheel and replaced it on the next frame.
+  // the root level is the synthetic home launcher, not `apps`, so a passive
+  // effect showed one wheel and replaced it on the next frame.
   useLayoutEffect(() => {
     if (!isOpen || folderStack.length > 0) return;
     const next = getRootRadialApps(config, apps);
     setCurrentLevelApps((prev) => (sameRadialLevel(prev, next) ? prev : next));
-  }, [isOpen, folderStack.length, apps, config.workspaceSwitchMode, config.workspaces, config]);
+  }, [isOpen, folderStack.length, apps, config.workspaces, config]);
 
   /**
    * Triggers the slices coming out: they mount collapsed at the hub and the next frame takes the
@@ -1708,7 +1708,8 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
 
   // The root hub carries the Rovyl identity; deeper levels keep the Back affordance.
   const isRoot = folderStack.length === 0;
-  const rootIsPicker = pickWorkspaceSwitchMode(config) === 'picker' && enabledWorkspaceCount(config) > 1;
+  /** The root is the home launcher whenever there is more than one workspace to launch into. */
+  const rootIsPicker = enabledWorkspaceCount(config) > 1;
   const centerLabel = !isRoot ? uiString('menu.back') : (config.centerButton?.label || uiString('menu.center'));
 
 
@@ -1884,6 +1885,7 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
     viewportSize,
     activeIndex,
     onClose,
+    onWorkspaceSwitch,
     currentLevelApps,
     config,
     isCenterActive,
@@ -1903,6 +1905,7 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
       viewportSize,
       activeIndex,
       onClose,
+      onWorkspaceSwitch,
       currentLevelApps,
       config,
       isCenterActive,
@@ -1913,7 +1916,51 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
       actualIconSize,
       deadZoneRadius,
     };
-  }, [isOpen, position, viewportSize, activeIndex, onClose, currentLevelApps, config, isCenterActive, hasMoved, folderStack, apps, actualMenuRadius, actualIconSize, deadZoneRadius]);
+  }, [isOpen, position, viewportSize, activeIndex, onClose, onWorkspaceSwitch, currentLevelApps, config, isCenterActive, hasMoved, folderStack, apps, actualMenuRadius, actualIconSize, deadZoneRadius]);
+
+  /**
+   * Go into a workspace — the one thing picking a slice on the home launcher means.
+   *
+   * Four routes arrive here and they all have to agree: a click, the Enter/confirm path, the
+   * middle-button release, and the workspace key. Three of them carried their own copy of these
+   * five lines, and the key would have made a fourth; a key that half-enters a workspace the click
+   * fully enters is the kind of difference nobody finds until they are relying on it.
+   *
+   * A disabled workspace is not on the launcher at all, so it can only be reached by a key
+   * recorded before it was hidden. Making it current without showing its shortcuts would leave the
+   * wheel on a level that no longer matches what is current, so it does nothing and says so.
+   */
+  const enterWorkspace = useCallback((index: number, notify = true) => {
+    const { config: cfg, onWorkspaceSwitch: onSwitch } = stateRef.current;
+    const workspace = cfg.workspaces[index];
+    if (!workspace?.enabled) return false;
+    if (notify && onSwitch) onSwitch(index);
+    setFolderStack([{ label: workspace.name, apps: workspace.apps }]);
+    setCurrentLevelApps(workspace.apps);
+    setHasMoved(false);
+    setActiveIndex(null);
+    return true;
+  }, []);
+
+  /**
+   * The same thing, asked for by main.
+   *
+   * A workspace key is normally a GLOBAL shortcut — that is the only way to catch it when the
+   * window the user was typing in still holds focus — so main consumes the keystroke and sends
+   * `switch-workspace` instead. That used to be enough: the root was the current workspace's
+   * shortcuts, so making one current swapped the wheel underneath. The root is the home launcher
+   * now, and making a workspace current behind it left the launcher on screen and the keypress
+   * looking like it had done nothing.
+   *
+   * `notify: false` because the app's own listener for this channel has already made it current;
+   * this is here for the level, which only this component can move.
+   */
+  useEffect(() => {
+    if (!isOpen || !window.electron?.onSwitchWorkspace) return;
+    return window.electron.onSwitchWorkspace((index: number) => {
+      enterWorkspace(index, false);
+    });
+  }, [isOpen, enterWorkspace]);
 
   /**
    * The point the wheel AIMS at, written in the event itself — without going through a render. By
@@ -2431,16 +2478,7 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
       }
 
       if (selectedItemObj && isWorkspacePickItem(selectedItemObj)) {
-        const idx = parseWorkspacePickIndex(selectedItemObj.id);
-        if (onWorkspaceSwitch) onWorkspaceSwitch(idx);
-        const ws = config.workspaces[idx];
-        if (ws?.enabled) {
-          const list = ws.apps;
-          setFolderStack([{ label: ws.name, apps: list }]);
-          setCurrentLevelApps(list);
-          setHasMoved(false);
-          setActiveIndex(null);
-        }
+        enterWorkspace(parseWorkspacePickIndex(selectedItemObj.id));
         return;
       }
 
@@ -2582,7 +2620,8 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
     const handleWheel = (e: WheelEvent) => {
       if (!onWorkspaceSwitch) return;
       const { config, folderStack } = stateRef.current;
-      if (config.workspaceSwitchMode === 'picker' && folderStack.length === 0) return;
+      /** At the home launcher every workspace is already on screen — there is nothing to cycle to. */
+      if (folderStack.length === 0) return;
       const numWorkspaces = config.workspaces.length;
       if (numWorkspaces <= 1) return;
 
@@ -2632,25 +2671,49 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
     };
   }, [isOpen]);
 
+  /**
+   * Which key switches to which workspace — the one list, sent to main to register globally and
+   * read by the keydown handler below when the keystroke reaches this window instead.
+   *
+   * Quick launch takes the digits out of it, and only the digits. It claims 1–9 for running the
+   * slice in that position, so a workspace still on its positional default goes quiet while the
+   * setting is on — that has always been true and the setting says so. A workspace whose key was
+   * RECORDED as a letter is claimed by nobody, and it keeps working: switching off by association
+   * would be a key that saves, reads back correctly and never fires.
+   */
+  const workspaceKeys = React.useMemo(() => {
+    const bindings = workspaceKeyBindings(config);
+    if (config.radialNumberLaunch !== true) return bindings;
+    return bindings.filter((binding) => binding.key < '0' || binding.key > '9');
+  }, [config.workspaces, config.radialNumberLaunch]);
+  /** Through a ref, so re-keying a workspace does not tear down and rebuild the keydown listener. */
+  const workspaceKeysRef = useRef(workspaceKeys);
+  workspaceKeysRef.current = workspaceKeys;
+
   // Sync workspace shortcuts state with main process (Fix for initial focus issue)
   useEffect(() => {
     if (window.electron?.setWorkspaceShortcutsState) {
       window.electron.setWorkspaceShortcutsState(
         isOpen,
-        config.workspaceSwitchMode === 'picker' ? 'picker' : 'hotkeys',
         /**
-         * Quick launch owns 1–9 while it is on. Main registers them as GLOBAL shortcuts in
-         * hotkeys mode — and a registered global shortcut is consumed there, so the keydown
-         * handler in this file would never see the digit it was told to launch on.
+         * Quick launch owns 1–9 while it is on. Main registers the workspace keys as GLOBAL
+         * shortcuts — and a registered global shortcut is consumed there, so the keydown handler
+         * in this file would never see the digit it was told to launch on.
          */
         config.radialNumberLaunch === true,
+        /**
+         * Main used to assume 1–9 against the position. A workspace key can now be any single
+         * key, so the list it registers has to be the one this config actually describes.
+         */
+        workspaceKeys,
       );
     }
-  }, [isOpen, config.workspaceSwitchMode, config.radialNumberLaunch]);
+  }, [isOpen, config.radialNumberLaunch, workspaceKeys]);
 
   // STABLE KEYBOARD LISTENER (Decoupled from interaction states to avoid missing events)
-  // NOTE: Workspace switching (1-9) is handled exclusively by global shortcuts registered in
-  // the backend (set-workspace-shortcuts IPC). Having a duplicate listener here caused double-firing.
+  // NOTE: Workspace switching is handled by the global shortcuts registered in the backend
+  // (set-workspace-shortcuts IPC) whenever it gets them; the branch below answers the keystrokes
+  // that reach this window instead. Both end in `enterWorkspace`, so they cannot disagree.
   useEffect(() => {
     if (!isOpen) return;
 
@@ -2823,28 +2886,42 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
       }
 
       /*
-       * Workspace Switching (1-9) — disabled in picker mode (user chooses workspace on the radial),
-       * and disabled outright while quick launch owns the digits. The block above only CONSUMES the
-       * ones with a slice under them; without this, 7 on a wheel of four fell through to here and
-       * switched workspace, which is exactly what the setting says it no longer does.
+       * THE WORKSPACE KEYS — the home launcher's keyboard equivalent.
+       *
+       * They go into the workspace, exactly as clicking its slice does, and they do it from any
+       * level: at the launcher it is the slice you would have aimed at, and three folders deep in
+       * another workspace it is the way across without walking back out first.
+       *
+       * The keys are 1–9 by position until somebody records one, so this looks the pressed key up
+       * in the same table main registers (`workspaceKeys`) rather than doing the arithmetic that
+       * used to be enough. Main normally eats these first as global shortcuts; this branch is what
+       * answers when registration was refused or the wheel already holds focus.
+       *
+       * Quick launch is not tested here, because `workspaceKeys` has already had the digits taken
+       * out of it while that setting is on. A digit therefore finds nothing and falls through —
+       * which is what the block above needs, since it only CONSUMES the digits with a slice under
+       * them and 7 on a wheel of four has to reach the filter.
+       *
+       * Only while nothing has been typed. Once a filter is running these are characters like any
+       * other: an app called "Photoshop 2024" cannot be reached if the 2 keeps changing workspace,
+       * and neither can "Slack" if S does.
        */
-      if (
-        onWorkspaceSwitch &&
-        configRef.current.radialNumberLaunch !== true &&
-        configRef.current.workspaceSwitchMode !== 'picker'
-      ) {
-        const num = parseInt(e.key);
-        /**
-         * The digits stay the workspace keys, and only while nothing has been typed. Once a filter
-         * is running they are characters like any other: an app called "Photoshop 2024" cannot be
-         * reached if the 2 keeps changing workspace.
-         */
-        if (!isNaN(num) && num >= 1 && num <= 9 && !typeAheadRef.current) {
+      if (!typeAheadRef.current && !e.ctrlKey && !e.altKey && !e.metaKey && Array.from(e.key).length === 1) {
+        const pressed = e.key.toUpperCase();
+        const target = workspaceKeysRef.current.find((binding) => binding.key === pressed);
+        /** A key on a workspace that has since been hidden enters nothing, and stays a character. */
+        if (target && enterWorkspace(target.index)) {
           e.preventDefault();
-          onWorkspaceSwitch(num - 1);
           return;
         }
-      } else if (!typeAheadRef.current && e.key >= '1' && e.key <= '8') {
+      }
+
+      /**
+       * Aim by position, for the digits no workspace answers to. Enter still runs it — this only
+       * moves the highlight, which is what a digit meant on the launcher before the keys reached
+       * it and is still the only thing it can mean inside a folder.
+       */
+      if (!typeAheadRef.current && e.key >= '1' && e.key <= '8') {
         const num = parseInt(e.key, 10);
         const currentItems = stateRef.current.currentLevelApps;
         const targetIdx = num - 1;
@@ -2863,7 +2940,7 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
 
     window.addEventListener('keydown', handleKeyDown, { capture: true });
     return () => window.removeEventListener('keydown', handleKeyDown, { capture: true });
-  }, [isOpen, onClose, onWorkspaceSwitch, activeIndex, folderStack.length]);
+  }, [isOpen, onClose, onWorkspaceSwitch, enterWorkspace, activeIndex, folderStack.length]);
 
   /**
    * "Hold" mode: the window opens with the middle button still pressed, and on Windows the mouse
@@ -2935,16 +3012,7 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
         const selectedItem = activeIndex !== null ? currentLevelApps[activeIndex] : null;
 
         if (selectedItem && isWorkspacePickItem(selectedItem)) {
-          const idx = parseWorkspacePickIndex(selectedItem.id);
-          if (onWorkspaceSwitch) onWorkspaceSwitch(idx);
-          const ws = config.workspaces[idx];
-          if (ws?.enabled) {
-            const list = ws.apps;
-            setFolderStack([{ label: ws.name, apps: list }]);
-            setCurrentLevelApps(list);
-            setHasMoved(false);
-            setActiveIndex(null);
-          }
+          enterWorkspace(parseWorkspacePickIndex(selectedItem.id));
           return;
         }
 
@@ -3166,16 +3234,7 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
     disarmDwell();
     const cfg = configRef.current;
     if (isWorkspacePickItem(app)) {
-      const idx = parseWorkspacePickIndex(app.id);
-      if (onWorkspaceSwitch) onWorkspaceSwitch(idx);
-      const ws = cfg.workspaces[idx];
-      if (ws?.enabled) {
-        const list = ws.apps;
-        setFolderStack([{ label: ws.name, apps: list }]);
-        setCurrentLevelApps(list);
-        setHasMoved(false);
-        setActiveIndex(null);
-      }
+      enterWorkspace(parseWorkspacePickIndex(app.id));
       return;
     }
     const hasRecentFetch = (app.hasRecents) && window.electron?.getAppRecents;
@@ -4040,10 +4099,19 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
                   const raw = Math.abs(index - activeIndex);
                   angularDistance = Math.min(raw, currentLevelApps.length - raw);
                 }
-                /* Workspace slices carry the 1–9 global shortcut, which was previously invisible. */
-                const workspaceHint = isWorkspacePickItem(app)
-                  ? String(parseWorkspacePickIndex(app.id) + 1)
-                  : undefined;
+                /**
+                 * Workspace slices carry their global shortcut, which was previously invisible.
+                 *
+                 * Read from the workspace, not from the slice: the id holds the REAL index, and
+                 * since a key can be recorded the digit that position would have had is no longer
+                 * necessarily the key that switches to it.
+                 */
+                const workspaceHint = (() => {
+                  if (!isWorkspacePickItem(app)) return undefined;
+                  const wsIndex = parseWorkspacePickIndex(app.id);
+                  const ws = config.workspaces[wsIndex];
+                  return ws ? workspaceKeyAt(ws, wsIndex) || undefined : undefined;
+                })();
                 /**
                  * Only the first nine get a digit — there is no tenth key, and a tile numbered
                  * `10` would promise a keystroke that does not exist.

@@ -367,7 +367,6 @@ export const DEFAULT_UI_CONFIG: UIConfig = {
   hasSeenDirectionHint: false,
   workspaces: DEFAULT_WORKSPACES,
   activeWorkspaceIndex: 0,
-  workspaceSwitchMode: 'picker',
   appearanceTheme: 'black',
   radialSelectionMode: 'area',
   /**

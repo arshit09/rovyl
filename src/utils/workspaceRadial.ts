@@ -1,8 +1,5 @@
 import type { AppItem, UIConfig } from '../types';
-
-export function pickWorkspaceSwitchMode(cfg: UIConfig): 'hotkeys' | 'picker' {
-  return cfg.workspaceSwitchMode === 'picker' ? 'picker' : 'hotkeys';
-}
+import { workspaceKeyAt } from '../constants/workspaceHotkey';
 
 export function enabledWorkspaceCount(cfg: UIConfig): number {
   return cfg.workspaces.filter((w) => w.enabled).length;
@@ -13,6 +10,7 @@ export function buildWorkspacePickerItems(cfg: UIConfig): AppItem[] {
   const items: AppItem[] = [];
   cfg.workspaces.forEach((ws, index) => {
     if (!ws.enabled) return;
+    const key = workspaceKeyAt(ws, index);
     items.push({
       id: `__zenith_ws_pick__${index}`,
       type: 'app',
@@ -23,18 +21,29 @@ export function buildWorkspacePickerItems(cfg: UIConfig): AppItem[] {
       ...(ws.pickerIconUrl ? { customIconUrl: ws.pickerIconUrl } : {}),
       command: '',
       commandType: 'app',
-      description: ws.hotkey ? `(${ws.hotkey})` : '',
+      /** The key it actually answers to — recorded or positional — not the digit of its place. */
+      description: key ? `(${key})` : '',
     });
   });
   return items;
 }
 
-/** Root level of the radial: either current workspace apps or workspace picker. */
+/**
+ * Root level of the radial: the home launcher — every workspace, one slice each.
+ *
+ * This used to be a choice (`workspaceSwitchMode`): the home launcher, or the current workspace's
+ * shortcuts with keys to switch between spaces. The two were never alternatives in practice — the
+ * launcher shows the spaces AND the keys still reach them from it — so the setting only asked
+ * people to give one up to have the other, and it is gone.
+ *
+ * One workspace is the exception, and it is not a special case so much as the absence of one: a
+ * launcher offering a single destination is a step that asks to be skipped, so the wheel opens on
+ * that workspace's shortcuts and there is nothing to launch from.
+ */
 export function getRootRadialApps(
   cfg: UIConfig,
   currentWorkspaceApps: AppItem[],
 ): AppItem[] {
-  if (pickWorkspaceSwitchMode(cfg) !== 'picker') return currentWorkspaceApps;
   if (enabledWorkspaceCount(cfg) <= 1) return currentWorkspaceApps;
   return buildWorkspacePickerItems(cfg);
 }
