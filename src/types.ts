@@ -436,10 +436,15 @@ export interface UIConfig {
   /** toggle: pressing shortcut opens/closes; hold: holding shortcut opens, releasing runs selection or closes. */
   shortcutTriggerMode?: 'toggle' | 'hold';
   /**
-   * Physical button that opens the wheel. Left and right are off the table: watching them
-   * globally would collide with the primary click and the system context menu.
+   * The button that opens the wheel, as a binding rather than a name: a button plus the modifiers
+   * held with it — `middle`, `x1`, `Ctrl+left`, `Alt+Shift+x2`. The grammar, the spellings it
+   * accepts and the one rule it enforces (left and right are only bindable with a modifier) live
+   * in `src/constants/mouseTrigger.ts`, which main mirrors in `backend/mouse-trigger.cjs`.
+   *
+   * Left as a plain string: the set of buttons a mouse can report is not a list this type should
+   * be pretending to close, and the three values this field used to hold are still valid.
    */
-  mouseTriggerButton?: 'middle' | 'x1' | 'x2';
+  mouseTriggerButton?: string;
   language: "en" | "ar" | "pt" | "es" | "fr" | "de" | "it" | "ja" | "zh" | "ko" | "ru";
   performanceMode: boolean; // New: Strict performance mode for zero-lag
   /**
@@ -724,6 +729,9 @@ export interface ElectronAPI {
   }>;
   startShortcutRecording: () => void;
   stopShortcutRecording: () => void;
+  /** Releases / re-arms the global mouse hook while Settings records a trigger button. */
+  pauseMouseTrigger?: () => void;
+  resumeMouseTrigger?: () => void;
   onShortcutRecorded: (callback: (shortcut: string) => void) => () => void;
   saveFullConfig: (config: any) => Promise<{ ok: boolean; error?: string }>;
   /** Synchronous save to disk (Electron); returns false if main rejected or IPC failed. */

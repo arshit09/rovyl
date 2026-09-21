@@ -669,6 +669,69 @@
 .zs-segmented button.is-selected:hover:not(:disabled) { background: var(--zn-pressed); box-shadow: inset 0 0 0 1px var(--zn-line-strong); }
 .zs-segmented button:disabled { color: var(--zn-text-3); cursor: not-allowed; }
 
+/* ── Mouse trigger (what is bound, and the button that rebinds it) ──────── */
+
+/* A readout beside a record button, not a set of choices: the buttons a mouse can send are not a
+   list this row could draw. Column, because the refusal needs the width to say why. */
+.zs-mouse-trigger { display: flex; flex-direction: column; align-items: flex-end; gap: var(--zn-2); min-width: 0; }
+.zs-mouse-trigger-row { display: flex; align-items: center; gap: var(--zn-2); }
+.zs-mouse-trigger-slot {
+  min-width: 104px; height: var(--zn-ctl);
+  display: inline-flex; align-items: center; justify-content: center; gap: 3px;
+  padding: 0 var(--zn-3); border: 1px solid var(--zn-line); border-radius: var(--zn-r-control);
+  background: var(--zn-sunken);
+  transition: border-color .15s var(--zn-ease), background .15s var(--zn-ease);
+}
+.zs-mouse-trigger-slot kbd {
+  min-width: 26px; padding: 5px 8px; color: var(--zn-text);
+  border: 1px solid var(--zn-line-strong); border-radius: var(--zn-r-chip); background: var(--zn-raised);
+  font: 500 12px/1 var(--font-display); text-align: center; white-space: nowrap;
+}
+.zs-mouse-trigger-plus { color: var(--zn-text-3); font: 500 10px/1 var(--font-ui); }
+.zs-mouse-trigger-slot em { color: var(--zn-text); font: 450 11.5px/1 var(--font-ui); font-style: normal; }
+/* Listening. The border does the work — a filled field would read as a value already set. */
+.zs-mouse-trigger-slot.is-recording { border-color: var(--zn-solid); background: var(--zn-raised); }
+
+/* The button, and the hint that stands in its place while the whole window is being listened to.
+   Same box either way, so arming the recorder does not move the row under the pointer. */
+.zs-shell .zs-mouse-trigger-record,
+.zs-shell .zs-mouse-trigger-stop {
+  height: var(--zn-ctl); display: inline-flex; align-items: center; gap: 6px;
+  padding: 0 var(--zn-3); color: var(--zn-text-2);
+  border: 1px solid var(--zn-line); border-radius: var(--zn-r-control); background: var(--zn-raised);
+  font: 500 11.5px/1 var(--font-ui); white-space: nowrap;
+}
+.zs-shell .zs-mouse-trigger-record {
+  cursor: pointer;
+  transition: color .15s var(--zn-ease), border-color .15s var(--zn-ease), background .15s var(--zn-ease);
+}
+.zs-shell .zs-mouse-trigger-record:hover { color: var(--zn-text); border-color: var(--zn-line-strong); background: var(--zn-hover); }
+.zs-shell .zs-mouse-trigger-record:active { background: var(--zn-pressed); }
+/* The one spot of colour in the panel, and it earns it: red is what a record button is. */
+.zs-mouse-trigger-record svg, .zs-mouse-trigger-stop svg { color: rgba(226, 92, 92, .9); }
+/* Listening: no hover, no press — there is nothing here to click, and it must not look otherwise. */
+.zs-shell .zs-mouse-trigger-stop { color: var(--zn-text); border-color: var(--zn-line-strong); cursor: default; }
+.zs-mouse-trigger-stop svg { animation: zs-record-pulse 1.1s var(--zn-ease) infinite; }
+@keyframes zs-record-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .25; } }
+
+.zs-mouse-trigger-note {
+  max-width: 280px; margin: 0; text-align: right;
+  display: grid; grid-template-columns: minmax(0, 1fr); align-items: start; gap: var(--zn-2);
+  color: var(--zn-text-2); font-size: 10.5px; line-height: 1.5;
+}
+/* Amber, like every other "nothing failed, nothing was written" note in this panel. */
+.zs-mouse-trigger-note.is-warn {
+  grid-template-columns: 13px minmax(0, 1fr); text-align: left;
+  padding: var(--zn-2) var(--zn-3);
+  border: 1px solid rgba(224, 160, 60, .28); border-radius: var(--zn-r-chip);
+  background: rgba(224, 160, 60, .07); color: rgba(233, 189, 120, .92);
+}
+.zs-mouse-trigger-note.is-warn svg { margin-top: 1px; color: rgba(233, 189, 120, .9); }
+[data-zn-theme="white"] .zs-mouse-trigger-note.is-warn {
+  border-color: rgba(146, 92, 6, .3); background: rgba(180, 120, 20, .09); color: rgba(122, 76, 4, .95);
+}
+[data-zn-theme="white"] .zs-mouse-trigger-note.is-warn svg { color: rgba(146, 92, 6, .9); }
+
 /* ── Select (trigger in the row, listbox in a portal) ───────────────────── */
 
 .zs-select { position: relative; display: inline-flex; align-items: center; min-width: 0; }

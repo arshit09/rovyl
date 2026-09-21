@@ -245,6 +245,10 @@ namespace Rovyl.NativeHelper {
         private const int WM_XBUTTONDBLCLK = 0x020D;
         private const int WM_MOUSEHWHEEL = 0x020E;
 
+        private const int MOUSEEVENTF_LEFTDOWN = 0x0002;
+        private const int MOUSEEVENTF_LEFTUP = 0x0004;
+        private const int MOUSEEVENTF_RIGHTDOWN = 0x0008;
+        private const int MOUSEEVENTF_RIGHTUP = 0x0010;
         private const int MOUSEEVENTF_MIDDLEDOWN = 0x0020;
         private const int MOUSEEVENTF_MIDDLEUP = 0x0040;
         private const int MOUSEEVENTF_XDOWN = 0x0080;
@@ -352,6 +356,17 @@ namespace Rovyl.NativeHelper {
         private static volatile int TriggerButton;
         private static volatile bool TriggerHoldMode;
         private static volatile int TriggerThreshold;
+        /**
+         * The modifiers that have to be held for the press to be Rovyl's, and whether the press
+         * that IS Rovyl's is still down.
+         *
+         * Both exist for the same reason: left and right are only bindable with a modifier, and a
+         * modifier is a key the hand lets go of. The mask is checked on the DOWN alone; from there
+         * the flag decides the UP, so releasing Ctrl mid-gesture ends the gesture cleanly instead
+         * of leaking a stray button-up into the window underneath.
+         */
+        private static volatile int TriggerModMask;
+        private static volatile bool TriggerPressed;
         private static int DownX, DownY;
         private static long DownAt;
 
@@ -390,6 +405,14 @@ namespace Rovyl.NativeHelper {
 
         private static int TriggerFor(int message, uint mouseData, out bool isDown) {
             isDown = false;
+            if (message == WM_LBUTTONDOWN || message == WM_LBUTTONUP || message == WM_LBUTTONDBLCLK) {
+                isDown = (message != WM_LBUTTONUP);
+                return 1;
+            }
+            if (message == WM_RBUTTONDOWN || message == WM_RBUTTONUP || message == WM_RBUTTONDBLCLK) {
+                isDown = (message != WM_RBUTTONUP);
+                return 2;
+            }
             if (message == WM_MBUTTONDOWN || message == WM_MBUTTONUP || message == WM_MBUTTONDBLCLK) {
                 isDown = (message != WM_MBUTTONUP);
                 return 4;
@@ -488,6 +511,19 @@ namespace Rovyl.NativeHelper {
                 uint mouseData = (uint)Marshal.ReadInt32(lParam, OffsetMouseData);
                 int which = TriggerFor(message, mouseData, out isDown);
                 if (which == trigger) {
+                    /**
+                     * With modifiers bound, a press without them is not the trigger at all: it is
+                     * the ordinary click of an ordinary button and has to reach the window under
+                     * the pointer untouched. The release is answered by whether WE took the press,
+                     * never by the mask — the hand has usually let the modifier go by then.
+                     */
+                    if (isDown && TriggerModMask != 0 && GetCurrentModifierMask() != TriggerModMask) {
+                        return CallNextHookEx(Hook, nCode, wParam, lParam);
+                    }
+                    if (!isDown && !TriggerPressed) {
+                        return CallNextHookEx(Hook, nCode, wParam, lParam);
+                    }
+                    TriggerPressed = isDown;
                     if (isDown) {
                         DownX = px;
                         DownY = py;
@@ -540,7 +576,9 @@ namespace Rovyl.NativeHelper {
             int trigger = code % 1000;
             int kind = code - trigger;
             uint downFlag, upFlag, data;
-            if (trigger == 4) { downFlag = MOUSEEVENTF_MIDDLEDOWN; upFlag = MOUSEEVENTF_MIDDLEUP; data = 0; }
+            if (trigger == 1) { downFlag = MOUSEEVENTF_LEFTDOWN; upFlag = MOUSEEVENTF_LEFTUP; data = 0; }
+            else if (trigger == 2) { downFlag = MOUSEEVENTF_RIGHTDOWN; upFlag = MOUSEEVENTF_RIGHTUP; data = 0; }
+            else if (trigger == 4) { downFlag = MOUSEEVENTF_MIDDLEDOWN; upFlag = MOUSEEVENTF_MIDDLEUP; data = 0; }
             else { downFlag = MOUSEEVENTF_XDOWN; upFlag = MOUSEEVENTF_XUP; data = (uint)(trigger == 6 ? 2 : 1); }
 
             bool wantDown = kind != PT_UP;
@@ -615,17 +653,24 @@ namespace Rovyl.NativeHelper {
                 DisableBlocking();
             } else if (parts[0] == "TRIGGER") {
                 ReleaseInjectedButton();
+                TriggerPressed = false;
                 if (parts.Length >= 2 && parts[1] == "OFF") {
                     TriggerButton = 0;
+                    TriggerModMask = 0;
                     ReleaseHookIfIdle();
                     Emit("TRIGGER_OFF");
                     return;
                 }
                 int vk, threshold;
-                if ((parts.Length >= 4 && parts.Length <= 6) &&
+                if ((parts.Length >= 4 && parts.Length <= 7) &&
                     int.TryParse(parts[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out vk) &&
                     int.TryParse(parts[3], NumberStyles.Integer, CultureInfo.InvariantCulture, out threshold)) {
-                    if (vk != 4 && vk != 5 && vk != 6) vk = 4;
+                    /**
+                     * Left (1) and right (2) join the three side buttons. They are only sent here
+                     * with a modifier mask — main refuses them bare — so the hook never holds the
+                     * system's primary click or context menu on its own.
+                     */
+                    if (vk != 1 && vk != 2 && vk != 4 && vk != 5 && vk != 6) vk = 4;
                     TriggerHoldMode = parts[2] != "click";
                     TriggerThreshold = threshold > 0 ? threshold : 0;
                     int clickHold;
@@ -640,6 +685,12 @@ namespace Rovyl.NativeHelper {
                         clickDrag > 0)
                         ? clickDrag
                         : DEFAULT_CLICK_DRAG_PX;
+                    int triggerMods;
+                    TriggerModMask = (parts.Length >= 7 &&
+                        int.TryParse(parts[6], NumberStyles.Integer, CultureInfo.InvariantCulture, out triggerMods) &&
+                        triggerMods > 0)
+                        ? triggerMods
+                        : 0;
                     InstallHook();
                     TriggerButton = Hook != IntPtr.Zero ? vk : 0;
                     Emit(TriggerButton != 0 ? "TRIGGER_READY" : "TRIGGER_FAILED");
@@ -697,6 +748,8 @@ namespace Rovyl.NativeHelper {
                 AwaitingButtonsUp = false;
                 ReleaseInjectedButton();
                 TriggerButton = 0;
+                TriggerModMask = 0;
+                TriggerPressed = false;
                 ShortcutTriggerButton = 0;
                 ShortcutTriggerModMask = 0;
                 ShortcutTriggerActive = false;

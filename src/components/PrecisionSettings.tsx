@@ -35,6 +35,7 @@ import {
   Plus,
   RefreshCw,
   RotateCcw,
+  Circle,
   Search,
   Palette,
   Settings,
@@ -88,6 +89,15 @@ import {
   normalizeBackKey,
   rejectBackKey,
 } from '../constants/radialBackKey';
+import {
+  DEFAULT_MOUSE_TRIGGER,
+  formatMouseTrigger,
+  mouseTriggerAllowsHold,
+  mouseTriggerChips,
+  mouseTriggerFromEvent,
+  normalizeMouseTrigger,
+  rejectMouseTrigger,
+} from '../constants/mouseTrigger';
 import {
   WORKSPACE_KEY_NONE,
   type WorkspaceKeyClash,
@@ -178,7 +188,7 @@ interface SettingItem {
   group: string;
   title: string;
   description?: string;
-  kind: 'bool' | 'range' | 'segmented' | 'select' | 'dockPosition' | 'open' | 'action' | 'color';
+  kind: 'bool' | 'range' | 'segmented' | 'select' | 'dockPosition' | 'open' | 'action' | 'color' | 'mouseButton';
   enabled?: boolean;
   value?: string;
   min?: number;
@@ -851,6 +861,8 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
 
     const keyboardTriggerOn = config.enableKeyboardTrigger !== false;
     const mouseTriggerOn = config.enableMouseTrigger !== false;
+    /** Left and right are click-only — see `mouseTriggerAllowsHold`. */
+    const triggerAllowsHold = mouseTriggerAllowsHold(config.mouseTriggerButton ?? DEFAULT_MOUSE_TRIGGER);
     const numberLaunchOn = config.radialNumberLaunch === true;
     const backKey = normalizeBackKey(config.radialBackKey);
 
@@ -983,23 +995,51 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
         ...(mouseTriggerOn
           ? ([
               {
+                /**
+                 * Recorded, not chosen from a list.
+                 *
+                 * The list was Wheel / Back / Forward, which is every button Windows has a NAME
+                 * for — and a good deal less than a modern mouse has. Whatever the extra keys on
+                 * yours send, this row binds it by watching you press it, and says back what it
+                 * heard. The only combination it refuses is a bare left or right click, which
+                 * would take the primary click or the context menu from every application at once.
+                 */
                 key: 'mouseButton', configKey: 'mouseTriggerButton' as const, group: 'Mouse', title: 'Trigger button',
-                description: 'Side buttons are usually free; left and right stay with Windows.',
-                kind: 'segmented', current: config.mouseTriggerButton ?? 'middle',
-                choices: [
-                  { value: 'middle', label: 'Wheel' },
-                  { value: 'x1', label: 'Back' },
-                  { value: 'x2', label: 'Forward' },
-                ],
-                onChange: (value) => update('mouseTriggerButton', value as UIConfig['mouseTriggerButton']),
+                description: triggerAllowsHold
+                  ? 'Press Record, then press the button you want. Side buttons are usually free; left and right need Ctrl, Alt, Shift or Win held with them.'
+                  : 'Press Record, then press the button you want. Left and right always open the wheel on the click — holding one down is a drag everywhere else in Windows, so there is no gesture to choose.',
+                kind: 'mouseButton', current: config.mouseTriggerButton ?? DEFAULT_MOUSE_TRIGGER,
+                keywords: 'wheel middle back forward mouse4 mouse5 side button macro record bind',
+                /**
+                 * The gesture travels with the button, in one `setConfig`.
+                 *
+                 * Binding left or right takes Hold off the table, and a stored `hold` that no row
+                 * shows any more is the worst of both: the panel says one thing and the hook does
+                 * another. Writing `click` in the same change means what is on screen is what is
+                 * armed, in every frame.
+                 */
+                onChange: (value) => {
+                  const next = value as string;
+                  setConfig((current) => ({
+                    ...current,
+                    mouseTriggerButton: next,
+                    ...(mouseTriggerAllowsHold(next) ? {} : { mouseTriggerMode: 'click' as const }),
+                  }));
+                },
               },
-              {
-                key: 'mouseMode', configKey: 'mouseTriggerMode' as const, group: 'Mouse', title: 'Gesture behavior',
-                description: 'Click keeps the wheel open; hold runs the selection on release.',
-                kind: 'segmented', current: config.mouseTriggerMode ?? 'click',
-                choices: [{ value: 'click', label: 'Click' }, { value: 'hold', label: 'Hold' }],
-                onChange: (value) => update('mouseTriggerMode', value as UIConfig['mouseTriggerMode']),
-              },
+              /**
+               * Only where there is a gesture to choose. For left and right the answer is fixed,
+               * and a control with one usable option is a question that should not be asked.
+               */
+              ...(triggerAllowsHold
+                ? ([{
+                    key: 'mouseMode', configKey: 'mouseTriggerMode' as const, group: 'Mouse', title: 'Gesture behavior',
+                    description: 'Click keeps the wheel open; hold runs the selection on release.',
+                    kind: 'segmented', current: config.mouseTriggerMode ?? 'click',
+                    choices: [{ value: 'click', label: 'Click' }, { value: 'hold', label: 'Hold' }],
+                    onChange: (value) => update('mouseTriggerMode', value as UIConfig['mouseTriggerMode']),
+                  }] as SettingItem[])
+                : []),
             ] as SettingItem[])
           : []),
         {
@@ -1980,6 +2020,10 @@ function SettingRow({
 
         {item.kind === 'select' && <SelectSettingControl item={item} describedBy={describedBy} />}
 
+        {item.kind === 'mouseButton' && (
+          <MouseTriggerControl item={item} describedBy={describedBy} />
+        )}
+
         {item.kind === 'range' && <span className="zs-readout">{item.value}</span>}
 
         {/* The picture answers "where"; this says it in words, for the search and the screen reader. */}
@@ -2077,6 +2121,168 @@ function SettingRow({
           />
           <span className="zs-slider-bounds">{item.format?.(item.max ?? 0)}</span>
         </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The trigger button, bound by pressing it.
+ *
+ * WHY A RECORDER AND NOT A LIST
+ *
+ * The row used to offer Wheel / Back / Forward, which is not a shortlist of the sensible buttons —
+ * it is every button Windows has a name for. A mouse with a thumb cluster, a sniper button or a
+ * tilt wheel sends whatever its driver decided, and the only honest way to ask "which one do you
+ * want" is to watch the person press it.
+ *
+ * WHY THE PRESS IS READ HERE AND NOT IN THE HOOK
+ *
+ * The settings window is what the hand is already over, and a DOM `mousedown` names all five
+ * buttons Windows reports along with the modifiers held. The one thing the renderer cannot do is
+ * see the button that is CURRENTLY bound — the global hook swallows that one system-wide, which is
+ * exactly the button most people will press first — so main lets go of it for as long as the
+ * recorder is open, and takes it back on the way out.
+ */
+function MouseTriggerControl({ item, describedBy }: { item: SettingItem; describedBy?: string }) {
+  const [recording, setRecording] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const onChangeRef = useRef(item.onChange);
+  onChangeRef.current = item.onChange;
+
+  const stop = useCallback(() => {
+    setRecording(false);
+    setError(null);
+  }, []);
+
+  useEffect(() => {
+    if (!recording) return;
+    window.electron?.pauseMouseTrigger?.();
+
+    /**
+     * Capture, and on the DOWN: by the time a `click` exists the button under the pointer has
+     * already been pressed, and a middle press has already started Windows' autoscroll.
+     */
+    const onDown = (event: MouseEvent) => {
+      const trigger = mouseTriggerFromEvent(event);
+      /** A button this build has no name for: let it through rather than binding a guess. */
+      if (!trigger) return;
+      event.preventDefault();
+      event.stopPropagation();
+
+      /**
+       * Every press is an attempt to bind, wherever it lands — including on the recorder's own
+       * chip, which is where the pointer still is after the click that started this.
+       *
+       * That spot used to cancel instead, and it made the most likely first press of all — a plain
+       * left click, right where the hand already was — do nothing and quietly close the recorder.
+       * The way out is Escape, which is a key and can therefore never be mistaken for a button
+       * somebody is trying to bind.
+       */
+      const reason = rejectMouseTrigger(trigger);
+      if (reason) {
+        /** Still recording: a refusal is an invitation to press something else, not a dead row. */
+        setError(reason);
+        return;
+      }
+      onChangeRef.current?.(formatMouseTrigger(trigger));
+      stop();
+    };
+
+    /** Everything the press would otherwise have done — activate a control, open a context menu. */
+    const swallow = (event: Event) => {
+      event.preventDefault();
+      event.stopPropagation();
+    };
+
+    /**
+     * `stopImmediatePropagation`, not `stopPropagation`: Escape is how half this panel closes
+     * something, and while the recorder is up it means one thing only. Plain propagation-stopping
+     * spares the descendants but not the other listeners on `window` itself, so cancelling could
+     * take the editor — or the panel — down with it.
+     */
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      stop();
+    };
+
+    const options = { capture: true } as const;
+    window.addEventListener('mousedown', onDown, options);
+    window.addEventListener('mouseup', swallow, options);
+    window.addEventListener('click', swallow, options);
+    window.addEventListener('auxclick', swallow, options);
+    window.addEventListener('contextmenu', swallow, options);
+    window.addEventListener('keydown', onKey, options);
+    /** Alt-tabbing away is a cancellation: the trigger must not stay off because a window moved. */
+    window.addEventListener('blur', stop);
+
+    return () => {
+      window.removeEventListener('mousedown', onDown, options);
+      window.removeEventListener('mouseup', swallow, options);
+      window.removeEventListener('click', swallow, options);
+      window.removeEventListener('auxclick', swallow, options);
+      window.removeEventListener('contextmenu', swallow, options);
+      window.removeEventListener('keydown', onKey, options);
+      window.removeEventListener('blur', stop);
+      window.electron?.resumeMouseTrigger?.();
+    };
+  }, [recording, stop]);
+
+  /** Closing the panel mid-recording must not leave the trigger switched off. */
+  useEffect(() => () => { window.electron?.resumeMouseTrigger?.(); }, []);
+
+  const chips = mouseTriggerChips(item.current);
+
+  return (
+    <div className="zs-mouse-trigger">
+      <div className="zs-mouse-trigger-row">
+        <span
+          className={`zs-mouse-trigger-slot${recording ? ' is-recording' : ''}`}
+          role="status"
+          aria-live="polite"
+        >
+          {recording ? (
+            <em>Press a button…</em>
+          ) : (
+            chips.map((chip, index) => (
+              <React.Fragment key={chip}>
+                {index > 0 && <span className="zs-mouse-trigger-plus">+</span>}
+                <kbd>{chip}</kbd>
+              </React.Fragment>
+            ))
+          )}
+        </span>
+        {/*
+          While it listens there is no button here, because there is nothing left that could be
+          clicked: every press in the window is being read as the answer. What stands in its place
+          says how to get out, in the one language the recorder is not listening to.
+        */}
+        {recording ? (
+          <span className="zs-mouse-trigger-stop">
+            <Circle size={11} strokeWidth={0} fill="currentColor" aria-hidden />
+            <b>Esc to stop</b>
+          </span>
+        ) : (
+          <button
+            type="button"
+            className="zs-mouse-trigger-record"
+            aria-labelledby={`${item.key}-label`}
+            aria-describedby={describedBy}
+            title="Record a button"
+            onClick={() => { setError(null); setRecording(true); }}
+          >
+            <Circle size={11} strokeWidth={0} fill="currentColor" aria-hidden />
+            <b>Record</b>
+          </button>
+        )}
+      </div>
+      {(recording || error) && (
+        <p className={`zs-mouse-trigger-note${error ? ' is-warn' : ''}`} role="status">
+          {error && <AlertTriangle size={13} strokeWidth={1.9} aria-hidden />}
+          <span>{error ?? 'Press the button you want, anywhere in this window.'}</span>
+        </p>
       )}
     </div>
   );

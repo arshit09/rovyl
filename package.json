@@ -48,6 +48,7 @@
     "test:keyboard-nav": "node scripts/keyboard-nav-smoke.mjs",
     "test:number-launch": "node scripts/number-launch-smoke.mjs",
     "test:back-key": "node scripts/back-key-smoke.mjs",
+    "test:mouse-trigger": "node scripts/mouse-trigger-smoke.mjs",
     "test:workspace-key": "node scripts/workspace-key-smoke.mjs",
     "test:i18n": "node scripts/i18n-smoke.mjs",
     "test:select-menu": "node scripts/select-menu-smoke.mjs",

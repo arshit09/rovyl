@@ -193,12 +193,16 @@ const scheduleLogFlush = () => {
 };
 
 /**
- * Mouse buttons accepted as a trigger. Left (0x01) and right (0x02) are deliberately out: watching
- * them globally would collide with the primary click and the context menu of the whole system. The
- * side buttons (X1/X2) are free in the overwhelming majority of applications.
+ * The trigger binding, parsed by the grammar `backend/mouse-trigger.cjs` shares with the renderer:
+ * a button plus the modifiers held with it. Left and right are accepted here — the parser refuses
+ * them BARE, so watching one can never cost the system its primary click or its context menu.
  */
-const MOUSE_TRIGGER_VK = { middle: 0x04, x1: 0x05, x2: 0x06 };
-const MOUSE_TRIGGER_BUTTONS = Object.keys(MOUSE_TRIGGER_VK);
+const {
+  DEFAULT_MOUSE_TRIGGER,
+  parseMouseTrigger,
+  normalizeMouseTrigger,
+  mouseTriggerAllowsHold,
+} = require("./mouse-trigger.cjs");
 
 /**
  * Parse a shortcut string to detect if it contains a mouse button trigger.
@@ -1295,6 +1299,18 @@ let isAppQuitting = false;
  * The function lives inside `app.whenReady`; this reference is how `will-quit` reaches it.
  */
 let stopMouseHookForShutdown = () => {};
+/**
+ * The trigger is off for as long as Settings is asking which button to bind to.
+ *
+ * It has to be: the hook SWALLOWS the bound button system-wide, so with it armed the recorder
+ * could never be shown the button it is about to replace — pressing the wheel button over the
+ * recorder would open the wheel instead of being recorded. Same shape as the keyboard side's
+ * `pauseGlobalShortcut`, and the same guarantee: it is one flag, so the resume puts the trigger
+ * back to whatever the config says rather than to whatever it happened to be.
+ */
+let mouseTriggerRecordingPaused = false;
+/** One teardown guard per renderer, so a session of repeated recordings does not stack listeners. */
+const mouseTriggerResumeGuards = new WeakSet();
 let triggerRadialShortcut = () => {};
 let releaseRadialShortcut = () => {};
 let onNativeRecordMouse = null;
@@ -2749,12 +2765,16 @@ function setRadialMouseBlocking(bounds, monitorBounds) {
  * button back to the window underneath while the press is still going. They travel in the command
  * instead of being written in both languages — main is what owns the numbers, as it already does
  * with `slop`.
+ *
+ * `modMask` is the modifiers the binding asks for (Ctrl 1, Alt 2, Shift 4, Win 8). Zero means the
+ * button alone. With one set, a press without those modifiers is not ours and reaches the window
+ * underneath untouched — which is what makes left and right bindable at all.
  */
-function setRadialTriggerCapture(virtualKey, mode, slop, clickHoldMs, clickDragPx) {
+function setRadialTriggerCapture(virtualKey, mode, slop, clickHoldMs, clickDragPx, modMask) {
   if (process.platform !== "win32") return;
   ensureRadialMouseBlocker();
   writeRadialMouseBlocker(
-    `TRIGGER ${virtualKey} ${mode} ${slop} ${clickHoldMs} ${clickDragPx}`,
+    `TRIGGER ${virtualKey} ${mode} ${slop} ${clickHoldMs} ${clickDragPx} ${modMask || 0}`,
   );
 }
 
@@ -3775,8 +3795,9 @@ app.whenReady().then(async () => {
     if (ui.mouseTriggerMode === "click" || ui.mouseTriggerMode === "hold") {
       currentSettings.mouseTriggerMode = ui.mouseTriggerMode;
     }
-    if (MOUSE_TRIGGER_BUTTONS.includes(ui.mouseTriggerButton)) {
-      currentSettings.mouseTriggerButton = ui.mouseTriggerButton;
+    const uiTriggerButton = normalizeMouseTrigger(ui.mouseTriggerButton);
+    if (uiTriggerButton) {
+      currentSettings.mouseTriggerButton = uiTriggerButton;
     }
     if (typeof ui.openAtLogin === "boolean") {
       currentSettings.openAtLogin = ui.openAtLogin;
@@ -3804,9 +3825,8 @@ app.whenReady().then(async () => {
         enableMouseTrigger: currentSettings.enableMouseTrigger !== false,
         mouseTriggerMode:
           currentSettings.mouseTriggerMode === "hold" ? "hold" : "click",
-        mouseTriggerButton: MOUSE_TRIGGER_BUTTONS.includes(currentSettings.mouseTriggerButton)
-          ? currentSettings.mouseTriggerButton
-          : "middle",
+        mouseTriggerButton:
+          normalizeMouseTrigger(currentSettings.mouseTriggerButton) || DEFAULT_MOUSE_TRIGGER,
         openAtLogin: !!currentSettings.openAtLogin,
       };
       fs.writeFileSync(settingsPath, JSON.stringify(slim, null, 2));
@@ -3914,9 +3934,8 @@ app.whenReady().then(async () => {
       currentSettings.mouseTriggerMode === "hold" ? "hold" : "click",
     shortcutTriggerMode:
       currentSettings.shortcutTriggerMode === "hold" ? "hold" : "toggle",
-    mouseTriggerButton: MOUSE_TRIGGER_BUTTONS.includes(currentSettings.mouseTriggerButton)
-      ? currentSettings.mouseTriggerButton
-      : "middle",
+    mouseTriggerButton:
+      normalizeMouseTrigger(currentSettings.mouseTriggerButton) || DEFAULT_MOUSE_TRIGGER,
     performanceMode: false,
   };
   try {
@@ -3935,8 +3954,9 @@ app.whenReady().then(async () => {
       if (fc.shortcutTriggerMode === "click" || fc.shortcutTriggerMode === "hold" || fc.shortcutTriggerMode === "toggle") {
         cachedRadialFlags.shortcutTriggerMode = fc.shortcutTriggerMode;
       }
-      if (MOUSE_TRIGGER_BUTTONS.includes(fc.mouseTriggerButton)) {
-        cachedRadialFlags.mouseTriggerButton = fc.mouseTriggerButton;
+      const fileTriggerButton = normalizeMouseTrigger(fc.mouseTriggerButton);
+      if (fileTriggerButton) {
+        cachedRadialFlags.mouseTriggerButton = fileTriggerButton;
       }
       /**
        * Seeded from disk, not awaited from the renderer. The global shortcut is registered before
@@ -4206,8 +4226,9 @@ app.whenReady().then(async () => {
     if (payload.mouseTriggerMode === "click" || payload.mouseTriggerMode === "hold") {
       cachedRadialFlags.mouseTriggerMode = payload.mouseTriggerMode;
     }
-    if (MOUSE_TRIGGER_BUTTONS.includes(payload.mouseTriggerButton)) {
-      cachedRadialFlags.mouseTriggerButton = payload.mouseTriggerButton;
+    const payloadTriggerButton = normalizeMouseTrigger(payload.mouseTriggerButton);
+    if (payloadTriggerButton) {
+      cachedRadialFlags.mouseTriggerButton = payloadTriggerButton;
     }
     applyRadialMonitorSetting(payload.radialMonitor);
     applyRadialPlacementSetting(payload.radialPlacement);
@@ -4227,8 +4248,9 @@ app.whenReady().then(async () => {
       if (ui.mouseTriggerMode === "click" || ui.mouseTriggerMode === "hold") {
         cachedRadialFlags.mouseTriggerMode = ui.mouseTriggerMode;
       }
-      if (MOUSE_TRIGGER_BUTTONS.includes(ui.mouseTriggerButton)) {
-        cachedRadialFlags.mouseTriggerButton = ui.mouseTriggerButton;
+      const uiTriggerButton = normalizeMouseTrigger(ui.mouseTriggerButton);
+      if (uiTriggerButton) {
+        cachedRadialFlags.mouseTriggerButton = uiTriggerButton;
       }
       /**
        * Belt and braces with `set-radial-viewport`: that effect only fires on the keys it depends
@@ -5516,8 +5538,9 @@ app.whenReady().then(async () => {
     if (settings.shortcutTriggerMode === "click" || settings.shortcutTriggerMode === "hold" || settings.shortcutTriggerMode === "toggle") {
       patch.shortcutTriggerMode = settings.shortcutTriggerMode;
     }
-    if (MOUSE_TRIGGER_BUTTONS.includes(settings.mouseTriggerButton)) {
-      patch.mouseTriggerButton = settings.mouseTriggerButton;
+    const settingsTriggerButton = normalizeMouseTrigger(settings.mouseTriggerButton);
+    if (settingsTriggerButton) {
+      patch.mouseTriggerButton = settingsTriggerButton;
     }
     if (typeof settings.openAtLogin === "boolean") patch.openAtLogin = settings.openAtLogin;
     if (Array.isArray(settings.workspaces)) patch.workspaces = settings.workspaces;
@@ -5737,6 +5760,41 @@ app.whenReady().then(async () => {
   ipcMain.on("stop-shortcut-recording", () => {
     diagLog("[Shortcuts] Stopping global recording session.");
     stopShortcutRecording();
+  });
+
+  /**
+   * Settings is about to record a mouse button, so the trigger lets go of the one it holds.
+   *
+   * The recording itself happens in the renderer — the settings window is what the hand is over,
+   * and a DOM `mousedown` names every button Windows reports, modifiers included. All main has to
+   * do is stop eating the one button that would otherwise never arrive.
+   */
+  ipcMain.on("pause-mouse-trigger", (event) => {
+    if (mouseTriggerRecordingPaused) return;
+    mouseTriggerRecordingPaused = true;
+    diagLog("[MouseHook] Trigger released for the settings recorder.");
+    /**
+     * The resume normally comes from the recorder's own cleanup. A renderer that is reloaded or
+     * torn down mid-recording never sends it, and the cost of that is a mouse trigger that is
+     * silently off until the next restart — so the window going away is a resume too.
+     */
+    if (!mouseTriggerResumeGuards.has(event.sender)) {
+      mouseTriggerResumeGuards.add(event.sender);
+      event.sender.once("destroyed", () => {
+        if (!mouseTriggerRecordingPaused) return;
+        mouseTriggerRecordingPaused = false;
+        diagLog("[MouseHook] Trigger re-armed: the recorder's window went away.");
+        syncMouseHookState();
+      });
+    }
+    syncMouseHookState();
+  });
+
+  ipcMain.on("resume-mouse-trigger", () => {
+    if (!mouseTriggerRecordingPaused) return;
+    mouseTriggerRecordingPaused = false;
+    diagLog("[MouseHook] Trigger re-armed after recording.");
+    syncMouseHookState();
   });
 
   /** Verify Google ID token (Sign in with Google / zenithos.online auth page). */
@@ -6437,10 +6495,21 @@ app.whenReady().then(async () => {
     if (mouseHook) return;
     activeMouseHookButton = cachedRadialFlags.mouseTriggerButton;
     activeMouseHookMode = cachedRadialFlags.mouseTriggerMode;
-    const virtualKey = MOUSE_TRIGGER_VK[activeMouseHookButton] ?? MOUSE_TRIGGER_VK.middle;
-    const mode = cachedRadialFlags.mouseTriggerMode === "click" ? "click" : "hold";
+    /** A binding the parser refuses is a binding the hook must not arm: fall back to the default. */
+    const binding =
+      parseMouseTrigger(activeMouseHookButton) || parseMouseTrigger(DEFAULT_MOUSE_TRIGGER);
+    /**
+     * Left and right are click-only, and Settings hides the choice for them. The coercion is here
+     * as well because a config can be hand edited, or carry a `hold` left behind by the button it
+     * was set for — and arming hold on the primary button means holding it down for the length of
+     * every gesture, which the rest of Windows reads as a drag.
+     */
+    const mode =
+      mouseTriggerAllowsHold(binding.token) && cachedRadialFlags.mouseTriggerMode === "hold"
+        ? "hold"
+        : "click";
     diagLog(
-      `Mouse trigger captured by the hook (${activeMouseHookButton}, ${mode}, slop ${TRIGGER_PASSTHROUGH_SLOP_PX}px)`,
+      `Mouse trigger captured by the hook (${binding.token}, ${mode}, slop ${TRIGGER_PASSTHROUGH_SLOP_PX}px)`,
     );
     /** "Active" marker: there is no process of its own any more, but the rest of the code tests the truth of this. */
     mouseHook = { active: true };
@@ -6448,11 +6517,12 @@ app.whenReady().then(async () => {
       if (handleTriggerData) void handleTriggerData(text);
     };
     setRadialTriggerCapture(
-      virtualKey,
+      binding.vk,
       mode,
       TRIGGER_PASSTHROUGH_SLOP_PX,
       MMB_CLICK_MAX_MS,
       MMB_CLICK_DRAG_PX,
+      binding.modMask,
     );
 
     handleTriggerData = async (data) => {
@@ -6636,7 +6706,7 @@ app.whenReady().then(async () => {
      * hook — every mouse event in the system goes through it, serialized. A 15 ms watchdog that
      * called `Process.GetProcessById` cost 12 ms per tick and stuttered the whole screen.
      */
-    const wantHook = cachedRadialFlags.enableMouseTrigger;
+    const wantHook = cachedRadialFlags.enableMouseTrigger && !mouseTriggerRecordingPaused;
     /** Changing button requires restarting the probe: the VK is passed at process startup. */
     /** Button OR mode: both travel in the TRIGGER command, so either one requires re-arming the capture. */
     if (

@@ -1,6 +1,7 @@
 import React from 'react';
 import { Keyboard, Mouse, SquareStack, Target } from 'lucide-react';
 import type { UIConfig } from '../types';
+import { mouseTriggerPhrase } from '../constants/mouseTrigger';
 
 /**
  * What a new user cannot work out by looking, said once.
@@ -18,18 +19,13 @@ import type { UIConfig } from '../types';
  * the user does not have is worse than none: it teaches them the wrong gesture on their first try.
  */
 
-const MOUSE_BUTTON_NAMES: Record<string, string> = {
-  middle: 'the mouse wheel button',
-  x1: 'the back side-button',
-  x2: 'the forward side-button',
-};
-
 export const FirstRun: React.FC<{
   config: UIConfig;
   onDismiss: () => void;
 }> = ({ config, onDismiss }) => {
   const shortcut = (config.globalShortcut || 'Alt+Z').split('+').filter(Boolean);
-  const mouseButton = MOUSE_BUTTON_NAMES[config.mouseTriggerButton ?? 'middle'] ?? 'the mouse wheel button';
+  /** Whatever is bound, named the way the recorder named it — modifiers and all. */
+  const mouseButton = mouseTriggerPhrase(config.mouseTriggerButton);
   const byHold = config.mouseTriggerMode === 'hold';
   /** Both triggers can be turned off independently now, so neither point is guaranteed a place. */
   const byKeyboard = config.enableKeyboardTrigger !== false;

@@ -246,6 +246,13 @@ contextBridge.exposeInMainWorld("electron", {
   probeShortcut: (accelerator) => ipcRenderer.invoke("probe-shortcut", accelerator),
   startShortcutRecording: () => ipcRenderer.send("start-shortcut-recording"),
   stopShortcutRecording: () => ipcRenderer.send("stop-shortcut-recording"),
+  /**
+   * The mouse trigger's recorder reads the button in the renderer, so all it needs of main is that
+   * the global hook stop swallowing the button currently bound — otherwise the one button the user
+   * is most likely to press is the one that can never be recorded.
+   */
+  pauseMouseTrigger: () => ipcRenderer.send("pause-mouse-trigger"),
+  resumeMouseTrigger: () => ipcRenderer.send("resume-mouse-trigger"),
   onShortcutRecorded: (callback) => {
     const subscription = (event, shortcut) => callback(shortcut);
     ipcRenderer.on("shortcut-recorded", subscription);
