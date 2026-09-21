@@ -952,8 +952,8 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
          * keyboard side looking like the thing you could not turn off. Two symmetrical switches
          * say the real shape: two independent triggers, either of which can be off.
          *
-         * The trigger's own rows are the ones that collapse. Position and Hands-free below are
-         * about the wheel once it is open, however it got there, so they stay put.
+         * The trigger's own rows are the ones that collapse. Position below is about the wheel
+         * once it is open, however it got there, so it stays put.
          */
         {
           key: 'keyboard', configKey: 'enableKeyboardTrigger', group: 'Keyboard',
@@ -1074,114 +1074,6 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
         range('threshold', 'Position', 'Activation zone', 'Cursor distance required to confirm a target.',
           config.activationThreshold, 20, 120, (value) => update('activationThreshold', value), (value) => `${Math.round(value)} px`,
           1, 'activationThreshold'),
-        {
-          key: 'instant', configKey: 'radialInstantActivate', group: 'Hands-free', title: 'Launch without clicking',
-          /** The way OUT belongs in the description: with the pointer hidden, it is not guessable. */
-          description:
-            'Hides the pointer and picks by direction — move toward a target and it opens by itself. Escape closes the wheel without opening anything.',
-          /**
-           * A switch, not a segmented control. Everything binary in this panel is `bool`; a
-           * segmented control is always a choice between named pairs (Picker/Keys, Click/Hold,
-           * Direction/Pointer) and none of them has an "Off". Here the two sides are not a pair:
-           * with this on, clicking goes on working exactly as before, so what exists is the absence
-           * of a feature — which is precisely what the switch says.
-           *
-           * It lives in Activation and not in Appearance: this decides HOW the wheel is driven and
-           * run — it hides the pointer and trades aiming by position for aiming by direction. None
-           * of that is looks, and beside the trigger is where someone goes looking for it.
-           *
-           * Comparing against `'dwell'` also coerces `'swipe'`, reserved in the type and not implemented.
-           */
-          kind: 'bool',
-          enabled: config.radialInstantActivate === 'dwell',
-          onToggle: () =>
-            update(
-              'radialInstantActivate',
-              config.radialInstantActivate === 'dwell' ? 'off' : 'dwell',
-            ),
-        },
-        /**
-         * The two tunings only exist while the gesture does. Leaving them visible with it off is
-         * offering controls that control nothing — and sensitivity, alone in the list, does not
-         * say what it is sensitivity to.
-         */
-        ...(config.radialInstantActivate === 'dwell'
-          ? [
-              {
-                key: 'instantSensitivity',
-                configKey: 'radialInstantSensitivity' as const,
-                group: 'Hands-free',
-                title: 'Direction sensitivity',
-                description:
-                  'How far your hand must travel before that direction is chosen. High picks on the smallest movement.',
-                kind: 'segmented' as const,
-                current: clampDirectionSensitivity(config.radialInstantSensitivity),
-                choices: [
-                  { value: 'low', label: 'Low' },
-                  { value: 'medium', label: 'Medium' },
-                  { value: 'high', label: 'High' },
-                ],
-                onChange: (value: number | string) =>
-                  update('radialInstantSensitivity', value as UIConfig['radialInstantSensitivity']),
-              },
-              range('dwellMs', 'Hands-free', 'Hover time',
-                'How long a target must stay aimed before it opens. Drag to zero and the direction opens the moment it commits.',
-                clampDwellMs(config.radialInstantDwellMs), DWELL_MS_MIN, DWELL_MS_MAX,
-                (value) => update('radialInstantDwellMs', value),
-                /**
-                 * "0 ms" would read as one number among others — and what zero does is not wait
-                 * less, it is to have no wait at all. The word says the behavior; the rest of the
-                 * scale goes on saying the time.
-                 */
-                (value) => (Math.round(value) === 0 ? 'Instant' : `${Math.round(value)} ms`),
-                DWELL_MS_STEP, 'radialInstantDwellMs'),
-            ]
-          : []),
-        {
-          key: 'numberLaunch', configKey: 'radialNumberLaunch', group: 'Number keys',
-          title: 'Quick launch with number keys',
-          /**
-           * Three things have to be here and nowhere else: that there is no Enter (it is the whole
-           * point, and every other keyboard path on the wheel needs one), that the count follows
-           * the wheel rather than any list in this panel, and what it takes away. The workspace
-           * keys also own 1–9 by default, and a feature that quietly disables another one is a bug
-           * report waiting to be filed.
-           */
-          description: numberLaunchOn
-            ? 'Press 1–9 to run the shortcut in that position — no Enter. The digits are the wheel’s now, so a workspace still on its default number key cannot be reached; give it a letter instead.'
-            : 'Press 1–9 to run the shortcut in that position, counting clockwise from the top — no Enter, no aiming. It takes the number keys away from workspaces still using them, and turns on the key that steps back out of a folder.',
-          kind: 'bool', enabled: numberLaunchOn,
-          onToggle: () => update('radialNumberLaunch', !numberLaunchOn),
-        },
-        /** Only while there are numbers to show — same rule as the hands-free tunings above. */
-        ...(numberLaunchOn
-          ? ([
-              {
-                key: 'numberLabels', configKey: 'radialNumberLabels' as const, group: 'Number keys',
-                title: 'Show numbers on the wheel',
-                description:
-                  'Draws each position’s digit on its icon. Turn it off once the wheel is in your hands — the keys go on working.',
-                kind: 'bool', enabled: config.radialNumberLabels !== false,
-                onToggle: () =>
-                  update('radialNumberLabels', config.radialNumberLabels === false),
-              },
-              {
-                key: 'backKey', configKey: 'radialBackKey' as const, group: 'Number keys',
-                title: 'Key to leave a folder',
-                /**
-                 * Where it does NOT work is the whole reason a plain letter is safe to bind, so it
-                 * is the sentence the row leads with. Someone who reads only the title would
-                 * otherwise try it on the root wheel, watch it type into the filter, and file it
-                 * as broken.
-                 */
-                description: backKey
-                  ? `Press ${backKey} inside a folder to step back out, the same as clicking the hub. At the top level it stays an ordinary letter, so searching is unaffected.`
-                  : 'No key assigned. The hub still goes back when clicked, and Backspace still works.',
-                kind: 'open' as const, value: backKey || 'Off',
-                onOpen: () => setEditor({ kind: 'backKey' }),
-              },
-            ] as SettingItem[])
-          : []),
       ],
       appearance: [
         {
@@ -1485,6 +1377,114 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
             onOpen: () => setEditor({ kind: 'blocked' as const }),
           },
         ] : []),
+        {
+          key: 'instant', configKey: 'radialInstantActivate', group: 'Hands-free', title: 'Launch without clicking',
+          /** The way OUT belongs in the description: with the pointer hidden, it is not guessable. */
+          description:
+            'Hides the pointer and picks by direction — move toward a target and it opens by itself. Escape closes the wheel without opening anything.',
+          /**
+           * A switch, not a segmented control. Everything binary in this panel is `bool`; a
+           * segmented control is always a choice between named pairs (Picker/Keys, Click/Hold,
+           * Direction/Pointer) and none of them has an "Off". Here the two sides are not a pair:
+           * with this on, clicking goes on working exactly as before, so what exists is the absence
+           * of a feature — which is precisely what the switch says.
+           *
+           * It lives in Advanced and not in Appearance: this decides HOW the wheel is driven and
+           * run — it hides the pointer and trades aiming by position for aiming by direction. None
+           * of that is looks, and it sits beside the other switch that rewires the open wheel.
+           *
+           * Comparing against `'dwell'` also coerces `'swipe'`, reserved in the type and not implemented.
+           */
+          kind: 'bool',
+          enabled: config.radialInstantActivate === 'dwell',
+          onToggle: () =>
+            update(
+              'radialInstantActivate',
+              config.radialInstantActivate === 'dwell' ? 'off' : 'dwell',
+            ),
+        },
+        /**
+         * The two tunings only exist while the gesture does. Leaving them visible with it off is
+         * offering controls that control nothing — and sensitivity, alone in the list, does not
+         * say what it is sensitivity to.
+         */
+        ...(config.radialInstantActivate === 'dwell'
+          ? [
+              {
+                key: 'instantSensitivity',
+                configKey: 'radialInstantSensitivity' as const,
+                group: 'Hands-free',
+                title: 'Direction sensitivity',
+                description:
+                  'How far your hand must travel before that direction is chosen. High picks on the smallest movement.',
+                kind: 'segmented' as const,
+                current: clampDirectionSensitivity(config.radialInstantSensitivity),
+                choices: [
+                  { value: 'low', label: 'Low' },
+                  { value: 'medium', label: 'Medium' },
+                  { value: 'high', label: 'High' },
+                ],
+                onChange: (value: number | string) =>
+                  update('radialInstantSensitivity', value as UIConfig['radialInstantSensitivity']),
+              },
+              range('dwellMs', 'Hands-free', 'Hover time',
+                'How long a target must stay aimed before it opens. Drag to zero and the direction opens the moment it commits.',
+                clampDwellMs(config.radialInstantDwellMs), DWELL_MS_MIN, DWELL_MS_MAX,
+                (value) => update('radialInstantDwellMs', value),
+                /**
+                 * "0 ms" would read as one number among others — and what zero does is not wait
+                 * less, it is to have no wait at all. The word says the behavior; the rest of the
+                 * scale goes on saying the time.
+                 */
+                (value) => (Math.round(value) === 0 ? 'Instant' : `${Math.round(value)} ms`),
+                DWELL_MS_STEP, 'radialInstantDwellMs'),
+            ]
+          : []),
+        {
+          key: 'numberLaunch', configKey: 'radialNumberLaunch', group: 'Number keys',
+          title: 'Quick launch with number keys',
+          /**
+           * Three things have to be here and nowhere else: that there is no Enter (it is the whole
+           * point, and every other keyboard path on the wheel needs one), that the count follows
+           * the wheel rather than any list in this panel, and what it takes away. The workspace
+           * keys also own 1–9 by default, and a feature that quietly disables another one is a bug
+           * report waiting to be filed.
+           */
+          description: numberLaunchOn
+            ? 'Press 1–9 to run the shortcut in that position — no Enter. The digits are the wheel’s now, so a workspace still on its default number key cannot be reached; give it a letter instead.'
+            : 'Press 1–9 to run the shortcut in that position, counting clockwise from the top — no Enter, no aiming. It takes the number keys away from workspaces still using them, and turns on the key that steps back out of a folder.',
+          kind: 'bool', enabled: numberLaunchOn,
+          onToggle: () => update('radialNumberLaunch', !numberLaunchOn),
+        },
+        /** Only while there are numbers to show: a label switch and a back key with nothing numbered are controls that control nothing. */
+        ...(numberLaunchOn
+          ? ([
+              {
+                key: 'numberLabels', configKey: 'radialNumberLabels' as const, group: 'Number keys',
+                title: 'Show numbers on the wheel',
+                description:
+                  'Draws each position’s digit on its icon. Turn it off once the wheel is in your hands — the keys go on working.',
+                kind: 'bool', enabled: config.radialNumberLabels !== false,
+                onToggle: () =>
+                  update('radialNumberLabels', config.radialNumberLabels === false),
+              },
+              {
+                key: 'backKey', configKey: 'radialBackKey' as const, group: 'Number keys',
+                title: 'Key to leave a folder',
+                /**
+                 * Where it does NOT work is the whole reason a plain letter is safe to bind, so it
+                 * is the sentence the row leads with. Someone who reads only the title would
+                 * otherwise try it on the root wheel, watch it type into the filter, and file it
+                 * as broken.
+                 */
+                description: backKey
+                  ? `Press ${backKey} inside a folder to step back out, the same as clicking the hub. At the top level it stays an ordinary letter, so searching is unaffected.`
+                  : 'No key assigned. The hub still goes back when clicked, and Backspace still works.',
+                kind: 'open' as const, value: backKey || 'Off',
+                onOpen: () => setEditor({ kind: 'backKey' }),
+              },
+            ] as SettingItem[])
+          : []),
         {
           key: 'settingsCorner', configKey: 'showSettingsCorner', group: 'Settings shortcut',
           title: 'Settings button on the wheel',
