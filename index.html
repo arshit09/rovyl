@@ -261,15 +261,12 @@
       ::-webkit-scrollbar-thumb {
         background: rgba(255, 255, 255, 0.15);
         border-radius: 100px;
-        transition: background var(--transition-base);
       }
 
-      ::-webkit-scrollbar-thumb:hover {
-        background: rgba(255, 255, 255, 0.3);
-      }
-
-      ::-webkit-scrollbar-thumb:active {
-        background: rgba(255, 255, 255, 0.42);
+      /* Chromium's own corner is a light grey square, which on these surfaces reads
+         as a lit block in the bottom corner. Nothing is drawn where two bars meet. */
+      ::-webkit-scrollbar-corner {
+        background: transparent;
       }
 
       /* ============================================
