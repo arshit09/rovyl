@@ -1163,37 +1163,53 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
           key: 'aim', configKey: 'radialSelectionMode', group: 'Wheel', title: 'Targeting',
           /**
            * With launch without clicking on there is no pointer on screen, so "aim with the
-           * pointer" is not an option that can exist — the wheel always falls back to sectors by
-           * direction. Saying so here is the minimum: a segmented control that still moves and
-           * changes nothing is worse than a disabled one.
+           * pointer" is not an option that can exist — the wheel falls back to shares of the plane
+           * whatever this says. Saying so here is the minimum: a segmented control that still moves
+           * and changes nothing is worse than a disabled one.
            */
           description:
-            config.radialSelectionMode === 'area'
-              ? 'The wheel is cut into equal wedges — one per shortcut — and the one you point at fills up. Click anywhere inside it.'
-              : config.radialInstantActivate === 'dwell'
-                ? 'Launch without clicking is on, so the wheel always aims by direction — each item owns an equal slice of the screen.'
-                : config.radialSelectionMode === 'cursor'
-                  ? 'Only the icon under the pointer highlights. Release away from every icon to cancel.'
-                  : 'Aim by direction: the slice you point toward highlights from anywhere on screen.',
+            config.radialSelectionMode === 'cursor'
+              ? config.radialInstantActivate === 'dwell'
+                ? 'Launch without clicking hides the pointer and aims by direction, so while it is on every shortcut owns an equal share of the screen regardless of this.'
+                : 'Only the icon under the pointer highlights. Release away from every icon to cancel.'
+              : config.radialAreaWedges === true
+                ? 'The wheel is cut into equal wedges — one per shortcut — and the one you point at fills up. Click anywhere inside it.'
+                : 'Every shortcut owns an equal share of the screen: point toward one and it highlights from anywhere. Click anywhere in its share.',
           kind: 'segmented',
           /**
-           * Area is Direction with the boundaries drawn — same maths, same muscle memory — so the
-           * two sit next to each other and Pointer, which is the one that actually targets
-           * something else, sits at the end.
+           * Two choices, because there were never three. "Direction" was this same targeting with
+           * the wedges left unpainted — the same maths, the same muscle memory, a different
+           * picture — so it stopped being a way of aiming and became the switch below it.
            */
           choices: [
-            { value: 'angle', label: 'Direction' },
             { value: 'area', label: 'Area' },
             { value: 'cursor', label: 'Pointer' },
           ],
-          current:
-            config.radialSelectionMode === 'cursor'
-              ? 'cursor'
-              : config.radialSelectionMode === 'area'
-                ? 'area'
-                : 'angle',
+          current: config.radialSelectionMode === 'cursor' ? 'cursor' : 'area',
           onChange: (value) => update('radialSelectionMode', value as UIConfig['radialSelectionMode']),
         },
+        /**
+         * Only under Area, and only there: Pointer targets the icon rather than the share, so a
+         * wedge drawn for it would promise an area that launches nothing. Hidden rather than
+         * disabled, for the same reason the hands-free tunings are — a control that controls
+         * nothing is worse company for the mode above it than no control at all.
+         */
+        ...(config.radialSelectionMode !== 'cursor'
+          ? [
+              {
+                key: 'areaWedges',
+                configKey: 'radialAreaWedges' as const,
+                group: 'Wheel',
+                title: 'Visible wedges',
+                description:
+                  'Draws the seams between the shares and fills the one you are aiming at with the hover color. Off, the aim is identical and only the icon lights up.',
+                keywords: 'wedge sector slice segment pie gradient seam boundary divider highlight area paint show direction',
+                kind: 'bool' as const,
+                enabled: config.radialAreaWedges === true,
+                onToggle: () => update('radialAreaWedges', config.radialAreaWedges !== true),
+              },
+            ]
+          : []),
         {
           key: 'labels', configKey: 'alwaysShowAppLabels', group: 'Wheel', title: 'Persistent labels',
           description: 'Keep every target name visible.',

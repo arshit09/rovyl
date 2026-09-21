@@ -1797,7 +1797,11 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
   aimGateRef.current = aimGate;
 
   /**
-   * Area targeting: the same aim as by direction, with the division painted (see `RadialSectors`).
+   * Area targeting, drawn: the same aim, with the division painted (see `RadialSectors`).
+   *
+   * Two conditions and not one. The mode says the target is a share of the plane; the switch says
+   * whether that share is SHOWN. With it off the wheel aims identically and paints nothing, which
+   * is what targeting by direction has always looked like and is still the default.
    *
    * It survives `radialInstantActivate: 'dwell'` rather than being replaced by it. That mode
    * already aims by direction, so the wedges describe it exactly — and with the pointer hidden
@@ -1805,7 +1809,7 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
    * whole thing this draws. Pointer targeting is the one mode it cannot mean: there the target is
    * the icon and not the sector, so a wedge would promise an area that does not launch anything.
    */
-  const areaMode = config.radialSelectionMode === 'area';
+  const areaMode = config.radialSelectionMode !== 'cursor' && config.radialAreaWedges === true;
 
   /**
    * Confirmation diagnostics. It lands in the persistence log (`rovyl-persistence.log`) and says,

@@ -105,16 +105,16 @@ try {
   check(() => {
     /** Silence up to the last count whose whole slice fits inside a wrist flick's ~15 degrees. */
     for (const count of [0, 1, 8, 12]) {
-      assert.equal(radialCrowding(count, "angle"), null, `${count} items should say nothing`);
+      assert.equal(radialCrowding(count, "area"), null, `${count} items should say nothing`);
     }
   });
-  check(() => assert.equal(radialCrowding(13, "angle").severity, "caution", "just over is a caution"));
-  check(() => assert.equal(radialCrowding(18, "angle").severity, "caution"));
-  check(() => assert.equal(radialCrowding(19, "angle").severity, "warning", "past 18 it is a guess"));
+  check(() => assert.equal(radialCrowding(13, "area").severity, "caution", "just over is a caution"));
+  check(() => assert.equal(radialCrowding(18, "area").severity, "caution"));
+  check(() => assert.equal(radialCrowding(19, "area").severity, "warning", "past 18 it is a guess"));
 
   check(() => {
     /** The number in the sentence must be the real slice, or the warning is worse than none. */
-    const m = radialCrowding(20, "angle").message;
+    const m = radialCrowding(20, "area").message;
     assert.ok(m.includes("18°"), m);
     /** No article before the number: 8, 11 and 18 are all reachable and all take "an". */
     assert.ok(!/\ba \d+°/.test(m), `article before a degree count: ${m}`);
@@ -130,13 +130,13 @@ try {
 
   check(() => {
     /** An unset mode is direction mode, which is what the wheel actually does by default. */
-    assert.equal(radialCrowding(20, undefined).message, radialCrowding(20, "angle").message);
+    assert.equal(radialCrowding(20, undefined).message, radialCrowding(20, "area").message);
   });
 
   check(() => {
     /** Both severities have to name the way out, or the note is only bad news. */
     for (const count of [13, 25]) {
-      assert.match(radialCrowding(count, "angle").message, /folder/i);
+      assert.match(radialCrowding(count, "area").message, /folder/i);
     }
   });
 

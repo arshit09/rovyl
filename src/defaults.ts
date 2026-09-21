@@ -369,7 +369,12 @@ export const DEFAULT_UI_CONFIG: UIConfig = {
   activeWorkspaceIndex: 0,
   workspaceSwitchMode: 'picker',
   appearanceTheme: 'black',
-  radialSelectionMode: 'angle',
+  radialSelectionMode: 'area',
+  /**
+   * The shares are aimed by but not drawn, which is the wheel every existing profile already has.
+   * Turning the wedges on is a deliberate choice in Appearance.
+   */
+  radialAreaWedges: false,
   /**
    * Off by default: with this on, resting the mouse over an icon LAUNCHES IT. Changing the
    * behaviour under someone already using the wheel would turn a neutral gesture (aiming) into a

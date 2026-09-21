@@ -304,7 +304,7 @@ export const WheelPreview: React.FC<{ config: UIConfig; apps: AppItem[] }> = ({ 
             from one that is broken. The geometry is the wheel's own — `annularSectorPath`, the same
             radii — so what is shown here is the division that will actually be drawn.
           */}
-          {config.radialSelectionMode === 'area' && sectorOuterRadius > sectorInnerRadius + 8 && (
+          {config.radialSelectionMode !== 'cursor' && config.radialAreaWedges === true && sectorOuterRadius > sectorInnerRadius + 8 && (
             <svg
               className="zs-wheel-sectors"
               width={sectorOuterRadius * 2}

@@ -110,6 +110,24 @@ export function normalizeStoredConfig(raw: unknown): UIConfig {
   }
 
   /**
+   * Targeting used to offer three choices — Direction, Area, Pointer — of which the first two
+   * aimed identically and disagreed only about whether the shares were drawn. Drawing is not a way
+   * of targeting, so there are two modes now and a switch beside them.
+   *
+   * Both halves have to be read off the STORED value, and neither may fall back to the default.
+   * 'angle' says the person never had the wedges and 'area' says they chose them; writing the flag
+   * from that, once, is the difference between an update that changes nothing on screen and one
+   * that either takes the wedges away from everyone who picked them or hands them to everyone who
+   * did not.
+   */
+  if (!('radialAreaWedges' in loaded)) {
+    config = { ...config, radialAreaWedges: (loaded as any).radialSelectionMode === 'area' };
+  }
+  if ((loaded as any).radialSelectionMode === 'angle') {
+    config = { ...config, radialSelectionMode: 'area' };
+  }
+
+  /**
    * Normalize, do not overwrite. A stored choice has to survive a reload — but only for a language
    * that actually has a table. `UIConfig['language']` still types four that do not (`fr`, `it`,
    * `ja`, `ko`), so a config carrying one still lands on English.

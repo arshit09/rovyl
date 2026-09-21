@@ -303,14 +303,29 @@ export interface UIConfig {
   appearanceTheme?: 'black' | 'white';
   /**
    * How the wheel decides the target.
-   * 'angle'  — direction from the center; the slice lights up even with the cursor far away (default).
+   * 'area'   — direction from the centre (default). The plane is cut into as many equal shares as
+   *            there are items, and the one pointed at is the target with the cursor anywhere
+   *            inside its share — including far outside the ring.
    * 'cursor' — only lights up when the pointer is right over the icon.
-   * 'area'   — the same maths as 'angle', with the division DRAWN: the wheel is cut into as many
-   *            equal wedges as there are items and the one being pointed at fills with a gradient.
-   *            Same targeting, so a config can move between the two without relearning the aim —
-   *            what changes is that the boundaries stop being something to infer.
+   *
+   * 'angle' was a third value and is gone. It aimed exactly as 'area' does and differed only in
+   * that the shares were not drawn — which is a question about what is painted, not about how the
+   * wheel targets, and is `radialAreaWedges` now. Configs carrying it are rewritten on read; see
+   * `normalizeStoredConfig`.
    */
-  radialSelectionMode?: 'angle' | 'cursor' | 'area';
+  radialSelectionMode?: 'cursor' | 'area';
+  /**
+   * Whether area targeting DRAWS the division it aims by.
+   *
+   * On: the seams are there from the moment the wheel opens and the share being aimed at fills
+   * with the hover colour, so where one target stops owning the pointer and the next begins stops
+   * being something the hand can only learn by being wrong about it.
+   *
+   * Off (default): the same aim, nothing painted — only the icon lights up. Off is the default
+   * because it is what the wheel has always looked like, and an update must not repaint the
+   * screen of somebody who asked for nothing.
+   */
+  radialAreaWedges?: boolean;
   /**
    * Launch without a click: holding the aim on a target for `radialInstantDwellMs` launches it.
    *
