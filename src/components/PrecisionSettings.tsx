@@ -5608,11 +5608,6 @@ function WorkspaceKeyRecorder({
           : `${current} is also the shortcut for ${standing.label}. Record another key for this workspace.`;
     }
 
-    const isDigit = current >= '0' && current <= '9';
-    if (isDigit && config.radialNumberLaunch === true) {
-      return `Launching by number owns the digits, so ${current} runs the ${current}th shortcut instead of coming here. Record a letter to reach this workspace while that is on.`;
-    }
-
     return null;
   })();
 
