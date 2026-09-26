@@ -47,7 +47,6 @@ backend/debug_*.json
 .claude/*
 !.claude/skills/
 !.claude/skills/**
-CLAUDE.md
 .cursor/
 .codex-video-review/
 .codex-video-review-current/
