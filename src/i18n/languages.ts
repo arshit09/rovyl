@@ -4,7 +4,7 @@
  * This is split from `translations.ts` on purpose, and the split is the whole performance story of
  * this feature. `App.tsx` has to validate the `language` it hydrates from disk on every start, and
  * `App.tsx` is the critical chunk — the JS the radial wheel waits on before it can paint. If it
- * imported the tables to do that, all seven locales would be in that chunk, which is exactly the
+ * imported the tables to do that, all eight locales would be in that chunk, which is exactly the
  * 167 kB mistake TODO §6.4 deleted.
  *
  * So the codes and their metadata live here — well under a kilobyte, safe anywhere — and the text
@@ -16,6 +16,7 @@ export const LANGUAGES = [
   { value: 'en', label: 'English', english: 'English', dir: 'ltr' },
   { value: 'es', label: 'Español', english: 'Spanish', dir: 'ltr' },
   { value: 'zh', label: '简体中文', english: 'Chinese (Simplified)', dir: 'ltr' },
+  { value: 'ja', label: '日本語', english: 'Japanese', dir: 'ltr' },
   { value: 'pt', label: 'Português', english: 'Portuguese', dir: 'ltr' },
   { value: 'ru', label: 'Русский', english: 'Russian', dir: 'ltr' },
   { value: 'de', label: 'Deutsch', english: 'German', dir: 'ltr' },
@@ -38,7 +39,7 @@ const LANGUAGE_CODES: ReadonlySet<string> = new Set(LANGUAGES.map((entry) => ent
 
 /**
  * A stored `config.language` is whatever some earlier build wrote there. `UIConfig['language']`
- * still names four locales that have no table (`fr`, `it`, `ja`, `ko`), older configs carry them,
+ * still names three locales that have no table (`fr`, `it`, `ko`), older configs carry them,
  * and a hand-edited file can say anything at all — so every read goes through here.
  */
 export function isSupportedLanguage(value: unknown): value is SupportedLanguage {
