@@ -226,6 +226,9 @@ export function resolveSettingsCorner(corner: UIConfig['settingsCorner']): Setti
 export const HUD_STATUS_HEIGHT = 46;
 
 export interface RadialSettingsCornerProps {
+  /** The wheel's pack supplies both — this component never reaches for the tables itself. */
+  openLabel: string;
+  openTitle: string;
   isOpen: boolean;
   corner: SettingsCorner;
   /**
@@ -253,6 +256,8 @@ export const RadialSettingsCorner: React.FC<RadialSettingsCornerProps> = ({
   isOpen,
   corner,
   dodgeBy = 0,
+  openLabel,
+  openTitle,
   onOpen,
 }) => {
   const isBottom = corner.startsWith('bottom');
@@ -279,8 +284,8 @@ export const RadialSettingsCorner: React.FC<RadialSettingsCornerProps> = ({
           ['--zn-dur' as string]: isOpen ? '260ms' : '140ms',
           ['--zn-dur-op' as string]: isOpen ? '200ms' : '120ms',
         }}
-        aria-label="Open Rovyl settings"
-        title="Rovyl settings"
+        aria-label={openLabel}
+        title={openTitle}
         tabIndex={-1}
         onMouseDown={swallow}
         onMouseUp={swallow}

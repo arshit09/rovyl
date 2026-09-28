@@ -3,6 +3,8 @@
  * and see semantically related icons, not only names that contain that substring.
  */
 
+import { englishTokensForJapanese, isJapaneseToken } from './iconPickerJapaneseKeywords';
+
 const WORK_OFFICE = [
   'Briefcase',
   'Laptop',
@@ -434,9 +436,17 @@ export function collectIconsForEnglishTokens(
   for (const raw of tokens) {
     const token = raw.toLowerCase().trim();
     if (!token) continue;
-    for (const [kw, icons] of resolvedMap) {
-      if (keywordMatchesSearchTerm(kw, token)) {
-        for (const icon of icons) out.add(icon);
+    /**
+     * A Japanese query is translated, not indexed. 仕事 is not a prefix of `work`, so the semantic
+     * index returned nothing for it at all — the icons were there, the bridge was not. Here the
+     * token becomes the English words it stands for and the index does exactly what it always did.
+     */
+    const candidates = isJapaneseToken(token) ? englishTokensForJapanese(token) : [token];
+    for (const candidate of candidates) {
+      for (const [kw, icons] of resolvedMap) {
+        if (keywordMatchesSearchTerm(kw, candidate)) {
+          for (const icon of icons) out.add(icon);
+        }
       }
     }
   }
