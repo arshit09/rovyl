@@ -4,6 +4,8 @@ import { RadialMenu } from './components/RadialMenu';
 import type { AppItem, Coordinates, UIConfig, Workspace } from './types';
 import { DEFAULT_UI_CONFIG, MINIMAL_MAIN_WORKSPACE_APPS } from './defaults';
 import { normalizeStoredConfig } from './configHydration';
+import { useWheelStrings } from './i18n/wheel/useWheelStrings';
+import { normalizeLanguage } from './i18n/languages';
 import { preloadIconsByName } from './iconMap';
 import { radialScrimNeedsFullBleed } from './utils/radialScrim';
 import { remapClientPoint } from './utils/radialDrag';
@@ -76,6 +78,24 @@ const findRootAncestorId = (items: AppItem[], id: string): string | undefined =>
 export default function RadialApp() {
   /* zenith-verify:radial-handshake-renderer — the wheel's half of the open handshake; see scripts/verify-radial-windowing.mjs */
   const [config, setConfig] = useState<UIConfig>(DEFAULT_UI_CONFIG);
+  /**
+   * Once, here, for the life of the process — never inside `RadialMenu`, which mounts and unmounts
+   * with every open and would restart the fetch each time. This window is created hidden at
+   * startup, so the pack has long resolved before the first gesture.
+   */
+  const strings = useWheelStrings(config.language);
+
+  /**
+   * Same reason as the settings window — Han unification: without `lang`, shared kanji come out in
+   * Chinese glyph forms. `dir` is the difference. It stays `ltr` for every language, Arabic
+   * included: this wheel is absolute geometry computed in pixels, and `dir="rtl"` on the document
+   * flips the inline axis under every logical property and mirrors the HUD. Arabic labels shape
+   * correctly inside an ltr paragraph on their own; an RTL WHEEL is a separate piece of work.
+   */
+  useEffect(() => {
+    document.documentElement.lang = normalizeLanguage(config.language);
+    document.documentElement.dir = 'ltr';
+  }, [config.language]);
   const configRef = useRef(config);
   configRef.current = config;
 
@@ -696,6 +716,7 @@ export default function RadialApp() {
         onClose={handleMenuClose}
         apps={radialApps}
         config={config}
+        strings={strings}
         triggerSource={triggerSource}
         windowOrigin={radialWindowOrigin}
         updateReady={updateReady}
