@@ -4,6 +4,8 @@ import { RadialMenu } from './components/RadialMenu';
 import type { AppItem, Coordinates, UIConfig, Workspace } from './types';
 import { DEFAULT_UI_CONFIG, MINIMAL_MAIN_WORKSPACE_APPS } from './defaults';
 import { normalizeStoredConfig } from './configHydration';
+import { useCatalog } from './hooks/useCatalog';
+import { buildAutoWorkspaces, withAutoWorkspaces } from './utils/autoWorkspaces';
 import { preloadIconsByName } from './iconMap';
 import { radialScrimNeedsFullBleed } from './utils/radialScrim';
 import { remapClientPoint } from './utils/radialDrag';
@@ -75,7 +77,15 @@ const findRootAncestorId = (items: AppItem[], id: string): string | undefined =>
 
 export default function RadialApp() {
   /* zenith-verify:radial-handshake-renderer — the wheel's half of the open handshake; see scripts/verify-radial-windowing.mjs */
-  const [config, setConfig] = useState<UIConfig>(DEFAULT_UI_CONFIG);
+  /** What the file says. The wheel draws `config`, which adds the virtual All apps / Games after it. */
+  const [storedConfig, setConfig] = useState<UIConfig>(DEFAULT_UI_CONFIG);
+  const storedConfigRef = useRef(storedConfig);
+  storedConfigRef.current = storedConfig;
+  const { entries: catalogEntries, icons: catalogIcons } = useCatalog(storedConfig.autoWorkspaces);
+  const config = useMemo(
+    () => withAutoWorkspaces(storedConfig, buildAutoWorkspaces(catalogEntries, storedConfig.autoWorkspaces, catalogIcons)),
+    [storedConfig, catalogEntries, catalogIcons],
+  );
   const configRef = useRef(config);
   configRef.current = config;
 
@@ -444,7 +454,8 @@ export default function RadialApp() {
     switchDebounceTimer.current = setTimeout(() => {
       const index = targetWorkspaceIndexRef.current;
       setConfig((prev) => ({ ...prev, activeWorkspaceIndex: index }));
-      window.electron?.radialWorkspaceChanged?.(index);
+      /** A virtual workspace is not in the file, so the writer has no index to save for it. */
+      if (index < (storedConfigRef.current.workspaces?.length ?? 0)) window.electron?.radialWorkspaceChanged?.(index);
       switchDebounceTimer.current = null;
     }, 80);
   }, []);

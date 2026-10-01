@@ -4,6 +4,13 @@
  */
 "use strict";
 
+/**
+ * Game stores list themselves under Games in their own `.desktop` files. They are programs you
+ * open, not games you play, so they stay in All apps.
+ */
+const LAUNCHERS = new Set(["steam", "steam-runtime", "lutris", "heroic", "heroic-games-launcher", "itch", "minigalaxy", "bottles"]);
+const baseName = (command) => String(command).split("/").pop();
+
 const quoteIfNeeded = (arg) => (/[\s"'\\]/.test(arg) ? `"${arg.replace(/(["\\])/g, "\\$1")}"` : arg);
 
 function listDesktopEntries(entries) {
@@ -18,7 +25,10 @@ function listDesktopEntries(entries) {
         command: [e.command, ...(Array.isArray(e.args) ? e.args : [])].map(quoteIfNeeded).join(" "),
         ...(e.icon ? { iconPath: String(e.icon) } : {}),
         categories,
-        kind: categories.includes("Game") ? "game" : "app",
+        kind:
+          categories.includes("Game") && !((!Array.isArray(e.args) || !e.args.length) && LAUNCHERS.has(baseName(e.command)))
+            ? "game"
+            : "app",
         source: "desktop",
       };
     });

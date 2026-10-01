@@ -15,6 +15,14 @@ test("desktop entries: games are marked, NoDisplay dropped, args kept", () => {
   assert.strictEqual(list[0].command, "steam steam://rungameid/620");
 });
 
+test("a game store's own entry stays an app, a game that merely uses it stays a game", () => {
+  const list = listDesktopEntries([
+    { id: "steam", name: "Steam", command: "/usr/bin/steam", args: [], categories: ["Network", "Game"] },
+    { id: "portal", name: "Portal 2", command: "steam", args: ["steam://rungameid/620"], categories: ["Game"] },
+  ]);
+  assert.deepStrictEqual(list.map((e) => e.kind), ["app", "game"]);
+});
+
 test("a pinned Steam game and its Steam entry are listed once, the desktop one kept", () => {
   const desktop = entry({ id: "desktop:portal", command: "steam steam://rungameid/620", kind: "game" });
   const steam = entry({ id: "steam:620", command: "steam steam://rungameid/620", kind: "game", source: "steam" });
