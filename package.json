@@ -21,6 +21,8 @@
     "start:dev": "node scripts/start-local-runtime.cjs",
     "start:runtime": "node scripts/dev-runtime.cjs",
     "dist": "npm run build && node scripts/run-electron-builder.mjs",
+    "build:linux": "node scripts/build-native-helper.cjs && tsc && vite build && node scripts/verify-radial-windowing.mjs && node scripts/verify-renderer-budget.mjs && node scripts/generate-linux-icons.mjs",
+    "dist:linux": "npm run build:linux && node scripts/run-electron-builder.mjs --linux",
     "test:win32-launch": "node --test backend/win32-launch.test.cjs",
     "test:persistence-shape": "node scripts/persistence-normalize-smoke.mjs",
     "test:icon-map": "node scripts/icon-map-smoke.mjs",
@@ -56,13 +58,16 @@
     "test:window-split": "node scripts/window-split-smoke.mjs",
     "test:trigger-gesture": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/trigger-gesture-smoke.ps1",
     "icons:tray": "node scripts/generate-tray-icons.mjs",
+    "icons:linux": "node scripts/generate-linux-icons.mjs",
     "verify:radial-windowing": "node scripts/verify-radial-windowing.mjs",
     "verify:renderer-budget": "node scripts/verify-renderer-budget.mjs",
     "release": "node scripts/release.mjs",
     "release:check": "node scripts/release.mjs --check",
-    "dist:store": "npm run build && node scripts/run-electron-builder.mjs --win appx --publish never"
+    "dist:store": "npm run build && node scripts/run-electron-builder.mjs --win appx --publish never",
+    "dist:arch": "npm run dist:linux && node scripts/build-arch-package.mjs",
+    "test:linux-apps": "node scripts/linux-apps-smoke.mjs"
   },
-  "_comment_dependencies": "Runtime only. electron-builder bundles the whole production closure into app.asar, so anything the main process does not require() belongs in devDependencies — Vite compiles the renderer's imports into dist/ and the packages themselves never ship.",
+  "_comment_dependencies": "Runtime only. electron-builder bundles the whole production closure into app.asar, so anything the main process does not require() belongs in devDependencies \u2014 Vite compiles the renderer's imports into dist/ and the packages themselves never ship.",
   "dependencies": {
     "electron-updater": "^6.8.9",
     "node-global-key-listener": "^0.1.1",
@@ -89,7 +94,7 @@
     "typescript": "^5.9.3",
     "vite": "^8.2.2"
   },
-  "_comment_overrides": "tar<=7.5.20 carries the tree's only critical advisory (hardlink path traversal) and reaches app.asar through app-builder-lib. Its one call site there packs tar.gz/xz/bz2 targets, which this project does not build — build.win.target is nsis. glob and rimraf are deliberately NOT overridden: glob>=9 makes @electron/asar's promisified crawl hang forever, and rimraf>=4 throws on load inside cacache.",
+  "_comment_overrides": "tar<=7.5.20 carries the tree's only critical advisory (hardlink path traversal) and reaches app.asar through app-builder-lib. Its one call site there packs tar.gz/xz/bz2 targets, which this project does not build \u2014 build.win.target is nsis. glob and rimraf are deliberately NOT overridden: glob>=9 makes @electron/asar's promisified crawl hang forever, and rimraf>=4 throws on load inside cacache.",
   "overrides": {
     "tar": "^7.5.22"
   },
@@ -122,6 +127,28 @@
     },
     "afterPack": "./scripts/after-pack-win-icon.cjs",
     "afterAllArtifactBuild": "./scripts/after-all-artifact-win-icon.cjs",
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "icon": "build/icons",
+      "category": "Utility",
+      "maintainer": "HenryCa <arshit09@users.noreply.github.com>",
+      "vendor": "HenryCa",
+      "synopsis": "Radial app launcher",
+      "description": "Rovyl is a radial launcher: a wheel of apps, files and commands summoned under the cursor by a hotkey or a mouse gesture, dismissed the moment you pick one.",
+      "desktop": {
+        "Name": "Rovyl",
+        "GenericName": "Radial Launcher",
+        "Comment": "Radial app launcher",
+        "Categories": "Utility;",
+        "Keywords": "launcher;radial;wheel;shortcut;",
+        "Terminal": "false",
+        "Type": "Application",
+        "StartupNotify": "false",
+        "StartupWMClass": "Rovyl"
+      }
+    },
     "win": {
       "target": [
         "nsis"
@@ -160,5 +187,6 @@
   "engines": {
     "node": ">=20"
   },
-  "license": "GPL-3.0-or-later"
+  "license": "GPL-3.0-or-later",
+  "_comment_linux": "electron-builder's own `pacman` target shells out to a bundled fpm whose Ruby 2.3 links libcrypt.so.1. Arch ships libcrypt.so.2 (libxcrypt), so that target hangs forever rather than failing. The Arch package is built by packaging/arch/PKGBUILD via makepkg instead - see `dist:arch`. Reinstating the fpm target would need libxcrypt-compat installed."
 }
