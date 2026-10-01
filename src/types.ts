@@ -90,6 +90,36 @@ export interface Coordinates {
   y: number;
 }
 
+/** One installed app or game found by `backend/catalog`. */
+export interface CatalogEntry {
+  id: string;
+  name: string;
+  command: string;
+  iconPath?: string;
+  categories: string[];
+  kind: 'app' | 'game';
+  source: 'desktop' | 'steam' | 'lutris' | 'heroic';
+}
+
+export interface CatalogSources {
+  desktop: boolean;
+  steam: boolean;
+  lutris: boolean;
+  heroic: boolean;
+}
+
+export interface CatalogOptions {
+  sources: CatalogSources;
+  force?: boolean;
+}
+
+/** Which automatic workspaces are on, and which game sources feed Games. */
+export interface AutoWorkspacesConfig {
+  apps: boolean;
+  games: boolean;
+  sources: CatalogSources;
+}
+
 export interface GameModeConfig {
   enabled: boolean;
   mode: "all" | "list"; // 'all' = any fullscreen app; 'list' = only apps from the list in fullscreen
@@ -311,6 +341,8 @@ export interface UIConfig {
   weatherLocation?: string; // New: CEP or city name for weather
   clockPosition: ClockHudPosition;
   gameMode: GameModeConfig;
+  /** The virtual "All apps" and "Games" workspaces; never saved as workspaces themselves. */
+  autoWorkspaces: AutoWorkspacesConfig;
   globalShortcut: string; // New: Global keyboard shortcut (e.g. 'Alt+Space')
   /**
    * Whether the first-run card has been dismissed. Absent means "not yet" — and any config that
@@ -729,6 +761,9 @@ export interface ElectronAPI {
   /** A normalized PNG data URL in, its `rovyl-icon://` reference out. */
   storeCustomIcon?: (pngDataUrl: string) => Promise<string | null>;
   getInstalledApps: (forceRefresh?: boolean) => Promise<any[]>;
+  getCatalog: (options: CatalogOptions) => Promise<CatalogEntry[]>;
+  rescanCatalog: () => void;
+  onCatalogChanged: (callback: () => void) => () => void;
   getOnboardingApps: () => Promise<any[]>;
   getStartupApps: () => Promise<any[]>;
   relaunchApp: () => void;

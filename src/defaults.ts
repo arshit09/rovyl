@@ -369,6 +369,11 @@ export const DEFAULT_UI_CONFIG: UIConfig = {
     blockedApps: "",
     autoDetectGames: false,
   },
+  autoWorkspaces: {
+    apps: true,
+    games: true,
+    sources: { desktop: true, steam: true, lutris: true, heroic: true },
+  },
   globalShortcut: "Alt+Z",
   hasSeenOnboarding: false,
   hasSeenDirectionHint: false,

@@ -41,8 +41,12 @@ function mergeEntries(lists) {
   return merged;
 }
 
+/** Long enough that opening the wheel is not a scan, short enough that a new install shows up soon. */
+const FRESH_MS = 60_000;
+
 let cached = null;
 let cachedKey = "";
+let cachedAt = 0;
 let inFlight = null;
 
 async function getCatalog(options = {}) {
@@ -50,7 +54,7 @@ async function getCatalog(options = {}) {
   const enabled = options.sources || {};
   const names = SOURCE_ORDER.filter((name) => enabled[name]);
   const key = names.join(",");
-  if (!options.force && cached && cachedKey === key) return cached;
+  if (!options.force && cached && cachedKey === key && Date.now() - cachedAt < FRESH_MS) return cached;
   if (inFlight && inFlight.key === key && !options.force) return inFlight.promise;
 
   const promise = (async () => {
@@ -62,6 +66,7 @@ async function getCatalog(options = {}) {
     });
     cached = mergeEntries(lists);
     cachedKey = key;
+    cachedAt = Date.now();
     return cached;
   })().finally(() => {
     inFlight = null;
@@ -73,6 +78,7 @@ async function getCatalog(options = {}) {
 function invalidateCatalog() {
   cached = null;
   cachedKey = "";
+  cachedAt = 0;
 }
 
 module.exports = { getCatalog, invalidateCatalog, mergeEntries, sources };

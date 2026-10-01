@@ -238,6 +238,13 @@ contextBridge.exposeInMainWorld("electron", {
   storeCustomIcon: (dataUrl) => ipcRenderer.invoke("store-custom-icon", dataUrl),
   getInstalledApps: (forceRefresh = false) =>
     ipcRenderer.invoke("get-installed-apps", forceRefresh),
+  getCatalog: (options) => ipcRenderer.invoke("get-catalog", options),
+  rescanCatalog: () => ipcRenderer.send("rescan-catalog"),
+  onCatalogChanged: (callback) => {
+    const listener = () => callback();
+    ipcRenderer.on("catalog-changed", listener);
+    return () => ipcRenderer.removeListener("catalog-changed", listener);
+  },
   getOnboardingApps: () => ipcRenderer.invoke("get-onboarding-apps"),
   getStartupApps: () => ipcRenderer.invoke("get-startup-apps"),
   relaunchApp: () => ipcRenderer.send("relaunch-app"),

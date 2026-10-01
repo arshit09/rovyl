@@ -1,4 +1,4 @@
-import type { UIConfig } from './types';
+import type { AutoWorkspacesConfig, UIConfig } from './types';
 import { DEFAULT_UI_CONFIG, stripInternalWidgetsFromConfig } from './defaults';
 import { normalizeLanguage } from './i18n/languages';
 import { BACKDROP_DIM_SCALE, legacyBackdropOpacityToDim } from './utils/radialScrim';
@@ -16,6 +16,27 @@ import { BACKDROP_DIM_SCALE, legacyBackdropOpacityToDim } from './utils/radialSc
  * persistence-meta stamping are the settings window's business alone and run around this, not
  * inside it.
  */
+/**
+ * The automatic workspaces block over its defaults, key by key. A partial block (`{ games: false }`)
+ * or a value that is not a boolean must not turn the rest off — absent means "as shipped".
+ */
+export function normalizeAutoWorkspaces(raw: unknown): AutoWorkspacesConfig {
+  const defaults = DEFAULT_UI_CONFIG.autoWorkspaces;
+  const loaded = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
+  const loadedSources = (loaded.sources && typeof loaded.sources === 'object' ? loaded.sources : {}) as Record<string, unknown>;
+  const flag = (value: unknown, fallback: boolean) => (typeof value === 'boolean' ? value : fallback);
+  return {
+    apps: flag(loaded.apps, defaults.apps),
+    games: flag(loaded.games, defaults.games),
+    sources: {
+      desktop: flag(loadedSources.desktop, defaults.sources.desktop),
+      steam: flag(loadedSources.steam, defaults.sources.steam),
+      lutris: flag(loadedSources.lutris, defaults.sources.lutris),
+      heroic: flag(loadedSources.heroic, defaults.sources.heroic),
+    },
+  };
+}
+
 export function normalizeStoredConfig(raw: unknown): UIConfig {
   const loaded = (raw && typeof raw === 'object' ? raw : {}) as Partial<UIConfig> & Record<string, unknown>;
 
@@ -36,6 +57,7 @@ export function normalizeStoredConfig(raw: unknown): UIConfig {
      * interface can no longer show or undo would survive.
      */
     fixedPosition: true,
+    autoWorkspaces: normalizeAutoWorkspaces(loaded.autoWorkspaces),
     gameMode: {
       ...DEFAULT_UI_CONFIG.gameMode,
       ...((loaded as any).gameMode || {}),

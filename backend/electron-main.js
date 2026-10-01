@@ -58,6 +58,7 @@ const fs = require("fs");
 const win32Launch = require("./win32-launch");
 const { buildTrayMenuTemplate } = require("./tray-menu.cjs");
 const gnomeKeybinding = require("./gnome-keybinding.cjs");
+const appCatalog = require("./catalog/index.cjs");
 const { normalizeFullPersistenceBlob } = require("./persistence-normalize.cjs");
 const { detectGameExecutable } = require("./game-detection.cjs");
 const { parseForegroundSnapshot, createLineSplitter } = require("./foreground-snapshot.cjs");
@@ -11424,6 +11425,25 @@ ipcMain.handle("get-installed-apps", async (event, forceRefresh = false) => {
     diagLog(`[get-installed-apps] ${e.message}`);
     return [];
   }
+});
+
+/**
+ * The catalog of installed apps and games (`backend/catalog`). The renderer says which sources it
+ * wants, so an off switch in Settings costs no scan; `rescan-catalog` is the Settings button.
+ */
+ipcMain.handle("get-catalog", async (_event, options) => {
+  try {
+    return await appCatalog.getCatalog(options || {});
+  } catch (e) {
+    diagLog(`[get-catalog] ${e.message}`);
+    return [];
+  }
+});
+
+ipcMain.on("rescan-catalog", () => {
+  appCatalog.invalidateCatalog();
+  sendToOverlay("catalog-changed");
+  sendToSettings("catalog-changed");
 });
 
 app.on("window-all-closed", (e) => {
