@@ -6017,6 +6017,28 @@ function WorkspaceKeyRecorder({
   );
 }
 
+const ACCELERATOR_NAMED_KEYS: Record<string, string> = {
+  Space: 'Space', Tab: 'Tab', Enter: 'Enter', Escape: 'Escape', Backspace: 'Backspace',
+  Delete: 'Delete', Insert: 'Insert', Home: 'Home', End: 'End', PageUp: 'PageUp', PageDown: 'PageDown',
+  ArrowUp: 'Up', ArrowDown: 'Down', ArrowLeft: 'Left', ArrowRight: 'Right',
+  Minus: '-', Equal: '=', Comma: ',', Period: '.', Slash: '/', Semicolon: ';', Quote: "'",
+  Backquote: '`', BracketLeft: '[', BracketRight: ']', Backslash: '\\',
+  NumpadAdd: 'numadd', NumpadSubtract: 'numsub', NumpadMultiply: 'nummult', NumpadDivide: 'numdiv',
+  NumpadDecimal: 'numdec',
+};
+
+/** The Electron accelerator key for a KeyboardEvent.code, or null for modifiers and unmapped keys. */
+function acceleratorKeyFromCode(code: string): string | null {
+  const letter = /^Key([A-Z])$/.exec(code);
+  if (letter) return letter[1];
+  const digit = /^Digit([0-9])$/.exec(code);
+  if (digit) return digit[1];
+  if (/^F([1-9]|1[0-9]|2[0-4])$/.test(code)) return code;
+  const numpad = /^Numpad([0-9])$/.exec(code);
+  if (numpad) return `num${numpad[1]}`;
+  return ACCELERATOR_NAMED_KEYS[code] ?? null;
+}
+
 function ShortcutRecorder({
   value,
   onChange,
@@ -6059,26 +6081,59 @@ function ShortcutRecorder({
     }
   }, []);
 
+  const commit = useCallback((shortcut: string) => {
+    /**
+     * Recording stops either way — holding the keyboard hostage while the probe runs would make
+     * the next keypress a second capture — but the value is only kept if the answer is yes.
+     */
+    window.electron?.stopShortcutRecording?.();
+    setRecording(false);
+    setStatus({ kind: 'checking', accelerator: shortcut });
+    void check(shortcut).then((next) => {
+      setStatus(next);
+      if (next.kind === 'ok') onChangeRef.current(shortcut);
+      /** Resume last: re-registering before the probe would make Rovyl the app holding the key. */
+      window.electron?.resumeGlobalShortcut?.();
+    });
+  }, [check]);
+
   useEffect(() => {
     if (!recording) return;
     const cleanup = window.electron?.onShortcutRecorded?.((shortcut) => {
-      if (!shortcut) return;
-      /**
-       * Recording stops either way — holding the keyboard hostage while the probe runs would make
-       * the next keypress a second capture — but the value is only kept if the answer is yes.
-       */
-      window.electron?.stopShortcutRecording?.();
-      setRecording(false);
-      setStatus({ kind: 'checking', accelerator: shortcut });
-      void check(shortcut).then((next) => {
-        setStatus(next);
-        if (next.kind === 'ok') onChangeRef.current(shortcut);
-        /** Resume last: re-registering before the probe would make Rovyl the app holding the key. */
-        window.electron?.resumeGlobalShortcut?.();
-      });
+      if (shortcut) commit(shortcut);
     });
     return cleanup;
-  }, [recording, check]);
+  }, [recording, commit]);
+
+  /**
+   * Linux has no native key hook, so the combination is read from this window's own keydown.
+   * `code` rather than `key`: `key` follows the layout and Shift (Alt+Z can arrive as "Ω").
+   */
+  useEffect(() => {
+    if (!recording) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      const main = acceleratorKeyFromCode(e.code);
+      const mods = [e.ctrlKey && 'Ctrl', e.altKey && 'Alt', e.shiftKey && 'Shift', e.metaKey && 'Super'].filter(Boolean) as string[];
+      if (!main) {
+        /** A bare modifier or an unmapped key: keep waiting, but never let it reach the page. */
+        e.preventDefault();
+        e.stopPropagation();
+        return;
+      }
+      e.preventDefault();
+      e.stopPropagation();
+      if (e.code === 'Escape' && mods.length === 0) {
+        window.electron?.stopShortcutRecording?.();
+        window.electron?.resumeGlobalShortcut?.();
+        setRecording(false);
+        return;
+      }
+      if (mods.length === 0) return;
+      commit([...mods, main].join('+'));
+    };
+    window.addEventListener('keydown', onKeyDown, true);
+    return () => window.removeEventListener('keydown', onKeyDown, true);
+  }, [recording, commit]);
 
   useEffect(() => () => {
     window.electron?.stopShortcutRecording?.();
@@ -6101,7 +6156,7 @@ function ShortcutRecorder({
   const note = (() => {
     if (status.kind === 'checking') return { tone: 'muted', text: `Checking ${status.accelerator}…` };
     if (status.kind === 'invalid') {
-      return { tone: 'warn', text: `${status.accelerator} is not a combination Windows can reserve. Include Ctrl, Alt or Shift.` };
+      return { tone: 'warn', text: `${status.accelerator} is not a combination the system can reserve. Include Ctrl, Alt or Shift.` };
     }
     if (status.kind === 'taken') {
       if (status.by) {
@@ -6112,7 +6167,7 @@ function ShortcutRecorder({
         tone: 'warn',
         text: status.hint
           ? `${status.accelerator} is already taken. ${status.hint}`
-          : `${status.accelerator} is already taken by another application, so Windows will not give it to Rovyl. The shortcut was not changed.`,
+          : `${status.accelerator} is already taken by another application, so the system will not give it to Rovyl. The shortcut was not changed.`,
       };
     }
     return null;
