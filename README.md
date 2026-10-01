@@ -107,6 +107,11 @@ unprivileged clients that access, so on a Wayland session bind the key in the de
 add a custom keyboard shortcut (GNOME Settings > Keyboard > Custom Shortcuts, or KDE's
 equivalent) whose command is `rovyl --toggle`. It hands the press to the running copy and exits.
 
+Two workspaces are made for you, after your own: **All apps** (every installed app, in folders
+by category) and **Games** (found by itself in Steam, `.desktop` files, Lutris and Heroic). They
+are never saved with your config, and Settings > Automatic workspaces turns each one, and each
+game source, on or off.
+
 > Tested on Arch with GNOME on Wayland: the app builds, starts, discovers 110 applications
 > and resolves every icon they declare. **X11 has not been tested**, and neither has any
 > desktop other than GNOME. Everything unavailable reports itself as unavailable rather than

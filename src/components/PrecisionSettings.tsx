@@ -135,6 +135,7 @@ import {
 import { helpTipPlacement, nextTypeAheadBuffer, selectMenuPlacement, typeAheadIndex } from './selectMenu';
 import type { TipPlacement } from './selectMenu';
 import { LANGUAGES, normalizeLanguage, translations, useTranslation } from '../i18n/useTranslation';
+import type { TranslationKey } from '../i18n/translations';
 
 interface PrecisionSettingsProps {
   isOpen: boolean;
@@ -629,6 +630,8 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
     blockedApps: '',
     autoDetectGames: false,
   };
+  const autoWorkspaces = config.autoWorkspaces ?? DEFAULT_UI_CONFIG.autoWorkspaces;
+  const updateAutoWorkspaces = (patch: Partial<typeof autoWorkspaces>) => update('autoWorkspaces', { ...autoWorkspaces, ...patch });
   const updateGameMode = (patch: Partial<typeof gameMode>) => {
     const next = { ...gameMode, ...patch };
     update('gameMode', next);
@@ -1532,6 +1535,32 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
           kind: 'bool', enabled: Boolean(config.strictOfflineMode),
           onToggle: () => update('strictOfflineMode', !config.strictOfflineMode),
         },
+        {
+          key: 'autoApps', group: t('autoWorkspacesGroup'), title: t('autoApps'), description: t('autoAppsDesc'),
+          kind: 'bool' as const, enabled: autoWorkspaces.apps,
+          onToggle: () => updateAutoWorkspaces({ apps: !autoWorkspaces.apps }),
+        },
+        {
+          key: 'autoGames', group: t('autoWorkspacesGroup'), title: t('autoGames'), description: t('autoGamesDesc'),
+          kind: 'bool' as const, enabled: autoWorkspaces.games,
+          onToggle: () => updateAutoWorkspaces({ games: !autoWorkspaces.games }),
+        },
+        ...(autoWorkspaces.games
+          ? (['desktop', 'steam', 'lutris', 'heroic'] as const).map((source) => ({
+              key: `autoSource-${source}`, group: t('autoWorkspacesGroup'),
+              title: t(`source${source[0].toUpperCase()}${source.slice(1)}` as TranslationKey),
+              description: t('sourcesDesc'),
+              kind: 'bool' as const, enabled: autoWorkspaces.sources[source],
+              onToggle: () => updateAutoWorkspaces({ sources: { ...autoWorkspaces.sources, [source]: !autoWorkspaces.sources[source] } }),
+            }))
+          : []),
+        ...(autoWorkspaces.apps || autoWorkspaces.games
+          ? [{
+              key: 'autoRescan', group: t('autoWorkspacesGroup'), title: t('rescanApps'), description: t('rescanAppsDesc'),
+              kind: 'open' as const, value: t('rescanNow'),
+              onOpen: () => window.electron?.rescanCatalog?.(),
+            }]
+          : []),
         {
           key: 'game', group: 'Protection', title: 'Fullscreen protection',
           description: 'Prevent accidental openings during games and videos.',

@@ -16,6 +16,7 @@ backend/          Electron main, preload, and the PowerShell helpers
   win32-launch.js       command parsing and quoting for launching targets
   persistence-normalize.cjs   disk-blob → renderer shape
   system-status.cjs     the helper that reads volume, network and battery for the system dock
+  catalog/              installed apps and games (desktop, Steam, Lutris, Heroic) as one list
 src/              Renderer
   App.tsx               orchestration: state, persistence, IPC wiring, window modes
   components/
@@ -27,6 +28,7 @@ src/              Renderer
   index.css             design tokens and every non-Tailwind style
   utils/
     screenDocks.ts      what a dock is, and whether it costs a window or a process
+    autoWorkspaces.ts   the virtual All apps / Games workspaces the wheel appends (never saved)
 scripts/          Build, launch and verification scripts
 nsis/             Installer customisation
 build/            Icon sources and generated assets
