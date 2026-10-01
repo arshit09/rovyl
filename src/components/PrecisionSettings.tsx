@@ -965,8 +965,9 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
        */
       general: [
         {
-          key: 'openAtLogin', configKey: 'openAtLogin', group: '', title: 'Start with Windows',
-          description: 'Rovyl is ready as soon as you sign in to Windows.',
+          key: 'openAtLogin', configKey: 'openAtLogin', group: '',
+          title: IS_LINUX_UI ? 'Start at login' : 'Start with Windows',
+          description: IS_LINUX_UI ? 'Rovyl is ready as soon as you sign in.' : 'Rovyl is ready as soon as you sign in to Windows.',
           kind: 'bool', enabled: Boolean(config.openAtLogin),
           keywords: 'startup login boot sign in',
           onToggle: () => {
@@ -1010,7 +1011,7 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
           description: 'Source code, releases, and issues.',
           kind: 'action', actionLabel: 'Open', actionIcon: Github,
           keywords: 'source code repository repo issues releases',
-          onRun: () => openExternalSiteUrl('https://github.com/arshit09/rovyl'),
+          onRun: () => openExternalSiteUrl(IS_LINUX_UI ? 'https://github.com/lxz-401/rovyl' : 'https://github.com/arshit09/rovyl'),
         },
       ],
       trigger: [
@@ -6045,6 +6046,9 @@ function WorkspaceKeyRecorder({
     </div>
   );
 }
+
+/** The Linux build has its own releases and wording; the Windows ones are unchanged. */
+const IS_LINUX_UI = typeof navigator !== 'undefined' && /Linux/.test(navigator.userAgent) && !/Android/.test(navigator.userAgent);
 
 const ACCELERATOR_NAMED_KEYS: Record<string, string> = {
   Space: 'Space', Tab: 'Tab', Enter: 'Enter', Escape: 'Escape', Backspace: 'Backspace',
