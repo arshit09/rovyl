@@ -1,0 +1,16 @@
+"libraryfolders"
+{
+	"0"
+	{
+		"path"		"__ROOT__"
+		"label"		""
+		"apps"
+		{
+			"620"		"1"
+		}
+	}
+	"1"
+	{
+		"path"		"/definitely/not/mounted"
+	}
+}
