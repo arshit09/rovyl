@@ -5650,6 +5650,13 @@ app.whenReady().then(async () => {
       },
     });
 
+  /**
+   * The menu Linux attaches with `setContextMenu`: no anchor, since the indicator's host draws it
+   * and we never pop it. This name was called from the tray setup and `refreshTrayMenu` after the
+   * pop-up refactor and was never defined, so on Linux the tray icon failed to build at all.
+   */
+  const buildTrayMenu = () => Menu.buildFromTemplate(buildTrayMenuTemplateNow(undefined));
+
   /** The top-level rows as one string: equal means reopening the menu would show the same thing. */
   const trayMenuSignature = (template) => template.map((item) => item.label ?? "---").join("|");
 
@@ -5710,7 +5717,9 @@ app.whenReady().then(async () => {
     /** Started first, so the reopened menu already reads "Checking…". */
     const check = runUpdateCheck();
     try {
-      showTrayMenuAt(anchor);
+      /** An attached (Linux) menu closes on the click and cannot be popped again; it is re-exported. */
+      if (IS_LINUX) refreshTrayMenu();
+      else showTrayMenuAt(anchor);
     } catch (e) {
       diagLog(`[Tray] reopen menu: ${e.message}`);
     }
@@ -5719,10 +5728,12 @@ app.whenReady().then(async () => {
       if (!notice) return;
       trayUpdateNotice = notice;
       repaintOpenTrayMenu();
+      if (IS_LINUX) refreshTrayMenu();
       trayUpdateNoticeTimer = setTimeout(() => {
         trayUpdateNoticeTimer = null;
         trayUpdateNotice = null;
         repaintOpenTrayMenu();
+        if (IS_LINUX) refreshTrayMenu();
       }, TRAY_UPDATE_NOTICE_MS);
     });
   };
