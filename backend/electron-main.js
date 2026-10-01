@@ -57,6 +57,7 @@ const os = require("os");
 const fs = require("fs");
 const win32Launch = require("./win32-launch");
 const { buildTrayMenuTemplate } = require("./tray-menu.cjs");
+const gnomeKeybinding = require("./gnome-keybinding.cjs");
 const { normalizeFullPersistenceBlob } = require("./persistence-normalize.cjs");
 const { detectGameExecutable } = require("./game-detection.cjs");
 const { parseForegroundSnapshot, createLineSplitter } = require("./foreground-snapshot.cjs");
@@ -1633,6 +1634,29 @@ let mouseTriggerRecordingPaused = false;
 /** One teardown guard per renderer, so a session of repeated recordings does not stack listeners. */
 const mouseTriggerResumeGuards = new WeakSet();
 let triggerRadialShortcut = () => {};
+
+/**
+ * GNOME Wayland: the wheel's key is a desktop keybinding running `rovyl --toggle`, because an
+ * X11 grab only hears keys while an X11 window has focus. Serialised — two gsettings writes racing
+ * over the same list would drop one. `accelerator` null takes the entry out.
+ */
+let gnomeKeybindingChain = Promise.resolve();
+const syncGnomeKeybinding = (accelerator) => {
+  if (!gnomeKeybinding.isGnomeWayland()) return;
+  const launcher = process.env.APPIMAGE || process.execPath;
+  gnomeKeybindingChain = gnomeKeybindingChain
+    .then(async () => {
+      if (!accelerator) {
+        await gnomeKeybinding.remove();
+        diagLog("[Shortcut] GNOME keybinding removed.");
+        return;
+      }
+      const binding = await gnomeKeybinding.install(accelerator, `"${launcher}" ${TOGGLE_ARG}`);
+      diagLog(`[Shortcut] GNOME keybinding ${binding} -> ${launcher} ${TOGGLE_ARG}`);
+    })
+    .catch((e) => diagLog(`[Shortcut] GNOME keybinding sync failed: ${e.message}`));
+};
+
 let releaseRadialShortcut = () => {};
 let onNativeRecordMouse = null;
 let lastRecordedKeyboardModifiers = {
@@ -2341,6 +2365,13 @@ async function createOverlayWindow() {
     transparent: true,
     /** Never in the taskbar or Alt+Tab: this window is a gesture, not a place you go back to. */
     skipTaskbar: true,
+    /**
+     * Linux: `skipTaskbar` is dropped on X11 (the window maps NORMAL with only ABOVE), and
+     * `setSkipTaskbar` afterwards does nothing either, so GNOME lists this transparent box in
+     * Alt+Tab as an empty Rovyl. A `toolbar` window type is what makes mutter set skip-taskbar and
+     * skip-pager, and it stays focusable and above — measured with xprop, not assumed.
+     */
+    ...(process.platform === "linux" ? { type: "toolbar" } : {}),
     alwaysOnTop: true,
     resizable: true,
     movable: false,
@@ -2419,12 +2450,6 @@ async function createOverlayWindow() {
          */
         applyOverlayIdleBounds(undefined, win);
         win.showInactive();
-        /**
-         * The constructor's `skipTaskbar` is dropped on X11/XWayland — the window maps with only
-         * `_NET_WM_STATE_ABOVE` — so GNOME lists this transparent box in Alt+Tab as an empty Rovyl.
-         * Asked again once it is mapped, the hint sticks.
-         */
-        if (process.platform === "linux") win.setSkipTaskbar(true);
         win.webContents.setBackgroundThrottling(true);
       } catch (e) {
         /* ignore */
@@ -6016,10 +6041,12 @@ app.whenReady().then(async () => {
      */
     if (currentSettings.enableKeyboardTrigger === false) {
       writeRadialMouseBlocker("SHORTCUT_TRIGGER OFF");
+      syncGnomeKeybinding(null);
       diagLog("[Shortcut] Keyboard trigger disabled; the wheel's shortcut is not registered.");
     } else {
       const mouseSpec = parseMouseShortcut(shortcut);
       if (mouseSpec) {
+        syncGnomeKeybinding(null);
         ensureRadialMouseBlocker();
         writeRadialMouseBlocker(`SHORTCUT_TRIGGER ${mouseSpec.vk} ${mouseSpec.modMask}`);
         diagLog(
@@ -6036,6 +6063,7 @@ app.whenReady().then(async () => {
           );
         }
 
+        syncGnomeKeybinding(shortcut);
         try {
           const registered = globalShortcut.register(shortcut, () =>
             openRadialFromShortcut(shortcut),
@@ -6383,6 +6411,8 @@ app.whenReady().then(async () => {
     lastShortcutRegistrationSignature = null;
     writeRadialMouseBlocker("SHORTCUT_TRIGGER OFF");
     globalShortcut.unregisterAll();
+    /** The compositor would swallow the very combination being recorded; resume puts it back. */
+    syncGnomeKeybinding(null);
   });
 
   ipcMain.on("resume-global-shortcut", () => {
