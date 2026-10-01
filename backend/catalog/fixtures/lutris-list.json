@@ -1,0 +1,5 @@
+[
+  {"id": 12, "slug": "hades", "name": "Hades", "runner": "wine", "platform": "Windows", "directory": "/games/hades", "installed_at": 1700000000},
+  {"id": 13, "slug": "ghost", "name": "Not Installed", "runner": "linux", "platform": "Linux", "directory": "", "installed_at": null},
+  {"id": 14, "slug": "x", "runner": "linux", "installed_at": 1}
+]
