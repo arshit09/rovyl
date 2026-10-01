@@ -103,8 +103,9 @@ is the part that needs to see input meant for other windows.
   or replacing the AppImage.
 
 A global hotkey uses Electron's own `globalShortcut`, which works on X11. Wayland denies
-unprivileged clients that access, so on a Wayland session expect to open the wheel from the
-tray.
+unprivileged clients that access, so on a Wayland session bind the key in the desktop instead:
+add a custom keyboard shortcut (GNOME Settings > Keyboard > Custom Shortcuts, or KDE's
+equivalent) whose command is `rovyl --toggle`. It hands the press to the running copy and exits.
 
 > Tested on Arch with GNOME on Wayland: the app builds, starts, discovers 110 applications
 > and resolves every icon they declare. **X11 has not been tested**, and neither has any

@@ -1356,6 +1356,8 @@ const installPendingUpdateAndExit = () => {
  */
 const LOGIN_LAUNCH_ARG = "--opened-at-login";
 const startedAtLogin = process.argv.includes(LOGIN_LAUNCH_ARG);
+/** Sent by a desktop-level keybinding to the running copy; see the `second-instance` handler. */
+const TOGGLE_ARG = "--toggle";
 
 /**
  * "Start with the system" on Linux, where Electron's own login-item API does nothing.
@@ -1446,6 +1448,20 @@ if (!gotTheLock) {
      */
     if (Array.isArray(argv) && argv.includes(LOGIN_LAUNCH_ARG)) {
       diagLog("Second instance was the login-item duplicate — staying in the tray.");
+      return;
+    }
+    /**
+     * `rovyl --toggle` is the hotkey that works on Wayland. Electron's `globalShortcut` cannot grab
+     * keys there (XWayland sees them only while an X11 window has focus), so the desktop owns the
+     * binding — a GNOME/KDE custom shortcut that runs this — and the running copy gets the press
+     * through the single-instance channel, the same one that already carries a second launch.
+     */
+    if (Array.isArray(argv) && argv.includes(TOGGLE_ARG)) {
+      diagLog("Second instance was `--toggle` — opening the wheel on the running instance.");
+      Promise.resolve()
+        .then(() => app.whenReady())
+        .then(() => triggerRadialShortcut())
+        .catch((e) => diagLog(`[SecondInstance] toggle failed: ${e.message}`));
       return;
     }
     diagLog("Second instance launch detected — opening Settings on the running instance.");
