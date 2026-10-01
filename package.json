@@ -1,7 +1,7 @@
 {
   "name": "rovyl",
   "private": true,
-  "version": "1.18.0",
+  "version": "1.18.1",
   "main": "backend/electron-main.js",
   "author": "HenryCa",
   "description": "Rovyl radial launcher",
@@ -67,7 +67,7 @@
     "dist:arch": "npm run dist:linux && node scripts/build-arch-package.mjs",
     "test:linux-apps": "node scripts/linux-apps-smoke.mjs"
   },
-  "_comment_dependencies": "Runtime only. electron-builder bundles the whole production closure into app.asar, so anything the main process does not require() belongs in devDependencies \u2014 Vite compiles the renderer's imports into dist/ and the packages themselves never ship.",
+  "_comment_dependencies": "Runtime only. electron-builder bundles the whole production closure into app.asar, so anything the main process does not require() belongs in devDependencies — Vite compiles the renderer's imports into dist/ and the packages themselves never ship.",
   "dependencies": {
     "electron-updater": "^6.8.9",
     "node-global-key-listener": "^0.1.1",
@@ -94,7 +94,7 @@
     "typescript": "^5.9.3",
     "vite": "^8.2.2"
   },
-  "_comment_overrides": "tar<=7.5.20 carries the tree's only critical advisory (hardlink path traversal) and reaches app.asar through app-builder-lib. Its one call site there packs tar.gz/xz/bz2 targets, which this project does not build \u2014 build.win.target is nsis. glob and rimraf are deliberately NOT overridden: glob>=9 makes @electron/asar's promisified crawl hang forever, and rimraf>=4 throws on load inside cacache.",
+  "_comment_overrides": "tar<=7.5.20 carries the tree's only critical advisory (hardlink path traversal) and reaches app.asar through app-builder-lib. Its one call site there packs tar.gz/xz/bz2 targets, which this project does not build — build.win.target is nsis. glob and rimraf are deliberately NOT overridden: glob>=9 makes @electron/asar's promisified crawl hang forever, and rimraf>=4 throws on load inside cacache.",
   "overrides": {
     "tar": "^7.5.22"
   },

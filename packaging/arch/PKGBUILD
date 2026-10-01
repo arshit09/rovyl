@@ -10,7 +10,7 @@
 # installed. makepkg is the native tool and needs no such shim.
 
 pkgname=rovyl
-pkgver=1.18.0
+pkgver=1.18.1
 pkgrel=1
 pkgdesc="Radial app launcher - a wheel of apps, files and commands summoned under the cursor"
 arch=('x86_64')
