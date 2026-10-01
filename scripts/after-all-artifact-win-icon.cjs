@@ -9,6 +9,17 @@ const rcedit = require("rcedit");
 module.exports = async function afterAllArtifactWinIcon(buildResult) {
   if (process.platform !== "win32") return;
 
+  /**
+   * rcedit only has business with PE artifacts. A run that produced no Windows target (a Linux
+   * cross-build off a Windows host, say) has nothing here to patch, and scanning its outDir for
+   * stray .exe files would only find artifacts from an earlier Windows run.
+   */
+  const platforms = buildResult?.platformToTargets;
+  if (platforms && typeof platforms.keys === "function") {
+    const names = [...platforms.keys()].map((p) => (typeof p === "string" ? p : p?.name));
+    if (names.length && !names.includes("windows")) return;
+  }
+
   const iconPath = path.join(__dirname, "..", "build", "icon.ico");
   if (!fs.existsSync(iconPath)) {
     console.warn("after-all-artifact-win-icon: skip — build/icon.ico missing");

@@ -10,6 +10,12 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import sharp from "sharp";
 
+/** MSIX tiles are consumed only by the appx target, which only builds on Windows. */
+if (process.platform !== "win32") {
+  console.log("generate-appx-assets: skip \u2014 not win32");
+  process.exit(0);
+}
+
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const source = join(root, "public", "icon.png");
 const outDir = join(root, "build", "appx");
