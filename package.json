@@ -67,7 +67,8 @@
     "dist:arch": "npm run dist:linux && node scripts/build-arch-package.mjs",
     "test:linux-apps": "node scripts/linux-apps-smoke.mjs",
     "test:catalog": "node --test backend/catalog/",
-    "test:auto-workspaces-config": "node scripts/auto-workspaces-config-smoke.mjs"
+    "test:auto-workspaces-config": "node scripts/auto-workspaces-config-smoke.mjs",
+    "test:auto-workspaces": "node scripts/auto-workspaces-smoke.mjs"
   },
   "_comment_dependencies": "Runtime only. electron-builder bundles the whole production closure into app.asar, so anything the main process does not require() belongs in devDependencies — Vite compiles the renderer's imports into dist/ and the packages themselves never ship.",
   "dependencies": {
