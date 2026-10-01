@@ -2419,6 +2419,12 @@ async function createOverlayWindow() {
          */
         applyOverlayIdleBounds(undefined, win);
         win.showInactive();
+        /**
+         * The constructor's `skipTaskbar` is dropped on X11/XWayland — the window maps with only
+         * `_NET_WM_STATE_ABOVE` — so GNOME lists this transparent box in Alt+Tab as an empty Rovyl.
+         * Asked again once it is mapped, the hint sticks.
+         */
+        if (process.platform === "linux") win.setSkipTaskbar(true);
         win.webContents.setBackgroundThrottling(true);
       } catch (e) {
         /* ignore */
