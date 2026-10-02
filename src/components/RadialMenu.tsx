@@ -53,6 +53,7 @@ import {
   SECTOR_SEAM_FALLOFF_SCALE,
   SECTOR_SEAM_REACH,
 } from '../utils/radialSectors';
+import { IS_LINUX_UI } from '../utils/platform';
 
 // PERF FIX #3: Module-level weather cache — persists across menu open/close cycles
 // Prevents a new HTTP fetch on every menu open; refreshes only after 10 minutes or location change
@@ -3814,7 +3815,7 @@ const RadialMenuInner: React.FC<RadialMenuProps> = ({
             <div className="zn-radial-filter is-notice" role="status" aria-live="polite">
               <span className="zn-radial-filter-count">
                 {discoveryPhase === 'scanning'
-                  ? 'Looking through your Start menu…'
+                  ? (IS_LINUX_UI ? 'Looking through your installed apps…' : 'Looking through your Start menu…')
                   : 'Your apps are on their way — this wheel fills itself in a moment.'}
               </span>
             </div>

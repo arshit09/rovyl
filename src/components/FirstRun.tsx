@@ -2,6 +2,7 @@ import React from 'react';
 import { Keyboard, Mouse, SquareStack, Target } from 'lucide-react';
 import type { UIConfig } from '../types';
 import { mouseTriggerPhrase } from '../constants/mouseTrigger';
+import { IS_LINUX_UI } from '../utils/platform';
 
 /**
  * What a new user cannot work out by looking, said once.
@@ -57,7 +58,7 @@ export const FirstRun: React.FC<{
                       <kbd>{key}</kbd>
                     </React.Fragment>
                   ))}{' '}
-                  anywhere in Windows — over any application, without leaving it.
+                  {IS_LINUX_UI ? 'anywhere on your desktop' : 'anywhere in Windows'} — over any application, without leaving it.
                 </p>
               </div>
             </li>

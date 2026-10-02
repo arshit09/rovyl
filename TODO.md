@@ -313,3 +313,20 @@ Pointers into the sections above, not items in their own right — each line nam
   has. Doing only the last regresses clickless cursor parking for every user on a scaled *primary*.
   `TRIGGER_PASSTHROUGH_SLOP_PX` and `MMB_CLICK_DRAG_PX` are compared in the hook's space and move with
   it. Needs a real mixed-DPI machine to verify; see `docs/ARCHITECTURE.md` for the worked example.
+
+---
+
+## 10. Linux
+
+- [ ] **10.1 The middle-mouse hold trigger.** The Windows trigger is a low-level mouse hook that also
+  swallows the click; there is no cross-desktop equivalent, so Linux opens the wheel from a hotkey,
+  the tray or `rovyl --toggle`. Wayland would need a compositor-specific route.
+- [ ] **10.2 Auto-update.** The updater is Windows-only; Linux upgrades by installing the new
+  package or AppImage.
+- [ ] **10.3 Fullscreen-game detection** (focus protection) is not implemented on Linux.
+- [ ] **10.4 Hotkey outside GNOME Wayland.** GNOME gets a keybinding created by Rovyl; KDE and other
+  compositors need the user to bind `rovyl --toggle` by hand.
+- [ ] **10.5 Windows-worded strings and defaults.** Most visible text is now platform-aware
+  (`src/utils/platform.ts`), but `src/launchFailure.ts` messages, `src/constants/mouseTrigger.ts`
+  ("Win"), and the default shortcuts in `src/defaults.ts` (`msedge`, `explorer`, `calc`) are still
+  Windows-shaped. First run replaces the defaults with discovered apps on Linux.

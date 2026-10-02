@@ -18,10 +18,8 @@ url="https://github.com/arshit09/rovyl"
 license=('GPL-3.0-or-later')
 # Electron's own runtime deps. nss/alsa-lib are dlopen'd at startup; without
 # them the app dies before it paints.
-depends=('gtk3' 'nss' 'alsa-lib' 'libxss' 'libnotify' 'at-spi2-core')
+depends=('gtk3' 'nss' 'alsa-lib' 'libxss' 'libnotify' 'at-spi2-core' 'xdg-utils' 'hicolor-icon-theme')
 optdepends=(
-  'xdg-utils: opening URLs, files and folders from the wheel'
-  'gtk-update-icon-cache: desktop icon refresh'
   'xdotool: key simulation on X11'
   'libappindicator-gtk3: system tray icon on desktops that need it'
 )
@@ -31,6 +29,11 @@ _unpacked="${ROVYL_UNPACKED:-$(realpath "$startdir/../../build-out/linux-unpacke
 _icons="$(realpath "$startdir/../../build/icons" 2>/dev/null)"
 
 prepare() {
+  if [ -z "$_icons" ]; then
+    echo "==> build/icons not found; the package would ship without icons."
+    echo "==> Run 'npm run dist:linux' from the repo root first."
+    return 1
+  fi
   if [ ! -x "$_unpacked/rovyl" ]; then
     echo "==> build-out/linux-unpacked/rovyl not found."
     echo "==> Run 'npm run dist:linux' from the repo root first."

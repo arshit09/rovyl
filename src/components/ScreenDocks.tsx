@@ -10,6 +10,7 @@ import {
 } from '../utils/screenDocks';
 import { getIcon } from '../iconMap';
 import { SmartIcon } from './SmartIcon';
+import { IS_LINUX_UI } from '../utils/platform';
 
 /**
  * The two strips beside the open wheel.
@@ -334,7 +335,7 @@ function StatusDockPlate({
         <button
           type="button"
           className="zn-dock-icon-button"
-          title={`${networkTitle(status)} — click for Windows network settings`}
+          title={`${networkTitle(status)} — click for ${IS_LINUX_UI ? '' : 'Windows '}network settings`}
           aria-label={networkTitle(status)}
           tabIndex={-1}
           {...swallowProps}
@@ -382,7 +383,7 @@ function StatusDockPlate({
         <button
           type="button"
           className="zn-dock-icon-button zn-dock-clock"
-          title="Click for Windows date and time settings"
+          title={IS_LINUX_UI ? 'Click for date and time settings' : 'Click for Windows date and time settings'}
           aria-label={`Time ${time}, ${date}`}
           tabIndex={-1}
           {...swallowProps}

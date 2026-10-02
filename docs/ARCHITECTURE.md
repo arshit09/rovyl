@@ -17,6 +17,9 @@ backend/          Electron main, preload, and the PowerShell helpers
   persistence-normalize.cjs   disk-blob → renderer shape
   system-status.cjs     the helper that reads volume, network and battery for the system dock
   catalog/              installed apps and games (desktop, Steam, Lutris, Heroic) as one list
+  linux-apps.cjs, linux-icons.cjs, linux-launch.js   the Linux halves of discovery, icons and launching
+  gnome-keybinding.cjs  the hotkey as a GNOME custom keybinding running `rovyl --toggle` (Wayland)
+packaging/arch/   PKGBUILD that packages build-out/linux-unpacked (`npm run dist:arch`)
 src/              Renderer
   App.tsx               orchestration: state, persistence, IPC wiring, window modes
   components/

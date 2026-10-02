@@ -136,6 +136,7 @@ import { helpTipPlacement, nextTypeAheadBuffer, selectMenuPlacement, typeAheadIn
 import type { TipPlacement } from './selectMenu';
 import { LANGUAGES, normalizeLanguage, translations, useTranslation } from '../i18n/useTranslation';
 import type { TranslationKey } from '../i18n/translations';
+import { IS_LINUX_UI } from '../utils/platform';
 
 interface PrecisionSettingsProps {
   isOpen: boolean;
@@ -1206,7 +1207,7 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
            */
           ...(openSoundOn || hoverSoundOn ? ([{
             ...range('soundVolume', '', 'Volume',
-              'How loud both sounds play. Windows volume still applies on top.',
+              (IS_LINUX_UI ? 'How loud both sounds play. System volume still applies on top.' : 'How loud both sounds play. Windows volume still applies on top.'),
               soundVolume, 0, 100,
               (value) => {
                 setRadialSoundVolume(value);
@@ -1481,7 +1482,7 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
           },
           {
             key: 'statusDock-network', group: 'System dock', title: 'Network',
-            description: 'Wi-Fi signal, or a wired connection. Click it for the Windows network panel.',
+            description: (IS_LINUX_UI ? 'Wi-Fi signal, or a wired connection. Click it for the network settings.' : 'Wi-Fi signal, or a wired connection. Click it for the Windows network panel.'),
             kind: 'bool' as const, enabled: statusDock.showNetwork,
             onToggle: () => updateStatusDock({ showNetwork: !statusDock.showNetwork }),
           },
@@ -5625,7 +5626,7 @@ function WorkspaceManager({
               /** Empty because a scan has not run yet, not because there is nothing to add. */
               <div className="zs-manager-empty is-large">
                 <Loader2 className="zs-spin" size={22} />
-                <b>{discoveryPhase === 'scanning' ? 'Looking through your Start menu…' : 'Finding your applications'}</b>
+                <b>{discoveryPhase === 'scanning' ? (IS_LINUX_UI ? 'Looking through your installed apps…' : 'Looking through your Start menu…') : 'Finding your applications'}</b>
                 <span>Rovyl fills this workspace by itself. You can add more above at any time.</span>
               </div>
             ) : (
@@ -6046,9 +6047,6 @@ function WorkspaceKeyRecorder({
     </div>
   );
 }
-
-/** The Linux build has its own releases and wording; the Windows ones are unchanged. */
-const IS_LINUX_UI = typeof navigator !== 'undefined' && /Linux/.test(navigator.userAgent) && !/Android/.test(navigator.userAgent);
 
 const ACCELERATOR_NAMED_KEYS: Record<string, string> = {
   Space: 'Space', Tab: 'Tab', Enter: 'Enter', Escape: 'Escape', Backspace: 'Backspace',

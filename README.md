@@ -4,14 +4,14 @@
 
 **One gesture. Any destination.**
 
-A radial launcher for Windows. Hold the middle mouse button anywhere, aim, release.
-
-Also runs on Linux, with the mouse trigger [not yet ported](#linux).
+A radial launcher for Windows and Linux. On Windows, hold the middle mouse button anywhere, aim, release.
+On Linux, press your hotkey instead (the mouse hold is [not yet ported](#linux)).
 
 [![Download Rovyl for Windows](https://img.shields.io/badge/Download%20for%20Windows-2ea44f?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/arshit09/rovyl/releases/latest)
+[![Download Rovyl for Linux](https://img.shields.io/badge/Download%20for%20Linux-f6c915?style=for-the-badge&logo=linux&logoColor=black)](https://github.com/lxz-401/rovyl/releases/latest)
 
 ![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078d4?style=flat-square)
-![Linux](https://img.shields.io/badge/Linux-Arch%20%7C%20AppImage-f6c915?style=flat-square&logo=linux&logoColor=black)
+[![Linux](https://img.shields.io/badge/Linux-Arch%20%7C%20AppImage-f6c915?style=flat-square&logo=linux&logoColor=black)](#linux)
 ![Electron](https://img.shields.io/badge/Electron-28-47848f?style=flat-square&logo=electron&logoColor=white)
 ![React](https://img.shields.io/badge/React-18-149eca?style=flat-square&logo=react&logoColor=white)
 
@@ -44,14 +44,15 @@ never puts a window between you and your work.
 - **Automatic discovery** — reads your Start Menu on Windows, your `.desktop` entries on Linux, and extracts real app icons
 - **Custom icons** — any workspace or shortcut can wear a glyph, a picture (PNG, JPG, SVG, WebP, ICO…) or any icon inside an EXE or DLL
 - **Workspaces** — separate wheels for work, games, streaming; switch from the picker or with a number key
-- **Your trigger** — middle mouse button, a side button, a global hotkey, or both; each can be turned off
+- **Your trigger** — middle mouse button, a side button, a global hotkey, or both; each can be turned off (on Linux: the hotkey, or `rovyl --toggle`)
 - **Three aiming modes** — by direction for speed, by pointer for precision, or by area with each slice's share drawn on screen
 - **Keyboard driven** — optional: press 1–9 to open a slice, and Q to step back out of a folder
 - **Docks** — optional: your own shortcuts and a system dock (clock, battery, network, volume) beside the wheel
 - **Launch without clicking** — optional: hides the pointer, picks by direction, and opens on its own
-- **Focus protection** — stays out of the way while you are in a fullscreen game
+- **Focus protection** — stays out of the way while you are in a fullscreen game (Windows)
 - **Fully offline** — no account, no telemetry, no ads, nothing leaves your machine
-- **Runs on Linux** — an Arch package and an AppImage; discovery, launching and icons are native, the mouse trigger is not ported ([details](#linux))
+- **Automatic workspaces** — on Linux, an **All apps** wheel grouped by category and a **Games** wheel found by itself in Steam, `.desktop` files, Lutris and Heroic
+- **Runs on Linux** — an Arch package and an AppImage; discovery, launching and icons are native, the hotkey works on GNOME Wayland, the mouse hold is not ported ([details](#linux))
 
 ## Install
 
@@ -74,7 +75,11 @@ steps:
 4. Follow the installer. Rovyl then lives in your system tray and updates itself from this
    repository, so this is the only manual download you need.
 
-**Linux** — see [Linux](#linux) below. **From source** — see [Building](#building).
+**Linux** — download `Rovyl-<version>.AppImage` or `rovyl-<version>-1-x86_64.pkg.tar.zst` from the
+[Linux releases](https://github.com/lxz-401/rovyl/releases/latest). On Arch: `sudo pacman -U rovyl-*.pkg.tar.zst`.
+AppImage: `chmod +x Rovyl-*.AppImage && ./Rovyl-*.AppImage`. Details in [Linux](#linux) below.
+
+**From source** — see [Building](#building).
 
 ## Linux
 
@@ -100,27 +105,32 @@ is the part that needs to see input meant for other windows.
 - **Icons extracted from binaries**, which has no meaning outside Windows; the icon theme
   replaces it.
 - **Auto-update.** The updater is Windows-only, so upgrading means installing the new package
-  or replacing the AppImage.
+  or replacing the AppImage. Linux builds are published on the
+  [Linux releases](https://github.com/lxz-401/rovyl/releases), not on the Windows repository.
 
 A global hotkey uses Electron's own `globalShortcut`, which works on X11. Wayland denies
-unprivileged clients that access, so on a Wayland session bind the key in the desktop instead:
-add a custom keyboard shortcut (GNOME Settings > Keyboard > Custom Shortcuts, or KDE's
-equivalent) whose command is `rovyl --toggle`. It hands the press to the running copy and exits.
+unprivileged clients that access, so on **GNOME Wayland** Rovyl registers the hotkey with the
+desktop itself: one custom keybinding named "Rovyl" that runs `rovyl --toggle`. It is created
+when you set the hotkey in Settings, removed when you turn the keyboard trigger off, and your
+other custom shortcuts are never touched. On any other Wayland desktop, add a custom shortcut
+(KDE's or your compositor's equivalent) whose command is `rovyl --toggle`; it hands the press to
+the running copy and exits. The shortcut recorder in Settings works on Linux. `rovyl --toggle`
+does the same on Windows, through the single-instance channel.
 
 Two workspaces are made for you, after your own: **All apps** (every installed app, in folders
 by category) and **Games** (found by itself in Steam, `.desktop` files, Lutris and Heroic). They
 are never saved with your config, and Settings > Automatic workspaces turns each one, and each
 game source, on or off.
 
-> Tested on Arch with GNOME on Wayland: the app builds, starts, discovers 110 applications
-> and resolves every icon they declare. **X11 has not been tested**, and neither has any
+> Tested on Arch with GNOME on Wayland: the app builds, starts, discovers your installed
+> applications and resolves the icons they declare. **X11 has not been tested**, and neither has any
 > desktop other than GNOME. Everything unavailable reports itself as unavailable rather than
 > failing silently, so a gap should show as a message, not as nothing happening.
 
 ### Arch Linux
 
 ```bash
-git clone https://github.com/arshit09/rovyl
+git clone https://github.com/lxz-401/rovyl
 cd rovyl
 npm install
 npm run dist:arch
@@ -249,6 +259,9 @@ so a fork never inherits someone else's OAuth client.
 | `npm run verify:renderer-budget` | Keeps the wheel's bundle within its size budget |
 | `npm run test:win32-launch` | Windows command parsing and quoting |
 | `npm run test:linux-apps` | XDG discovery, `Exec` expansion, launching and icon lookup |
+| `npm run test:catalog` | the app and game catalog: `.desktop`, Steam, Lutris, Heroic, de-duplication |
+| `npm run test:auto-workspaces` | the All apps / Games workspaces: grouping and the 12-per-folder split |
+| `npm run test:auto-workspaces-config` | the `autoWorkspaces` setting and its defaults on older configs |
 | `npm run test:persistence-shape` | Persistence blob normalisation |
 | `npm run test:window-split` | Starts the real app on a throwaway profile and opens the wheel |
 
@@ -271,6 +284,7 @@ budget. If one fails, the contract was broken, not the test.
 - **Download** — [latest release](https://github.com/arshit09/rovyl/releases/latest)
 - **Website and docs** — [rovyl-red.vercel.app](https://rovyl-red.vercel.app)
 - **All releases** — [github.com/arshit09/rovyl/releases](https://github.com/arshit09/rovyl/releases)
+- **Linux downloads** — [github.com/lxz-401/rovyl/releases](https://github.com/lxz-401/rovyl/releases)
 - **Upstream** — [HenryCauan/rovyl](https://github.com/HenryCauan/rovyl)
 - **Privacy policy** — [rovyl-red.vercel.app/privacy](https://rovyl-red.vercel.app/privacy)
 

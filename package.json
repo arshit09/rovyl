@@ -135,6 +135,7 @@
         "AppImage"
       ],
       "icon": "build/icons",
+      "artifactName": "${productName}-${version}.${ext}",
       "category": "Utility",
       "maintainer": "HenryCa <arshit09@users.noreply.github.com>",
       "vendor": "HenryCa",

@@ -10,6 +10,7 @@ import {
   storeIconPicture,
   type CustomIconPick,
 } from '../utils/customIcon';
+import { IS_LINUX_UI } from '../utils/platform';
 
 interface IconLibrary {
   path: string;
@@ -256,7 +257,7 @@ export function CustomIconPanel({
       )}
 
       <div className="zs-custom-icon-sources">
-        <span>Windows icons</span>
+        <span>{IS_LINUX_UI ? 'System icons' : 'Windows icons'}</span>
         {WINDOWS_LIBRARIES.map((entry) => (
           <button
             key={entry.file}

@@ -21,6 +21,7 @@ import { NativeAppIcon, useInstalledApps } from './installedApps';
 import { startMenuAppIdToLaunchCommand } from '../utils/windowsLaunchCommand';
 import { resolveWebsiteIconFields } from '../siteFavicon';
 import { hostLabelFromUrl, normalizeSiteUrl, resolveWebsiteTitle } from '../siteTitle';
+import { IS_LINUX_UI } from '../utils/platform';
 
 /**
  * The list behind the shortcut dock.
@@ -360,7 +361,7 @@ export function DockShortcutsManager({
                 }}
               >
                 {loadingApps ? (
-                  <div className="zs-manager-empty"><Loader2 className="zs-spin" size={18} /> Reading the Start Menu…</div>
+                  <div className="zs-manager-empty"><Loader2 className="zs-spin" size={18} /> {IS_LINUX_UI ? 'Reading your installed apps…' : 'Reading the Start Menu…'}</div>
                 ) : visibleApps.length ? (
                   visibleApps.map((app, index) => (
                     <button
@@ -429,7 +430,7 @@ export function DockShortcutsManager({
                   <FolderOpen size={20} />
                   <div>
                     <b>{folderPath ? folderPath.split(/[/\\]/).filter(Boolean).pop() : 'Select a folder'}</b>
-                    <small>{folderPath || 'Opens File Explorer'}</small>
+                    <small>{folderPath || (IS_LINUX_UI ? 'Opens in your file manager' : 'Opens File Explorer')}</small>
                   </div>
                   <ChevronRight size={15} />
                 </button>
@@ -451,7 +452,7 @@ export function DockShortcutsManager({
                   <FileGlyph size={20} />
                   <div>
                     <b>{filePath ? filePath.split(/[/\\]/).filter(Boolean).pop() : 'Select a file'}</b>
-                    <small>{filePath || 'Opens with whatever Windows uses for that file type'}</small>
+                    <small>{filePath || (IS_LINUX_UI ? 'Opens with your default app for that file type' : 'Opens with whatever Windows uses for that file type')}</small>
                   </div>
                   <ChevronRight size={15} />
                 </button>

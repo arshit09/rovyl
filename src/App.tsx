@@ -25,6 +25,7 @@ import { normalizeLanguage } from './i18n/languages';
 import type { ExecutionErrorDetails, FaultShortcutRef, SurfacedFault } from './launchFailure';
 /** Erased too — a value import here would put the whole settings module in the wheel's chunk. */
 import type { SettingsNav } from './components/PrecisionSettings';
+import { IS_LINUX_UI } from './utils/platform';
 
 /** Settings is the largest UI surface; radial-only sessions never need to parse or retain it. */
 const PrecisionSettings = React.lazy(() =>
@@ -137,7 +138,7 @@ async function buildMainAppsFromStartMenuDiscovery(
           command: cmd,
           commandType: 'app' as const,
           /** The id, not the moniker: the prefix is plumbing and says nothing to whoever reads this. */
-          description: appId ? `Start Menu: ${appId}` : '',
+          description: appId ? `${IS_LINUX_UI ? 'Installed app' : 'Start Menu'}: ${appId}` : '',
           direction: directions[idx % 8],
         };
       }),
@@ -582,7 +583,7 @@ export default function App() {
           seq: faultSeqRef.current,
           title: 'Rovyl could not read your saved configuration',
           message:
-            'Saving is blocked so nothing already on disk gets overwritten. Your shortcuts are still in AppData.',
+            'Saving is blocked so nothing already on disk gets overwritten. Your shortcuts are still in ' + (IS_LINUX_UI ? '~/.config/Rovyl.' : 'AppData.'),
           hint:
             'Check rovyl-persistence.log in the app data folder, look for config-v2.json.broken-* files, or restore config-v2.json / .bak.',
         });
