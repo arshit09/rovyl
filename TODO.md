@@ -326,7 +326,8 @@ Pointers into the sections above, not items in their own right — each line nam
 - [ ] **10.3 Fullscreen-game detection** (focus protection) is not implemented on Linux.
 - [ ] **10.4 Hotkey outside GNOME Wayland.** GNOME gets a keybinding created by Rovyl; KDE and other
   compositors need the user to bind `rovyl --toggle` by hand.
-- [ ] **10.5 Windows-worded strings and defaults.** Most visible text is now platform-aware
-  (`src/utils/platform.ts`), but `src/launchFailure.ts` messages, `src/constants/mouseTrigger.ts`
-  ("Win"), and the default shortcuts in `src/defaults.ts` (`msedge`, `explorer`, `calc`) are still
-  Windows-shaped. First run replaces the defaults with discovered apps on Linux.
+- [ ] **10.5 Windows-worded strings and defaults.** Most visible text is platform-aware
+  (`src/utils/platform.ts`, and `src/launchFailure.ts` now words and classifies for Linux), but
+  `src/constants/mouseTrigger.ts` ("Win") and the default shortcuts in `src/defaults.ts`
+  (`msedge`, `explorer`, `calc`) are still Windows-shaped. First run replaces the defaults with
+  discovered apps on Linux.

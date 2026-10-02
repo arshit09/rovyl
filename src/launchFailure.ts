@@ -19,6 +19,8 @@
  * fetch `framer-motion`.
  */
 
+import { IS_LINUX_UI } from './utils/platform';
+
 /** Facts the main process attaches to the string. All optional: the string alone still classifies. */
 export interface ExecutionErrorDetails {
   command?: string;
@@ -184,11 +186,22 @@ const build = (
     .join('\n'),
 });
 
+export type LaunchPlatform = 'windows' | 'linux';
+
+/**
+ * The wording follows the platform the failure happened on. Classification does not: it reads
+ * `errorCode`, exit codes and the shape of the command, and gains the POSIX ones (126, 127,
+ * `EACCES`) beside the Windows ones. Only the sentences below differ.
+ */
 export function humanizeExecutionError(
   message: string,
   details?: ExecutionErrorDetails,
   appLabel?: string,
+  platform: LaunchPlatform = IS_LINUX_UI ? 'linux' : 'windows',
 ): HumanFault {
+  const linux = platform === 'linux';
+  /** The same sentence for each platform, chosen where it is used so the two read side by side. */
+  const os = (windows: string, onLinux: string) => (linux ? onLinux : windows);
   const raw = String(message ?? '').slice(0, RAW_LIMIT);
 
   /**
@@ -209,8 +222,11 @@ export function humanizeExecutionError(
     return build(
       'key-simulator',
       'Shortcut keys did not fire',
-      'Rovyl could not start the small helper that presses keys for you — PowerShell may be blocked on this PC.',
-      'Restart Rovyl; if it keeps failing, reinstall it.',
+      os(
+        'Rovyl could not start the small helper that presses keys for you — PowerShell may be blocked on this PC.',
+        'Rovyl could not start the helper that presses keys for you — xdotool may not be installed.',
+      ),
+      os('Restart Rovyl; if it keeps failing, reinstall it.', 'Install xdotool (it works on X11), then restart Rovyl.'),
       raw,
       details,
     );
@@ -238,15 +254,22 @@ export function humanizeExecutionError(
     errorCode === 'EACCES' ||
     errorCode === 'EPERM' ||
     exitCode === 5 ||
+    /** POSIX: 126 is "found but not executable". */
+    exitCode === 126 ||
+    has(/permission denied|operation not permitted/i) ||
     has(/access is denied|acesso negado|unauthorizedaccess|requires elevation|running scripts is disabled on this system/i);
   const missing =
     errorCode === 'ENOENT' ||
     exitCode === 2 ||
     exitCode === 3 ||
+    has(/no such file or directory/i) ||
     /** pt-BR says "arquivo" and "não pode encontrar"; pt-PT says "ficheiro" and "não consegue". */
     has(/cannot find the (file|path) specified|cannot find path|could not find file|itemnotfoundexception|n[ãa]o (conseguiu|consegue|pode|foi poss[íi]vel) encontrar o (ficheiro|arquivo|caminho)/i);
   const notRecognised =
     exitCode === 9009 ||
+    /** POSIX: 127 is "command not found". */
+    exitCode === 127 ||
+    has(/command not found|not found in path/i) ||
     has(/is not recognized as (the name of a cmdlet|an internal or external command)|commandnotfoundexception|objectnotfound|n[ãa]o [ée] reconhecido como/i);
   const noHandler =
     exitCode === 1155 ||
@@ -261,8 +284,8 @@ export function humanizeExecutionError(
     return build(
       'cancelled',
       'Launch cancelled',
-      `The Windows administrator prompt for ${subject} was dismissed.`,
-      'Launch it again and choose Yes on the prompt.',
+      os(`The Windows administrator prompt for ${subject} was dismissed.`, `The password prompt for ${subject} was dismissed.`),
+      os('Launch it again and choose Yes on the prompt.', 'Launch it again and enter your password when asked.'),
       raw,
       details,
     );
@@ -271,9 +294,12 @@ export function humanizeExecutionError(
   if (denied) {
     return build(
       'permission',
-      'Windows blocked this launch',
-      `Windows would not let Rovyl start ${subject} — it usually needs administrator rights, or a policy is blocking it.`,
-      'Open it once from the Start menu to see what it asks for.',
+      os('Windows blocked this launch', 'The system blocked this launch'),
+      os(
+        `Windows would not let Rovyl start ${subject} — it usually needs administrator rights, or a policy is blocking it.`,
+        `The system would not let Rovyl start ${subject} — the file is probably not executable, or a policy (AppArmor, SELinux) is blocking it.`,
+      ),
+      os('Open it once from the Start menu to see what it asks for.', 'Run it once from a terminal to see what it says, or check it with chmod +x.'),
       raw,
       details,
     );
@@ -285,7 +311,7 @@ export function humanizeExecutionError(
    * stored as `shell:AppsFolder\<AppID>` and `URL_SCHEME` reads that `shell:` as a link scheme:
    * left to fall through, an uninstalled app was announced as "No app handles this link".
    */
-  if (details?.method === 'start-apps-probe') {
+  if (details?.method === 'start-apps-probe' && !linux) {
     return build(
       'start-app-gone',
       `Windows no longer lists ${subject}`,
@@ -315,7 +341,7 @@ export function humanizeExecutionError(
       'command-failed',
       notRecognised ? 'Command not recognised' : `${subject} did not run`,
       notRecognised
-        ? 'The shell does not know the program this command starts.'
+        ? os('The shell does not know the program this command starts.', 'The shell cannot find the program this command starts — it may not be installed or not on PATH.')
         : 'The command ended with an error.',
       'Run it with the window set to Open to read its output, then fix the command in Settings.',
       raw,
@@ -338,7 +364,7 @@ export function humanizeExecutionError(
       return build(
         'no-handler',
         'No app handles this link',
-        `Nothing on this PC is registered to open ${scheme ? `${scheme}:` : 'this kind of'} links.`,
+        `Nothing on this ${os('PC', 'system')} is registered to open ${scheme ? `${scheme}:` : 'this kind of'} links.`,
         'Install the app that owns this link, or edit the shortcut to a normal https:// address.',
         raw,
         details,
@@ -347,8 +373,8 @@ export function humanizeExecutionError(
     return build(
       'unknown',
       `Could not open ${subject}`,
-      'Windows would not open this link.',
-      'Open Details to see exactly what Windows reported.',
+      os('Windows would not open this link.', 'Your desktop would not open this link.'),
+      os('Open Details to see exactly what Windows reported.', 'Open Details to see exactly what the system reported.'),
       raw,
       details,
     );
@@ -385,8 +411,8 @@ export function humanizeExecutionError(
       return build(
         'file-no-handler',
         'No app opens this file',
-        'The file is still here, but Windows has nothing registered to open this kind of file.',
-        'Install an app for this file type, or set a default with Open with in File Explorer.',
+        os('The file is still here, but Windows has nothing registered to open this kind of file.', 'The file is still here, but nothing is registered to open this kind of file.'),
+        os('Install an app for this file type, or set a default with Open with in File Explorer.', 'Install an app for this file type, or set a default with Open With in your file manager.'),
         raw,
         details,
       );
@@ -404,8 +430,8 @@ export function humanizeExecutionError(
     return build(
       'unknown',
       `Could not open ${subject}`,
-      'The file is there, but Windows would not open it.',
-      'Open Details to see exactly what Windows reported.',
+      os('The file is there, but Windows would not open it.', 'The file is there, but your desktop would not open it.'),
+      os('Open Details to see exactly what Windows reported.', 'Open Details to see exactly what the system reported.'),
       raw,
       details,
     );
@@ -423,7 +449,7 @@ export function humanizeExecutionError(
       'missing-file',
       `${subject} is no longer here`,
       'The program file this shortcut points to is gone — the app was probably uninstalled, moved, or updated into a new folder.',
-      'Re-add it in Settings with Application → Choose file, or remove the shortcut.',
+      os('Re-add it in Settings with Application → Choose file, or remove the shortcut.', 'Re-add it in Settings from the installed apps list, or remove the shortcut.'),
       raw,
       details,
     );
@@ -446,8 +472,14 @@ export function humanizeExecutionError(
     return build(
       'unlaunchable-app-id',
       `Could not open ${subject}`,
-      'Windows gave Rovyl an internal ID for this app instead of the program file, and that ID cannot be started on its own.',
-      'In Settings, remove this shortcut and add it again with Application → Choose file, pointing at the app’s .exe.',
+      os(
+        'Windows gave Rovyl an internal ID for this app instead of the program file, and that ID cannot be started on its own.',
+        'This shortcut holds an app ID that is not installed here, so it cannot be started.',
+      ),
+      os(
+        'In Settings, remove this shortcut and add it again with Application → Choose file, pointing at the app’s .exe.',
+        'In Settings, remove this shortcut and add the app again from the installed apps list.',
+      ),
       raw,
       details,
     );
@@ -457,8 +489,11 @@ export function humanizeExecutionError(
     return build(
       'not-found',
       `Could not open ${subject}`,
-      'Windows does not know a program by that name — it may have been renamed, or it was never installed on this PC.',
-      'Re-add the shortcut in Settings with Application → Choose file.',
+      os(
+        'Windows does not know a program by that name — it may have been renamed, or it was never installed on this PC.',
+        'Nothing by that name is installed or on PATH — it may have been renamed, or it was never installed.',
+      ),
+      os('Re-add the shortcut in Settings with Application → Choose file.', 'Re-add the shortcut in Settings from the installed apps list.'),
       raw,
       details,
     );
@@ -478,8 +513,8 @@ export function humanizeExecutionError(
   return build(
     'unknown',
     `Could not open ${subject}`,
-    'Rovyl tried several ways to start it and Windows refused every one.',
-    'Open Details to see exactly what Windows reported.',
+    os('Rovyl tried several ways to start it and Windows refused every one.', 'Rovyl tried several ways to start it and the system refused every one.'),
+    os('Open Details to see exactly what Windows reported.', 'Open Details to see exactly what the system reported.'),
     raw,
     details,
   );

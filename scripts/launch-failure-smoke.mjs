@@ -89,6 +89,22 @@ try {
     filePresentButRefusedCode: "unknown",
     filePresentIsNotCalledGone: true,
 
+    // Linux: POSIX signals classify, and no sentence names Windows.
+    linuxDeniedCode: "permission",
+    linuxDeniedNamesNoWindows: true,
+    linuxCommand127Code: "command-failed",
+    linuxCommand127Title: "Command not recognised",
+    linuxCommand127NamesNoWindows: true,
+    linuxGoneCode: "missing-file",
+    linuxGoneNamesNoWindows: true,
+    linuxVendorIdCode: "unlaunchable-app-id",
+    linuxVendorIdNamesNoWindows: true,
+    linuxKeysMentionsXdotool: true,
+    linuxIgnoresStartMenuProbe: true,
+    linuxFileGoneCode: "file-missing",
+    linuxFileGoneNamesNoWindows: true,
+    windowsWordingIsUnchanged: true,
+
     bodyIsSingleLine: true,
     bodyExcludesStderr: true,
     bodyIsCapped: true,

@@ -341,7 +341,50 @@ export function collect() {
     flood,
   ];
 
+  /** The same engine, asked on Linux: POSIX signals classify, and no sentence names Windows. */
+  const L = (message: string, details: Parameters<typeof humanizeExecutionError>[1], label?: string) =>
+    humanizeExecutionError(message, details, label, "linux");
+  const mentionsWindows = (fault: ReturnType<typeof humanizeExecutionError>) =>
+    /windows|start menu|\.exe|powershell|file explorer|\bPC\b/i.test(`${fault.title} ${fault.message} ${fault.hint ?? ""}`);
+
+  const linuxDenied = L('Failed to run "/opt/tool/tool". Error: EACCES: permission denied', {
+    command: "/opt/tool/tool", commandType: "app", errorCode: "EACCES", exeExists: true,
+  }, "Tool");
+  const linuxCommand127 = L('Failed to run "frobnicate --now". Error: sh: 1: frobnicate: not found', {
+    command: "frobnicate --now", commandType: "command", errorCode: 127,
+  });
+  const linuxGone = L('Failed to run "/opt/gone/app". Error: ENOENT', {
+    command: "/opt/gone/app", commandType: "app", errorCode: "ENOENT", exeExists: false,
+  }, "Gone App");
+  const linuxVendorId = L('Failed to run "org.gnome.Nautilus". Error: command not found', {
+    command: "org.gnome.Nautilus", commandType: "app", errorCode: 127,
+  });
+  const linuxKeys = L("Failed to start key simulator", undefined);
+  const linuxStartApps = L('Failed to run "foo". Error: x', {
+    command: "foo", commandType: "app", method: "start-apps-probe",
+  });
+  const linuxFile = L('Failed to run "/home/u/a.pdf". Error: nothing registered', {
+    command: "/home/u/a.pdf", commandType: "file", errorCode: "ENOENT", exeExists: false,
+  });
+  const linuxDefault = humanizeExecutionError('Failed to run "/opt/tool/tool". Error: EACCES', {
+    command: "/opt/tool/tool", commandType: "app", errorCode: "EACCES",
+  }, "Tool", "windows");
+
   return {
+    linuxDeniedCode: linuxDenied.code,
+    linuxDeniedNamesNoWindows: !mentionsWindows(linuxDenied),
+    linuxCommand127Code: linuxCommand127.code,
+    linuxCommand127Title: linuxCommand127.title,
+    linuxCommand127NamesNoWindows: !mentionsWindows(linuxCommand127),
+    linuxGoneCode: linuxGone.code,
+    linuxGoneNamesNoWindows: !mentionsWindows(linuxGone),
+    linuxVendorIdCode: linuxVendorId.code,
+    linuxVendorIdNamesNoWindows: !mentionsWindows(linuxVendorId),
+    linuxKeysMentionsXdotool: /xdotool/.test(linuxKeys.message),
+    linuxIgnoresStartMenuProbe: linuxStartApps.code !== "start-app-gone",
+    linuxFileGoneCode: linuxFile.code,
+    linuxFileGoneNamesNoWindows: !mentionsWindows(linuxFile),
+    windowsWordingIsUnchanged: linuxDefault.title === "Windows blocked this launch",
     /** Not a link failure, and it must name the app rather than a scheme. */
     startMenuEntryGoneCode: startMenuEntryGone.code,
     startMenuEntryGoneNamesTheApp: startMenuEntryGone.title.includes("CapCut"),
