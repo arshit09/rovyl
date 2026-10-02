@@ -8,6 +8,7 @@ import {
   type ShortcutDockConfig,
   type StatusDockConfig,
 } from '../utils/screenDocks';
+import { formatWheelString, type WheelStrings } from '../i18n/wheel';
 import { getIcon } from '../iconMap';
 import { SmartIcon } from './SmartIcon';
 
@@ -137,11 +138,13 @@ function NetworkGlyph({ status, size }: { status: SystemStatus; size: number }) 
   return <Wifi size={size} strokeWidth={1.8} aria-hidden />;
 }
 
-function networkTitle(status: SystemStatus): string {
-  if (status.network === 'ethernet') return 'Wired network';
-  if (status.network === 'none') return 'No network';
-  if (status.network === 'other') return 'Connected';
-  return status.signal >= 0 ? `Wi-Fi — ${status.signal}% signal` : 'Wi-Fi';
+function networkTitle(status: SystemStatus, strings: WheelStrings): string {
+  if (status.network === 'ethernet') return strings.dockNetWired;
+  if (status.network === 'none') return strings.dockNetNone;
+  if (status.network === 'other') return strings.dockNetOther;
+  return status.signal >= 0
+    ? formatWheelString(strings.dockNetWifiSignal, { percent: status.signal })
+    : strings.dockNetWifi;
 }
 
 /**
@@ -191,11 +194,13 @@ function BatteryMeter({ status, size }: { status: SystemStatus; size: number }) 
 function VolumeControl({
   status,
   size,
+  strings,
   onVolume,
   onMute,
 }: {
   status: SystemStatus;
   size: number;
+  strings: WheelStrings;
   onVolume: (percent: number) => void;
   onMute: () => void;
 }) {
@@ -226,8 +231,8 @@ function VolumeControl({
       <button
         type="button"
         className="zn-dock-icon-button"
-        title={status.muted ? 'Muted — click to unmute' : 'Click to mute'}
-        aria-label={status.muted ? 'Unmute' : 'Mute'}
+        title={status.muted ? strings.dockUnmute : strings.dockMute}
+        aria-label={status.muted ? strings.dockUnmuteAria : strings.dockMuteAria}
         tabIndex={-1}
         {...swallowProps}
         onClick={(event) => {
@@ -248,7 +253,9 @@ function VolumeControl({
         aria-valuemin={0}
         aria-valuemax={100}
         aria-valuenow={shown}
-        title={unavailable ? 'No audio device' : `Volume ${shown}%`}
+        title={unavailable
+          ? strings.dockVolumeNone
+          : formatWheelString(strings.dockVolumeLevel, { percent: shown })}
         {...swallowProps}
         onPointerDown={(event) => {
           if (unavailable) return;
@@ -290,6 +297,7 @@ function VolumeControl({
 function StatusDockPlate({
   dock,
   status,
+  strings,
   onOpenPanel,
   onVolume,
   onMute,
@@ -297,6 +305,7 @@ function StatusDockPlate({
 }: {
   dock: StatusDockConfig;
   status: SystemStatus;
+  strings: WheelStrings;
   onOpenPanel: (panel: SystemPanel) => void;
   onVolume: (percent: number) => void;
   onMute: () => void;
@@ -327,15 +336,15 @@ function StatusDockPlate({
       {...swallowProps}
     >
       {dock.showVolume && (
-        <VolumeControl status={status} size={size} onVolume={onVolume} onMute={onMute} />
+        <VolumeControl status={status} size={size} strings={strings} onVolume={onVolume} onMute={onMute} />
       )}
 
       {dock.showNetwork && (
         <button
           type="button"
           className="zn-dock-icon-button"
-          title={`${networkTitle(status)} — click for Windows network settings`}
-          aria-label={networkTitle(status)}
+          title={formatWheelString(strings.dockNetOpenSettings, { name: networkTitle(status, strings) })}
+          aria-label={networkTitle(status, strings)}
           tabIndex={-1}
           {...swallowProps}
           onClick={(event) => {
@@ -354,8 +363,11 @@ function StatusDockPlate({
         <button
           type="button"
           className="zn-dock-icon-button"
-          title={`Battery ${status.battery}%${status.charging ? ' — charging' : ''}`}
-          aria-label={`Battery ${status.battery} percent`}
+          title={formatWheelString(
+            status.charging ? strings.dockBatteryCharging : strings.dockBatteryLevel,
+            { percent: status.battery },
+          )}
+          aria-label={formatWheelString(strings.dockBatteryAria, { percent: status.battery })}
           tabIndex={-1}
           {...swallowProps}
           onClick={(event) => {
@@ -498,6 +510,8 @@ export interface ScreenDocksProps {
   status: StatusDockConfig;
   shortcuts: ShortcutDockConfig;
   systemStatus: SystemStatus;
+  /** The wheel's pack, handed down: the docks paint in the wheel's own first frame. */
+  strings: WheelStrings;
   onLaunch: (item: AppItem) => void;
   onOpenPanel: (panel: SystemPanel) => void;
   onVolume: (percent: number) => void;
@@ -513,6 +527,7 @@ export const ScreenDocks: React.FC<ScreenDocksProps> = ({
   status,
   shortcuts,
   systemStatus,
+  strings,
   onLaunch,
   onOpenPanel,
   onVolume,
@@ -541,6 +556,7 @@ export const ScreenDocks: React.FC<ScreenDocksProps> = ({
             key="status"
             dock={status}
             status={systemStatus}
+            strings={strings}
             active={isOpen}
             onOpenPanel={onOpenPanel}
             onVolume={onVolume}

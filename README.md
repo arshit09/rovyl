@@ -6,6 +6,8 @@
 
 A radial launcher for Windows. Hold the middle mouse button anywhere, aim, release.
 
+**English** · [日本語](README.ja.md)
+
 [![Download Rovyl for Windows](https://img.shields.io/badge/Download%20for%20Windows-2ea44f?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/arshit09/rovyl/releases/latest)
 
 ![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078d4?style=flat-square)
@@ -169,6 +171,9 @@ so a fork never inherits someone else's OAuth client.
 | `npm run test:win32-launch` | Command parsing and quoting |
 | `npm run test:persistence-shape` | Persistence blob normalisation |
 | `npm run test:window-split` | Starts the real app on a throwaway profile and opens the wheel |
+| `npm run test:i18n` | Translation tables: key parity and content |
+| `npm run test:i18n-packs` | The wheel's and the fault card's language packs |
+| `npm run test:backend-i18n` | The main process's string table |
 
 The other `test:*` scripts in `package.json` are focused smoke tests, one per feature.
 
