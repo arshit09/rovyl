@@ -1087,8 +1087,8 @@ export const PrecisionSettings: React.FC<PrecisionSettingsProps> = ({
                  */
                 key: 'mouseButton', configKey: 'mouseTriggerButton' as const, group: 'Mouse', title: 'Trigger button',
                 description: triggerAllowsHold
-                  ? 'Press Record, then press the button you want. Side buttons are usually free; left and right need Ctrl, Alt, Shift or Win held with them.'
-                  : 'Press Record, then press the button you want. Left and right always open the wheel on the click — holding one down is a drag everywhere else in Windows, so there is no gesture to choose.',
+                  ? 'Press Record, then press the button you want. Side buttons are usually free; left and right need Ctrl, Alt, Shift or ' + (IS_LINUX_UI ? 'Super' : 'Win') + ' held with them.'
+                  : 'Press Record, then press the button you want. Left and right always open the wheel on the click — holding one down is a drag everywhere else on ' + (IS_LINUX_UI ? 'your desktop' : 'Windows') + ', so there is no gesture to choose.',
                 kind: 'mouseButton', current: config.mouseTriggerButton ?? DEFAULT_MOUSE_TRIGGER,
                 keywords: 'wheel middle back forward mouse4 mouse5 side button macro record bind',
                 /**

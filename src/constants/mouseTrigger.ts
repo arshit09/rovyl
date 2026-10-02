@@ -17,6 +17,8 @@
  * The three old values are exactly the modifier-free forms of three of the buttons, so every
  * config written before this still parses and still means what it meant.
  */
+import { IS_LINUX_UI } from '../utils/platform';
+
 
 /** In the order the recorder's help text names them: the free ones first. */
 export const MOUSE_TRIGGER_BUTTONS = ['middle', 'x1', 'x2', 'left', 'right'] as const;
@@ -157,12 +159,14 @@ export function normalizeMouseTrigger(value: unknown): string | null {
  * The one rule is about left and right. Everything else a mouse can send is fair game — that is
  * the whole point of recording rather than choosing from a list.
  */
-export function rejectMouseTrigger(trigger: MouseTrigger): string | null {
+export function rejectMouseTrigger(trigger: MouseTrigger, linux: boolean = IS_LINUX_UI): string | null {
   if (!NEEDS_MODIFIER.has(trigger.button)) return null;
   if (trigger.ctrl || trigger.alt || trigger.shift || trigger.meta) return null;
+  const key = linux ? 'Super' : 'Win';
+  const where = linux ? 'your desktop' : 'Windows';
   return trigger.button === 'left'
-    ? 'The left button on its own is how Windows clicks everything. Hold Ctrl, Alt, Shift or Win and click again.'
-    : 'The right button on its own is every context menu in Windows. Hold Ctrl, Alt, Shift or Win and click again.';
+    ? `The left button on its own is how ${where} clicks everything. Hold Ctrl, Alt, Shift or ${key} and click again.`
+    : `The right button on its own is every context menu in ${where}. Hold Ctrl, Alt, Shift or ${key} and click again.`;
 }
 
 /**
@@ -200,13 +204,13 @@ export function mouseTriggerFromEvent(event: {
 }
 
 /** The chips the row draws: one per modifier, then the button. */
-export function mouseTriggerChips(value: unknown): string[] {
+export function mouseTriggerChips(value: unknown, linux: boolean = IS_LINUX_UI): string[] {
   const trigger = parseMouseTrigger(value) ?? parseMouseTrigger(DEFAULT_MOUSE_TRIGGER)!;
   const chips: string[] = [];
   if (trigger.ctrl) chips.push('Ctrl');
   if (trigger.alt) chips.push('Alt');
   if (trigger.shift) chips.push('Shift');
-  if (trigger.meta) chips.push('Win');
+  if (trigger.meta) chips.push(linux ? 'Super' : 'Win');
   chips.push(MOUSE_BUTTON_LABELS[trigger.button]);
   return chips;
 }

@@ -142,4 +142,12 @@ check(() => assert.ok(/\.\.\.\(triggerAllowsHold[\s\S]{0,200}key: 'mouseMode'/.t
 check(() => assert.ok(/mouseTriggerAllowsHold\(next\) \? \{\} : \{ mouseTriggerMode: 'click'/.test(panel),
   "recording a click-only button no longer writes the gesture back to click with it"));
 
+/* ── Linux words the Super key as Super, and Windows keeps "Win" ──────────── */
+
+const triggerSource = readFileSync(new URL("../src/constants/mouseTrigger.ts", import.meta.url), "utf8");
+check(() => assert.ok(/mouseTriggerChips\(value: unknown, linux: boolean = IS_LINUX_UI\)/.test(triggerSource) && /linux \? 'Super' : 'Win'/.test(triggerSource),
+  "the modifier chip is Super on Linux and still Win on Windows"));
+check(() => assert.ok(/rejectMouseTrigger\(trigger: MouseTrigger, linux: boolean = IS_LINUX_UI\)/.test(triggerSource) && /linux \? 'your desktop' : 'Windows'/.test(triggerSource),
+  "the bare-click refusal names the desktop, not Windows, on Linux"));
+
 console.log(`mouse-trigger-smoke: OK (${assertions} assertions passed)`);
