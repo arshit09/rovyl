@@ -281,11 +281,12 @@ budget. If one fails, the contract was broken, not the test.
 
 ## Links
 
-- **Download** — [latest release](https://github.com/arshit09/rovyl/releases/latest)
+- **Download (Linux)** — [latest release](https://github.com/lxz-401/rovyl/releases/latest)
+- **All Linux releases** — [github.com/lxz-401/rovyl/releases](https://github.com/lxz-401/rovyl/releases)
+- **Source and issues** — [github.com/lxz-401/rovyl](https://github.com/lxz-401/rovyl)
+- **Download (Windows)** — [latest release](https://github.com/arshit09/rovyl/releases/latest)
 - **Website and docs** — [rovyl-red.vercel.app](https://rovyl-red.vercel.app)
-- **All releases** — [github.com/arshit09/rovyl/releases](https://github.com/arshit09/rovyl/releases)
-- **Linux downloads** — [github.com/lxz-401/rovyl/releases](https://github.com/lxz-401/rovyl/releases)
-- **Upstream** — [HenryCauan/rovyl](https://github.com/HenryCauan/rovyl)
+- **Upstream** — [arshit09/rovyl](https://github.com/arshit09/rovyl), originally [HenryCauan/rovyl](https://github.com/HenryCauan/rovyl)
 - **Privacy policy** — [rovyl-red.vercel.app/privacy](https://rovyl-red.vercel.app/privacy)
 
 ## License
