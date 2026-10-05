@@ -15,6 +15,7 @@ import { fileURLToPath } from "node:url";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const require = createRequire(import.meta.url);
 const { buildTrayMenuTemplate, PAUSE_CHOICES } = require(join(root, "backend", "tray-menu.cjs"));
+const mainI18n = require(join(root, "backend", "i18n.cjs"));
 
 const labels = (items) => items.map((item) => (item.type === "separator" ? "---" : item.label));
 const find = (items, label) => items.find((item) => item.label === label);
@@ -213,6 +214,62 @@ check("every clickable row has something to call", () => {
       openSettings: () => {}, checkForUpdates: () => {}, quit: () => {},
     },
   }));
+});
+
+/* ── the same menu, in Japanese ──────────────────────────────────────────────
+ *
+ * Every check above passes no `t` at all, which is the point: the default is English read straight
+ * from the table, so they keep asserting the literals they always did. These add the other half —
+ * that the menu actually changes when the app's language does, and that nothing was keyed wrong.
+ */
+
+const labelsOf = (items) =>
+  items.flatMap((item) =>
+    item.type === "separator" ? [] : [item.label, ...(item.submenu ? labelsOf(item.submenu) : [])],
+  );
+
+check("Japanese changes every label the app owns", () => {
+  mainI18n.setLanguage("ja");
+  const japanese = buildTrayMenuTemplate({
+    ...BASE,
+    t: mainI18n.t,
+    pausedUntil: BASE.now + 12 * 60_000,
+    updateState: "ready",
+    updateVersion: "1.5.1",
+  });
+  mainI18n.setLanguage("en");
+  const english = buildTrayMenuTemplate({
+    ...BASE,
+    pausedUntil: BASE.now + 12 * 60_000,
+    updateState: "ready",
+    updateVersion: "1.5.1",
+  });
+
+  const ja = labelsOf(japanese);
+  const en = labelsOf(english);
+  assert.equal(ja.length, en.length, "the two languages must build the same menu");
+
+  /**
+   * What may legitimately be identical: the version row (a product name and a number) and the
+   * workspace names, which are the user's own text and are never translated.
+   */
+  const userOwned = new Set([
+    `Rovyl ${BASE.version}`,
+    ...BASE.workspaces.map((workspace) => workspace.name),
+  ]);
+  const unchanged = ja.filter((label, index) => label === en[index] && !userOwned.has(label));
+  assert.deepEqual(unchanged, [], `these rows never left English: ${unchanged.join(", ")}`);
+
+  /** Interpolation fired, in a language whose word order puts the number somewhere else. */
+  assert.ok(ja.some((label) => label.includes("12")), "the pause label lost its minutes");
+  assert.ok(ja.some((label) => label.includes("1.5.1")), "the update label lost its version");
+
+  /** A slot nobody filled would ship as literal braces. */
+  const unfilled = ja.filter((label) => String(label).includes("{"));
+  assert.deepEqual(unfilled, [], `unsubstituted placeholders: ${unfilled.join(", ")}`);
+
+  const empty = ja.filter((label) => !String(label).trim());
+  assert.deepEqual(empty, [], "a Japanese label came out blank");
 });
 
 console.log(`tray-menu-smoke: OK (${assertions} assertions)`);

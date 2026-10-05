@@ -11,13 +11,26 @@
  *    `raw`, and the card puts that behind "Details" in a box that scrolls. It was the absence of
  *    that separation that put eight lines of PowerShell in a red box over the Settings window.
  *  - classification prefers signals that are not prose — `errorCode`, the exit code, the probe on
- *    disk, the shape of the command. Windows in Portuguese answers "Acesso negado", and this app
- *    has users on that Windows.
+ *    disk, the shape of the command. Windows in Portuguese answers "Acesso negado" and Windows in
+ *    Japanese answers 「アクセスが拒否されました」, and this app has users on both. The localized
+ *    patterns are additive: a phrase nobody transcribed correctly costs nothing, because the
+ *    non-prose signals still classify the same failure.
  *
  * The suppression of global-shortcut registration noise does NOT live here: it stays in `App.tsx`,
  * ahead of this chunk being requested at all — otherwise a failure nobody will see would go and
  * fetch `framer-motion`.
  */
+
+import { DEFAULT_FAULT_STRINGS, type LaunchFailureStrings } from './i18n/faults';
+
+export type { LaunchFailureStrings };
+
+/**
+ * `{subject}` and `{scheme}` filled in. Written here rather than imported so this module keeps its
+ * one promise: no React, no DOM, and nothing a plain `node` run would have to resolve.
+ */
+const fill = (template: string, vars: Record<string, string>): string =>
+  template.replace(/\{(\w+)\}/g, (slot, name: string) => (name in vars ? vars[name] : slot));
 
 /** Facts the main process attaches to the string. All optional: the string alone still classifies. */
 export interface ExecutionErrorDetails {
@@ -131,7 +144,7 @@ const executablePart = (command: string): string => {
 };
 
 /** The name the sentence calls the app. The item's label always wins: it is what was on the wheel. */
-const subjectOf = (appLabel: string | undefined, exe: string): string => {
+const subjectOf = (appLabel: string | undefined, exe: string, fallback: string): string => {
   const label = (appLabel || '').trim();
   if (label) return truncate(label, 34);
   const bare = unquote(exe).replace(/[\\/]+$/, '');
@@ -145,7 +158,7 @@ const subjectOf = (appLabel: string | undefined, exe: string): string => {
   const tail = !PATH_LIKE.test(bare) && VENDOR_STYLE_ID.test(named)
     ? named.split('.').pop() || named
     : named;
-  return tail ? truncate(tail, 34) : 'this app';
+  return tail ? truncate(tail, 34) : fallback;
 };
 
 const build = (
@@ -188,6 +201,11 @@ export function humanizeExecutionError(
   message: string,
   details?: ExecutionErrorDetails,
   appLabel?: string,
+  /**
+   * The words, handed in rather than reached for. Defaulting to English keeps this a function that
+   * anyone — `scripts/launch-failure-smoke.mjs` included — can call with three arguments.
+   */
+  strings: LaunchFailureStrings = DEFAULT_FAULT_STRINGS,
 ): HumanFault {
   const raw = String(message ?? '').slice(0, RAW_LIMIT);
 
@@ -198,9 +216,9 @@ export function humanizeExecutionError(
   if (raw === 'Empty or invalid command') {
     return build(
       'empty-command',
-      'Nothing to launch',
-      'This shortcut has no app attached to it, so there is nothing for Rovyl to open.',
-      'Open Settings, remove the shortcut, and add it again.',
+      strings.faultNothingToLaunch,
+      strings.msgEmptyCommand,
+      strings.hintReAddShortcut,
       raw,
       details,
     );
@@ -208,9 +226,9 @@ export function humanizeExecutionError(
   if (raw === 'Failed to start key simulator') {
     return build(
       'key-simulator',
-      'Shortcut keys did not fire',
-      'Rovyl could not start the small helper that presses keys for you — PowerShell may be blocked on this PC.',
-      'Restart Rovyl; if it keeps failing, reinstall it.',
+      strings.faultKeysDidNotFire,
+      strings.msgKeySimulator,
+      strings.hintRestartRovyl,
       raw,
       details,
     );
@@ -228,29 +246,33 @@ export function humanizeExecutionError(
   const exeExists = details?.exeExists ?? null;
   const exe = executablePart(details?.resolvedCommand || command);
   const bareExe = unquote(exe);
-  const subject = subjectOf(appLabel, exe);
+  const subject = subjectOf(appLabel, exe, strings.faultThisApp);
   const has = (pattern: RegExp) => pattern.test(stderr);
 
   const cancelled =
     exitCode === 1223 ||
-    has(/ERROR_CANCELLED|operation was cancell?ed by the user|opera[çc][ãa]o (foi )?cancelada/i);
+    has(/ERROR_CANCELLED|operation was cancell?ed by the user|opera[çc][ãa]o (foi )?cancelada|ユーザーによって(取り消され|キャンセルされ)ました|操作をキャンセルしました/i);
   const denied =
     errorCode === 'EACCES' ||
     errorCode === 'EPERM' ||
     exitCode === 5 ||
-    has(/access is denied|acesso negado|unauthorizedaccess|requires elevation|running scripts is disabled on this system/i);
+    has(/access is denied|acesso negado|unauthorizedaccess|requires elevation|running scripts is disabled on this system|アクセスが拒否されました|管理者として実行/i);
   const missing =
     errorCode === 'ENOENT' ||
     exitCode === 2 ||
     exitCode === 3 ||
-    /** pt-BR says "arquivo" and "não pode encontrar"; pt-PT says "ficheiro" and "não consegue". */
-    has(/cannot find the (file|path) specified|cannot find path|could not find file|itemnotfoundexception|n[ãa]o (conseguiu|consegue|pode|foi poss[íi]vel) encontrar o (ficheiro|arquivo|caminho)/i);
+    /**
+     * pt-BR says "arquivo" and "não pode encontrar"; pt-PT says "ficheiro" and "não consegue";
+     * Japanese says 「指定されたファイルが見つかりません。」 and, for a path, 「パスが見つかりません」.
+     */
+    has(/cannot find the (file|path) specified|cannot find path|could not find file|itemnotfoundexception|n[ãa]o (conseguiu|consegue|pode|foi poss[íi]vel) encontrar o (ficheiro|arquivo|caminho)|(ファイル|パス)が見つかりません/i);
   const notRecognised =
     exitCode === 9009 ||
-    has(/is not recognized as (the name of a cmdlet|an internal or external command)|commandnotfoundexception|objectnotfound|n[ãa]o [ée] reconhecido como/i);
+    /** PowerShell says 「認識されません」, cmd says 「認識されていません」 — the optional 「てい」 covers both. */
+    has(/is not recognized as (the name of a cmdlet|an internal or external command)|commandnotfoundexception|objectnotfound|n[ãa]o [ée] reconhecido como|認識され(てい)?ません/i);
   const noHandler =
     exitCode === 1155 ||
-    has(/no application is associated|class not registered|n[ãa]o (h[áa]|existe) (nenhuma )?aplica[çc][ãa]o associada/i);
+    has(/no application is associated|class not registered|n[ãa]o (h[áa]|existe) (nenhuma )?aplica[çc][ãa]o associada|クラスが登録されていません|関連付けられ(た|ているアプリ)/i);
 
   /**
    * The order is what does the work. A cancelled elevation also writes "requires elevation", and
@@ -260,9 +282,9 @@ export function humanizeExecutionError(
   if (cancelled) {
     return build(
       'cancelled',
-      'Launch cancelled',
-      `The Windows administrator prompt for ${subject} was dismissed.`,
-      'Launch it again and choose Yes on the prompt.',
+      strings.faultLaunchCancelled,
+      fill(strings.msgCancelled, { subject }),
+      strings.hintAcceptPrompt,
       raw,
       details,
     );
@@ -271,9 +293,9 @@ export function humanizeExecutionError(
   if (denied) {
     return build(
       'permission',
-      'Windows blocked this launch',
-      `Windows would not let Rovyl start ${subject} — it usually needs administrator rights, or a policy is blocking it.`,
-      'Open it once from the Start menu to see what it asks for.',
+      strings.faultWindowsBlocked,
+      fill(strings.msgPermission, { subject }),
+      strings.hintOpenFromStart,
       raw,
       details,
     );
@@ -288,9 +310,9 @@ export function humanizeExecutionError(
   if (details?.method === 'start-apps-probe') {
     return build(
       'start-app-gone',
-      `Windows no longer lists ${subject}`,
-      'This shortcut points at a Start menu entry that has gone — the app was uninstalled, or it changed its id when it updated.',
-      'Remove the shortcut in Settings and add the app again from the list.',
+      fill(strings.faultNoLongerListed, { subject }),
+      strings.msgStartAppGone,
+      strings.hintRemoveAndReAdd,
       raw,
       details,
     );
@@ -337,18 +359,18 @@ export function humanizeExecutionError(
     if (noHandler || missing || exeExists === false) {
       return build(
         'no-handler',
-        'No app handles this link',
-        `Nothing on this PC is registered to open ${scheme ? `${scheme}:` : 'this kind of'} links.`,
-        'Install the app that owns this link, or edit the shortcut to a normal https:// address.',
+        strings.faultNoAppForLink,
+        scheme ? fill(strings.msgNoHandlerScheme, { scheme }) : strings.msgNoHandlerGeneric,
+        strings.hintInstallLinkApp,
         raw,
         details,
       );
     }
     return build(
       'unknown',
-      `Could not open ${subject}`,
-      'Windows would not open this link.',
-      'Open Details to see exactly what Windows reported.',
+      fill(strings.faultCouldNotOpen, { subject }),
+      strings.msgUrlRefused,
+      strings.hintOpenDetails,
       raw,
       details,
     );
@@ -362,9 +384,9 @@ export function humanizeExecutionError(
   if (commandType === 'folder') {
     return build(
       'folder-missing',
-      'That folder is gone',
-      'The folder this shortcut opens does not exist any more — it was moved, renamed, or deleted.',
-      'Edit the shortcut in Settings and pick the folder again.',
+      strings.faultFolderGone,
+      strings.msgFolderMissing,
+      strings.hintPickFolderAgain,
       raw,
       details,
     );
@@ -384,9 +406,9 @@ export function humanizeExecutionError(
     if (noHandler) {
       return build(
         'file-no-handler',
-        'No app opens this file',
-        'The file is still here, but Windows has nothing registered to open this kind of file.',
-        'Install an app for this file type, or set a default with Open with in File Explorer.',
+        strings.faultNoAppForFile,
+        strings.msgFileNoHandler,
+        strings.hintInstallFileApp,
         raw,
         details,
       );
@@ -394,18 +416,18 @@ export function humanizeExecutionError(
     if (exeExists === false || missing) {
       return build(
         'file-missing',
-        'That file is gone',
-        'The file this shortcut opens does not exist any more — it was moved, renamed, or deleted.',
-        'Edit the shortcut in Settings and pick the file again.',
+        strings.faultFileGone,
+        strings.msgFileMissing,
+        strings.hintPickFileAgain,
         raw,
         details,
       );
     }
     return build(
       'unknown',
-      `Could not open ${subject}`,
-      'The file is there, but Windows would not open it.',
-      'Open Details to see exactly what Windows reported.',
+      fill(strings.faultCouldNotOpen, { subject }),
+      strings.msgFileRefused,
+      strings.hintOpenDetails,
       raw,
       details,
     );
@@ -421,9 +443,9 @@ export function humanizeExecutionError(
   if (looksLikePath && fileIsGone) {
     return build(
       'missing-file',
-      `${subject} is no longer here`,
-      'The program file this shortcut points to is gone — the app was probably uninstalled, moved, or updated into a new folder.',
-      'Re-add it in Settings with Application → Choose file, or remove the shortcut.',
+      fill(strings.faultNoLongerHere, { subject }),
+      strings.msgProgramMissing,
+      strings.hintReAddApp,
       raw,
       details,
     );
@@ -445,9 +467,9 @@ export function humanizeExecutionError(
   ) {
     return build(
       'unlaunchable-app-id',
-      `Could not open ${subject}`,
-      'Windows gave Rovyl an internal ID for this app instead of the program file, and that ID cannot be started on its own.',
-      'In Settings, remove this shortcut and add it again with Application → Choose file, pointing at the app’s .exe.',
+      fill(strings.faultCouldNotOpen, { subject }),
+      strings.msgUnlaunchableAppId,
+      strings.hintUseChooseFile,
       raw,
       details,
     );
@@ -456,9 +478,9 @@ export function humanizeExecutionError(
   if (notRecognised && exeExists !== true) {
     return build(
       'not-found',
-      `Could not open ${subject}`,
-      'Windows does not know a program by that name — it may have been renamed, or it was never installed on this PC.',
-      'Re-add the shortcut in Settings with Application → Choose file.',
+      fill(strings.faultCouldNotOpen, { subject }),
+      strings.msgNotFound,
+      strings.hintReAddChooseFile,
       raw,
       details,
     );
@@ -467,9 +489,9 @@ export function humanizeExecutionError(
   if (isUnexpected) {
     return build(
       'unexpected',
-      'Something went wrong',
-      `Rovyl hit an unexpected problem while starting ${subject}.`,
-      'Try again; if it keeps happening, restart Rovyl.',
+      strings.faultSomethingWrong,
+      fill(strings.msgUnexpected, { subject }),
+      strings.hintTryAgainRestart,
       raw,
       details,
     );
@@ -477,9 +499,9 @@ export function humanizeExecutionError(
 
   return build(
     'unknown',
-    `Could not open ${subject}`,
-    'Rovyl tried several ways to start it and Windows refused every one.',
-    'Open Details to see exactly what Windows reported.',
+    fill(strings.faultCouldNotOpen, { subject }),
+    strings.msgAllRefused,
+    strings.hintOpenDetails,
     raw,
     details,
   );

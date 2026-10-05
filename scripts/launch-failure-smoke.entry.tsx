@@ -7,6 +7,7 @@
  * is the `CommandNotFoundException` that was printed whole into a red box over the Settings window.
  */
 import { humanizeExecutionError } from "../src/launchFailure";
+import { DEFAULT_FAULT_STRINGS, type LaunchFailureStrings } from "../src/i18n/faults";
 
 /** Exactly what `exec_direct` produced for a Start-Menu AppUserModelID stored as a command. */
 const TELEGRAM_STDERR = `Command failed: powershell.exe /c Telegram.TelegramDesktop
@@ -315,6 +316,74 @@ export function collect() {
     "CapCut",
   );
 
+  /**
+   * Japanese Windows. Same three shapes as the Portuguese case above: the prose is in a script none
+   * of the English patterns match, and the classification has to survive it. The first two carry a
+   * structured signal as well; `notRecognisedJapanese` deliberately does not, so it exercises the
+   * text pattern alone.
+   */
+  const deniedJapanese = humanizeExecutionError(
+    'Failed to run "C:\\Windows\\System32\\gpedit.msc". Error: アクセスが拒否されました。',
+    {
+      command: "C:\\Windows\\System32\\gpedit.msc",
+      commandType: "app",
+      method: "exec_start",
+      errorCode: null,
+      exeExists: true,
+      raw: "アクセスが拒否されました。",
+    },
+    "グループ ポリシー",
+  );
+
+  const missingJapanese = humanizeExecutionError(
+    'Failed to run "C:\\Apps\\gone.exe". Error: 指定されたファイルが見つかりません。',
+    {
+      command: "C:\\Apps\\gone.exe",
+      commandType: "app",
+      method: "exec_direct",
+      errorCode: null,
+      exeExists: false,
+      raw: "指定されたファイルが見つかりません。",
+    },
+    "Gone",
+  );
+
+  const notRecognisedJapanese = humanizeExecutionError(
+    'Failed to run "zed". Error: 用語 \'zed\' は、コマンドレット、関数、スクリプト ファイル、または操作可能なプログラムの名前として認識されません。',
+    {
+      command: "zed",
+      commandType: "app",
+      method: "exec_direct",
+      errorCode: null,
+      exeExists: null,
+      raw: "認識されません。",
+    },
+    "Zed",
+  );
+
+  const noHandlerJapanese = humanizeExecutionError(
+    'Failed to run "steam://run/440". Error: クラスが登録されていません。',
+    {
+      command: "steam://run/440",
+      commandType: "url",
+      method: "shell.openExternal",
+      errorCode: null,
+      exeExists: null,
+      raw: "クラスが登録されていません。",
+    },
+  );
+
+  /**
+   * The words are injected, the verdict is not. A stub pack must change every sentence and leave
+   * `code`, `raw` and `report` byte-identical — that separation is what lets the card translate
+   * without the classifier knowing any language exists.
+   */
+  const stubStrings = Object.fromEntries(
+    Object.keys(DEFAULT_FAULT_STRINGS).map((key) => [key, `«${key}»`]),
+  ) as unknown as LaunchFailureStrings;
+  const injectedPlain = humanizeExecutionError(telegramMessage);
+  const injectedStub = humanizeExecutionError(telegramMessage, undefined, undefined, stubStrings);
+
   const everyCase = [
     startMenuEntryGone,
     telegram,
@@ -339,9 +408,26 @@ export function collect() {
     fileWithoutHandler,
     filePresentButRefused,
     flood,
+    deniedJapanese,
+    missingJapanese,
+    notRecognisedJapanese,
+    noHandlerJapanese,
   ];
 
   return {
+    /** Japanese Windows: every one of these must land where its English twin lands. */
+    deniedJapaneseCode: deniedJapanese.code,
+    missingJapaneseCode: missingJapanese.code,
+    notRecognisedJapaneseCode: notRecognisedJapanese.code,
+    noHandlerJapaneseCode: noHandlerJapanese.code,
+    japaneseKeepsRawForDetails: deniedJapanese.raw.includes("アクセスが拒否されました"),
+
+    /** Injection changes every sentence and nothing else. */
+    injectedKeepsCode: injectedStub.code === injectedPlain.code,
+    injectedKeepsRaw: injectedStub.raw === injectedPlain.raw,
+    injectedKeepsReport: injectedStub.report === injectedPlain.report,
+    injectedUsesTheStub: injectedStub.title.startsWith("«") && injectedStub.message.startsWith("«"),
+
     /** Not a link failure, and it must name the app rather than a scheme. */
     startMenuEntryGoneCode: startMenuEntryGone.code,
     startMenuEntryGoneNamesTheApp: startMenuEntryGone.title.includes("CapCut"),

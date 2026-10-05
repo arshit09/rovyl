@@ -24,6 +24,7 @@
     "test:win32-launch": "node --test backend/win32-launch.test.cjs",
     "test:persistence-shape": "node scripts/persistence-normalize-smoke.mjs",
     "test:icon-map": "node scripts/icon-map-smoke.mjs",
+    "test:icon-keywords": "node scripts/icon-keywords-smoke.mjs",
     "test:launch-failure": "node scripts/launch-failure-smoke.mjs",
     "test:launch-result": "node scripts/launch-result-smoke.mjs",
     "test:file-shortcut": "node scripts/file-shortcut-smoke.mjs",
@@ -52,6 +53,8 @@
     "test:mouse-trigger": "node scripts/mouse-trigger-smoke.mjs",
     "test:workspace-key": "node scripts/workspace-key-smoke.mjs",
     "test:i18n": "node scripts/i18n-smoke.mjs",
+    "test:i18n-packs": "node scripts/i18n-packs-smoke.mjs",
+    "test:backend-i18n": "node scripts/backend-i18n-smoke.mjs",
     "test:select-menu": "node scripts/select-menu-smoke.mjs",
     "test:window-split": "node scripts/window-split-smoke.mjs",
     "test:trigger-gesture": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/trigger-gesture-smoke.ps1",
@@ -142,7 +145,13 @@
       "guid": "5e135f2a-7b3b-4e12-8c14-998822334455",
       "artifactName": "${productName}-Setup-${version}.${ext}",
       "include": "nsis/installer.nsh",
-      "deleteAppDataOnUninstall": true
+      "deleteAppDataOnUninstall": true,
+      "multiLanguageInstaller": true,
+      "installerLanguages": [
+        "en_US",
+        "ja_JP"
+      ],
+      "displayLanguageSelector": true
     },
     "appx": {
       "identityName": "HenryCa.Rovyl",
@@ -153,7 +162,8 @@
       "backgroundColor": "#101014",
       "showNameOnTiles": false,
       "languages": [
-        "en-US"
+        "en-US",
+        "ja-JP"
       ]
     }
   },

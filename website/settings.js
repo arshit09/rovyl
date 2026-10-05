@@ -53,10 +53,368 @@
      Someone stranded in a UI they cannot read is looking for the row that LOOKS like
      their language, and "Russian" does not look like Русский. The English name rides
      along as support, as it does in `src/i18n/languages.ts`. */
+  /* ── Japanese ────────────────────────────────────────────────────────────
+     The page under /ja is the same replica with the same rows, and a Japanese
+     landing page whose centrepiece demo is in English argues against itself.
+
+     Keyed by the English string rather than by a row id on purpose: the rows
+     below are data, not components, and a second parallel structure is how one
+     of two lists goes stale. A string with no entry falls through to English,
+     so adding a row never breaks the page - it just leaves that row untranslated
+     until someone adds the line. The wording matches `src/i18n/translations.ts`;
+     this is the app's own copy, not a second translation of it. */
+  const JA = {
+    'A note each time the highlight moves to a different item.':
+      'ハイライトが別の項目に移るたびに一音。',
+    'A strip of your own icons beside the open wheel - Chrome, Steam, a project folder, anything. Nothing is drawn until you add some.':
+      '開いたホイールの脇に並ぶ、自分のアイコンの帯 — Chrome、Steam、作業中のフォルダー、なんでも。追加するまでは何も描かれません。',
+    'Activation':
+      '呼び出し',
+    'Activation zone':
+      '確定までの距離',
+    'Add icons':
+      'アイコンを追加',
+    'Advanced':
+      '詳細',
+    'All':
+      'すべて',
+    'All fullscreen apps or only a selected list.':
+      '全画面のアプリすべてか、選んだ一覧だけか。',
+    'Appearance':
+      '外観',
+    'Applies to the window and title bar. The wheel remains dark.':
+      'ウィンドウとタイトルバーに適用されます。ホイールは暗いままです。',
+    'Back':
+      '戻る',
+    'Background dimming':
+      '背景を暗くする',
+    'Battery':
+      'バッテリー',
+    'Black':
+      'ブラック',
+    'Bottom center':
+      '下中央',
+    'Bottom left':
+      '左下',
+    'Bottom right':
+      '右下',
+    'Cancel':
+      '取り消し',
+    'Charge level, and whether it is on the charger. Nothing is drawn on a machine with no battery.':
+      '充電残量と、充電器につながっているかどうか。バッテリーのない機械では何も描きません。',
+    'Check for updates':
+      '更新を確認',
+    'Check now':
+      '今すぐ確認',
+    'Choose apps':
+      'アプリを選ぶ',
+    'Choose installed applications visually. No executable names required.':
+      'インストール済みのアプリを見ながら選べます。実行ファイル名を入力する必要はありません。',
+    'Choose interface display language.':
+      '画面の表示言語を選びます。',
+    'Click':
+      'クリック',
+    'Click keeps the wheel open; hold runs the selection on release.':
+      'クリックではホイールが開いたままになり、長押しでは離した時点で実行します。',
+    'Clock':
+      '時計',
+    'Color used by the target under the pointer.':
+      'ポインターが指している対象に使われる色。',
+    'Contexts and their shortcuts.':
+      'コンテキストと、そのショートカット。',
+    'Core Rovyl behavior.':
+      'Rovyl の基本の動き。',
+    'Current':
+      '現在',
+    'Cursor distance required to confirm a target.':
+      '対象を確定するのに必要なカーソルの移動距離。',
+    'Data':
+      'データ',
+    'Detect games automatically':
+      'ゲームを自動で判別',
+    'Direction':
+      '方向',
+    'Direction sensitivity':
+      '方向の感度',
+    'Draws each position’s digit on its icon. Turn it off once the wheel is in your hands - the keys go on working.':
+      '各位置の数字をアイコンの上に描きます。ホイールに慣れたら切って構いません。キーはそのまま使えます。',
+    'Draws the seams between the shares and fills the one you are aiming at with the hover color. Off, the aim is identical and only the icon lights up.':
+      '取り分の境目を描き、狙っている扇形をホバー色で塗ります。オフでも狙いは変わらず、アイコンだけが光ります。',
+    'Enable keyboard trigger':
+      'キーボードでの呼び出しを有効にする',
+    'Enable mouse trigger':
+      'マウスでの呼び出しを有効にする',
+    'Erase everything':
+      'すべて消去',
+    'Erase local settings and start over.':
+      'この PC の設定を消して、最初からやり直します。',
+    'Every workspace, shortcut, icon and preference on this PC is deleted and Rovyl restarts. This cannot be undone - use Export settings first if you want a copy.':
+      'この PC のワークスペース・ショートカット・アイコン・設定がすべて削除され、Rovyl が再起動します。取り消せません。控えが要るなら、先に設定の書き出しを。',
+    'Export':
+      '書き出す',
+    'Export settings':
+      '設定を書き出す',
+    'Follow pointer':
+      'ポインターを追う',
+    'Forward':
+      '進む',
+    'Free space between items.':
+      '項目のあいだの余白。',
+    'Fullscreen protection':
+      '全画面時の保護',
+    'General':
+      '一般',
+    'Gesture behavior':
+      'ジェスチャの挙動',
+    'GitHub':
+      'GitHub',
+    'Global shortcut':
+      'グローバルショートカット',
+    'Hands-free':
+      'ハンズフリー',
+    'Hides the pointer and picks by direction - move toward a target and it opens by itself. Escape closes the wheel without opening anything.':
+      'ポインターを隠し、向きで選びます。対象の方へ動かすとそのまま開きます。Escape を押せば何も開かずにホイールを閉じます。',
+    'High':
+      '高',
+    'Hold':
+      '長押し',
+    'Hover color':
+      'ホバー時の色',
+    'Hover sound':
+      '移動時の音',
+    'Hover time':
+      '待ち時間',
+    'How and where the wheel appears.':
+      'ホイールをどこで、どう開くか。',
+    'How big each icon is drawn.':
+      'アイコン1つの大きさ。',
+    'How big the glyphs are drawn. The readouts beside them are set to match.':
+      '記号の大きさ。隣の数値もそれに合わせます。',
+    'How far your hand must travel before that direction is chosen. High picks on the smallest movement.':
+      'その向きが選ばれるまでに手をどれだけ動かす必要があるか。「高」ならわずかな動きで選ばれます。',
+    'How long a target must stay aimed before it opens. Drag to zero and the direction opens the moment it commits.':
+      '対象を狙ったまま何秒待つと開くか。ゼロまで下げると、向きが決まった瞬間に開きます。',
+    'How loud both sounds play. Windows volume still applies on top.':
+      '2つの音の大きさ。この上に Windows 側の音量もかかります。',
+    'How much the rest of the screen recedes. At 100% it goes: the desktop is covered edge to edge.':
+      '画面のほかの部分がどれだけ後ろに下がるか。100% では見えなくなり、デスクトップが端まで覆われます。',
+    'How the global keyboard shortcut activates the menu.':
+      'グローバルショートカットでメニューをどう呼び出すか。',
+    'Icon size':
+      'アイコンの大きさ',
+    'Icons':
+      'アイコン',
+    'Import':
+      '読み込む',
+    'Import settings':
+      '設定を読み込む',
+    'Instant':
+      '即時',
+    'Keep every target name visible.':
+      'すべての対象の名前を表示したままにします。',
+    'Key to leave a folder':
+      'フォルダーから戻るキー',
+    'Keyboard':
+      'キーボード',
+    'Language':
+      '言語',
+    'Launch without clicking':
+      'クリックなしで起動',
+    'List':
+      '一覧',
+    'Low':
+      '低',
+    'Main screen':
+      'メイン画面',
+    'Medium':
+      '中',
+    'Monitor':
+      'ディスプレイ',
+    'Mouse':
+      'マウス',
+    'Names under the icons':
+      'アイコンの下に名前',
+    'Network':
+      'ネットワーク',
+    'New workspace':
+      '新しいワークスペース',
+    'Notes for opening and moving around the wheel.':
+      'ホイールを開くときと、項目を移るときの音。',
+    'Number keys':
+      '数字キー',
+    'Off by default: a strip of eight names is a menu, and the wheel is already that.':
+      '既定はオフ。名前が8つ並べばそれはメニューで、ホイールがすでにそれです。',
+    'One note as the wheel blooms open, and again when you aim back at the center.':
+      'ホイールが咲くように開くときに一音、中心に狙いを戻したときにもう一音。',
+    'Only the icon under the pointer highlights. Release away from every icon to cancel.':
+      'ポインターの下のアイコンだけが光ります。どのアイコンからも離れた場所で離せば取り消しです。',
+    'Open':
+      '開く',
+    'Open the wheel over any application.':
+      'どのアプリの上でもホイールを開きます。',
+    'Open the wheel with a keyboard shortcut.':
+      'キーボードショートカットでホイールを開きます。',
+    'Open the wheel with a mouse button.':
+      'マウスのボタンでホイールを開きます。',
+    'Opening sound':
+      '開くときの音',
+    'Orbital radius':
+      'ホイールの半径',
+    'Output level, with a slider you can drag. Click the glyph to mute.':
+      '出力レベル。スライダーで動かせます。記号をクリックでミュート。',
+    'Paused':
+      '一時停止中',
+    'Perceived wheel diameter.':
+      'ホイールの見た目の大きさ。',
+    'Persistent labels':
+      'ラベルを常に表示',
+    'Pick the corner or edge on the screen below.':
+      '下の画面で角か辺を選びます。',
+    'Pick the corner or edge on the screen below. The wheel opens over the whole screen while a dock is on - everything but the taskbar - so the corner is a real one.':
+      '下の画面で角か辺を選びます。ドックが出ているあいだホイールは画面全体 — タスクバー以外のすべて — に開くので、角は本当の角です。',
+    'Picker':
+      '選択画面',
+    'Pointer':
+      'ポインター',
+    'Position':
+      '位置',
+    'Presence':
+      '存在感',
+    'Press play beside a name to hear it before choosing.':
+      '名前の横の再生ボタンで、選ぶ前に聴けます。',
+    'Prevent accidental openings during games and videos.':
+      'ゲームや動画の最中に誤って開くのを防ぎます。',
+    'Protected applications':
+      '保護するアプリ',
+    'Protection':
+      '保護',
+    'Quick launch with number keys':
+      '数字キーでのクイック起動',
+    'Reset to default':
+      '既定に戻す',
+    'Restore':
+      '戻す',
+    'Restore defaults':
+      '初期設定に戻す',
+    'Rovyl checks automatically a few seconds after launch.':
+      '起動の数秒後に Rovyl が自動で確認します。',
+    'Rovyl is ready as soon as you sign in to Windows.':
+      'Windows にサインインした時点で Rovyl が使えるようになります。',
+    'Rovyl surfaces':
+      'Rovyl の画面',
+    'Save a portable copy of your configuration.':
+      '設定の持ち運べる控えを保存します。',
+    'Scope':
+      '適用範囲',
+    'Settings button on the wheel':
+      'ホイール上の設定ボタン',
+    'Settings shortcut':
+      '設定へのショートカット',
+    'Shape, presence, and theme.':
+      '形、存在感、テーマ。',
+    'Short bass notes as the wheel opens and as you move between items.':
+      'ホイールが開くとき、項目を移るときに鳴る短い低音。',
+    'Shortcut behavior':
+      'ショートカットの挙動',
+    'Shortcut dock':
+      'ショートカットドック',
+    'Show numbers on the wheel':
+      'ホイールに数字を表示',
+    'Show the pill under the wheel with the current workspace and folder.':
+      'ホイールの下に、今のワークスペースとフォルダーを示す帯を出します。',
+    'Sound':
+      '音',
+    'Sound effects':
+      '効果音',
+    'Source code, releases, and issues.':
+      'ソースコード、リリース、Issue。',
+    'Spacing':
+      '間隔',
+    'Start with Windows':
+      'Windows と同時に起動',
+    'System dock':
+      'システムドック',
+    'Target spacing':
+      '対象どうしの間隔',
+    'Targeting':
+      '狙い方',
+    'The gap between neighbouring icons.':
+      '隣り合うアイコンのあいだの空き。',
+    'The gap between neighbouring readouts.':
+      '隣り合う表示のあいだの空き。',
+    'The time, with the date under it.':
+      '時刻と、その下に日付。',
+    'The wheel always opens on the main screen, wherever the pointer happens to be.':
+      'ポインターがどこにあっても、ホイールは常にメイン画面に開きます。',
+    'The wheel opens on the screen the pointer is already on, so what you launch lands where you are working.':
+      'ポインターのある画面にホイールが開くので、起動したものは作業している場所に出ます。',
+    'Theme':
+      'テーマ',
+    'Time, battery, network and volume, read live, beside the open wheel.':
+      '時刻・バッテリー・ネットワーク・音量を、開いたホイールの脇に実時間で。',
+    'Time, battery, network and volume, read live, beside the open wheel. The volume slider and the mute button work from here.':
+      '時刻・バッテリー・ネットワーク・音量を、開いたホイールの脇に実時間で。音量スライダーとミュートはここから操作できます。',
+    'Toggle':
+      'トグル',
+    'Top center':
+      '上中央',
+    'Top left':
+      '左上',
+    'Top right':
+      '右上',
+    'Trigger button':
+      '呼び出しボタン',
+    'Try it':
+      '試す',
+    'Uses game-store folders and engine files; protection still applies only in fullscreen.':
+      'ゲームストアのフォルダーとエンジンのファイルを手がかりにします。保護が働くのは全画面のときだけです。',
+    'Visible wedges':
+      '扇形を表示',
+    'Visual weight of each target.':
+      '一つひとつの対象の見た目の重さ。',
+    'Volume':
+      '音量',
+    'Wheel':
+      'ホイール',
+    'When moving between items':
+      '項目を移るとき',
+    'When the wheel opens':
+      'ホイールが開くとき',
+    'Where it opens':
+      '開く場所',
+    'Where it sits':
+      '置く場所',
+    'Where the gear sits. It steps inboard if the battery or weather pill is already there.':
+      '歯車を置く位置。バッテリーや天気の表示が先にある場合は内側にずれます。',
+    'Which corner':
+      'どの角に置くか',
+    'White':
+      'ホワイト',
+    'Wi-Fi signal, or a wired connection. Click it for the Windows network panel.':
+      'Wi-Fi の電波、または有線接続。クリックすると Windows のネットワークパネルが開きます。',
+    'Workspace name':
+      'ワークスペース名',
+    'Workspaces':
+      'ワークスペース',
+    'Area':
+      '領域',
+    'At pointer':
+      'ポインターの位置',
+    'Screen center':
+      '画面の中央',
+    'Protection, shortcuts, and data.':
+      '保護、ショートカット、データ。',
+  
+  };
+
+  const isJapanese = document.documentElement.lang === 'ja';
+  const tr = (value) => (isJapanese && value && JA[value]) || value;
+
   const LANGUAGES = [
     ['en', 'English', 'English'],
     ['es', 'Español', 'Spanish'],
     ['zh', '简体中文', 'Chinese (Simplified)'],
+    ['ja', '日本語', 'Japanese'],
     ['pt', 'Português', 'Portuguese'],
     ['ru', 'Русский', 'Russian'],
     ['de', 'Deutsch', 'German'],
@@ -618,7 +976,7 @@
       button.type = 'button';
       button.setAttribute('role', 'switch');
       button.setAttribute('aria-checked', String(isOn));
-      button.setAttribute('aria-label', row.title);
+      button.setAttribute('aria-label', tr(row.title));
       button.addEventListener('click', () => (row.toggle ? row.toggle() : set(row.key, isOn ? offValue : onValue)));
       return button;
     }
@@ -626,9 +984,9 @@
     if (row.kind === 'seg') {
       const wrap = el('div', 'seg');
       wrap.setAttribute('role', 'group');
-      wrap.setAttribute('aria-label', row.title);
+      wrap.setAttribute('aria-label', tr(row.title));
       for (const [value, label] of row.choices) {
-        const option = el('button', get(row.key) === value ? 'is-on' : '', label);
+        const option = el('button', get(row.key) === value ? 'is-on' : '', tr(label));
         option.type = 'button';
         option.addEventListener('click', () => set(row.key, value));
         wrap.append(option);
@@ -646,14 +1004,14 @@
     if (row.kind === 'open') {
       const button = el('button', 'btn is-value');
       button.type = 'button';
-      button.setAttribute('aria-label', row.title);
+      button.setAttribute('aria-label', tr(row.title));
       button.append(el('b', '', row.value), glyph('i-chevron'));
       button.addEventListener('click', () => flash(button));
       return button;
     }
 
     if (row.kind === 'action') {
-      const button = el('button', 'btn', row.label);
+      const button = el('button', 'btn', tr(row.label));
       button.type = 'button';
       if (row.icon) button.prepend(glyph(row.icon));
       /* Deliberately inert: this is a tour of the panel, not a copy of the app
@@ -688,7 +1046,7 @@
     const picker = el('input');
     picker.type = 'color';
     picker.value = value.toLowerCase();
-    picker.setAttribute('aria-label', row.title);
+    picker.setAttribute('aria-label', tr(row.title));
     picker.addEventListener('input', () => {
       const next = normalizeHex(picker.value);
       if (!next) return;
@@ -821,9 +1179,9 @@
     trigger.type = 'button';
     trigger.setAttribute('aria-haspopup', 'listbox');
     trigger.setAttribute('aria-expanded', 'false');
-    trigger.setAttribute('aria-label', row.title);
+    trigger.setAttribute('aria-label', tr(row.title));
     trigger.append(
-      el('span', '', chosen[2] && chosen[2] !== chosen[1] ? chosen[1] + ' · ' + chosen[2] : chosen[1]),
+      el('span', '', chosen[2] && chosen[2] !== chosen[1] ? tr(chosen[1]) + ' · ' + tr(chosen[2]) : tr(chosen[1])),
       glyph('i-chevron'),
     );
     wrap.append(trigger);
@@ -844,7 +1202,7 @@
     list.id = row.key + '-listbox';
     list.setAttribute('role', 'listbox');
     list.tabIndex = -1;
-    list.setAttribute('aria-label', row.title);
+    list.setAttribute('aria-label', tr(row.title));
 
     /* The help bubble. `pointer-events: none` in the stylesheet: it appears under a
        pointer already on its way to a click, and must not be what receives it. */
@@ -894,12 +1252,12 @@
       option.id = row.key + '-option-' + i;
       option.setAttribute('role', 'option');
       option.setAttribute('aria-selected', String(i === selectedIndex));
-      if (help) option.setAttribute('aria-label', `${label}. ${help}`);
+      if (help) option.setAttribute('aria-label', `${tr(label)}. ${tr(help)}`);
       /* A span, not a button: nothing focusable may live inside an option. */
       if (row.preview) {
         const play = el('span', 'sel-play');
         play.setAttribute('role', 'presentation');
-        play.title = `Play ${label}`;
+        play.title = `Play ${tr(label)}`;
         play.append(glyph('i-play'));
         play.addEventListener('click', (event) => {
           event.stopPropagation();
@@ -907,8 +1265,8 @@
         });
         option.append(play);
       }
-      option.append(el('b', '', label));
-      if (hint && hint !== label) option.append(el('small', '', hint));
+      option.append(el('b', '', tr(label)));
+      if (hint && hint !== label) option.append(el('small', '', tr(hint)));
       if (help) {
         const mark = el('span', 'sel-help');
         mark.append(glyph('i-help'));
@@ -1166,7 +1524,7 @@
     const box = el('div', 'dockpick');
     box.dataset.key = row.key;
     box.setAttribute('role', 'radiogroup');
-    box.setAttribute('aria-label', row.title);
+    box.setAttribute('aria-label', tr(row.title));
     box.append(el('span', 'dockpick-wheel'));
 
     /* The render replaces the picker, so focus is handed to the same cell in the new one. */
@@ -1442,7 +1800,7 @@
 
     const button = el('button', 'win-revert');
     button.type = 'button';
-    button.setAttribute('aria-label', `Reset ${row.title} to default`);
+    button.setAttribute('aria-label', `Reset ${tr(row.title)} to default`);
     button.title = 'Reset to default';
     button.append(glyph('i-revert'));
     button.addEventListener('click', (event) => {
@@ -1459,8 +1817,8 @@
   function rangeRow(row) {
     const line = el('div', 'win-row is-slider');
     const copy = el('span', 'win-copy');
-    copy.append(el('b', '', row.title));
-    if (row.desc) copy.append(el('small', '', row.desc));
+    copy.append(el('b', '', tr(row.title)));
+    if (row.desc) copy.append(el('small', '', tr(row.desc)));
 
     const readout = row.unit ? valueField(row) : el('span', 'readout', row.format(get(row.key)));
     const control_ = el('span', 'win-control');
@@ -1473,7 +1831,7 @@
     input.max = row.max;
     input.step = row.step;
     input.value = get(row.key);
-    input.setAttribute('aria-label', row.title);
+    input.setAttribute('aria-label', tr(row.title));
     /* `input`, not `change`: the readout and the preview have to follow the
        thumb, which is the whole reason the preview exists. */
     input.addEventListener('input', () => {
@@ -1518,7 +1876,7 @@
     box.type = 'text';
     box.inputMode = 'numeric';
     box.value = row.format(get(row.key));
-    box.setAttribute('aria-label', row.title);
+    box.setAttribute('aria-label', tr(row.title));
     const unit = el('span', 'valuefield-unit', row.unit);
     unit.setAttribute('aria-hidden', 'true');
     let discard = false;
@@ -1817,7 +2175,7 @@
     nav.replaceChildren();
     for (const section of SECTIONS) {
       const item = el('li');
-      const button = el('button', section.id === S.section ? 'is-active' : '', section.label);
+      const button = el('button', section.id === S.section ? 'is-active' : '', tr(section.label));
       button.type = 'button';
       button.prepend(glyph(section.icon));
       button.addEventListener('click', () => {
@@ -1835,8 +2193,8 @@
     main.replaceChildren();
 
     const head = el('div', 'win-head');
-    head.append(el('h3', '', meta.label));
-    head.append(el('p', '', meta.caption));
+    head.append(el('h3', '', tr(meta.label)));
+    head.append(el('p', '', tr(meta.caption)));
     main.append(head);
 
     previewLayer = null;
@@ -1858,7 +2216,7 @@
       }
       if (rows === null || row.group !== group) {
         group = row.group;
-        if (group) main.append(el('p', 'win-group', group));
+        if (group) main.append(el('p', 'win-group', tr(group)));
         rows = el('div', 'win-rows');
         main.append(rows);
       }
@@ -1869,8 +2227,8 @@
       const picture = row.kind === 'dock' || row.kind === 'widget';
       const line = el('div', `win-row${row.kind === 'open' ? ' is-openable' : ''}${picture ? ' is-picker' : ''}`);
       const copy = el('span', 'win-copy');
-      copy.append(el('b', '', row.title));
-      if (row.desc) copy.append(el('small', '', row.desc));
+      copy.append(el('b', '', tr(row.title)));
+      if (row.desc) copy.append(el('small', '', tr(row.desc)));
       line.append(copy);
 
       const control_ = el('span', 'win-control');

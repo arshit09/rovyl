@@ -16,11 +16,18 @@ import { normalizeStoredConfig } from './configHydration';
 import type { DiscoveryPhase } from './discovery';
 import { startMenuAppIdToLaunchCommand } from './utils/windowsLaunchCommand';
 /**
- * Codes and metadata only — never `./i18n/translations`, which would put all seven locale tables
+ * Codes and metadata only — never `./i18n/translations`, which would put all eight locale tables
  * in the chunk the wheel waits on. That distinction is the whole reason `languages.ts` is its own
  * file; `scripts/verify-renderer-budget.mjs` fails the build if it is ignored.
  */
-import { normalizeLanguage } from './i18n/languages';
+import { directionOf, normalizeLanguage } from './i18n/languages';
+/**
+ * Codes only again, and deliberately: this hands the language DOWN to the panel's small components
+ * without the tables coming with it. The text itself is reached inside them.
+ */
+import { PanelLanguageProvider } from './i18n/panelLanguage';
+/** The frame's own seven strings, static in every language — see `./i18n/shell`. */
+import { shellString } from './i18n/shell';
 /** `import type` is erased at compile time: `launchFailure.ts` stays only in the late card chunk. */
 import type { ExecutionErrorDetails, FaultShortcutRef, SurfacedFault } from './launchFailure';
 /** Erased too — a value import here would put the whole settings module in the wheel's chunk. */
@@ -392,6 +399,31 @@ export default function App() {
   const [config, setConfig] = useState<UIConfig>(DEFAULT_UI_CONFIG);
   const configRef = useRef(config);
   configRef.current = config;
+
+  /**
+   * Tell the document which language it is in.
+   *
+   * `index.html` is frozen at `lang="en"` because it is a build input with one value, and until now
+   * nothing corrected it at runtime. That is invisible in six of the eight locales and loud in one:
+   * with no CJK subset shipped (`src/fonts.css`, TODO §6.6) the system fallback resolves 漢字
+   * through whatever face Windows offers first, which is usually a Chinese one — so Japanese text
+   * renders with Chinese glyph forms for the characters the two scripts share. Naming the language
+   * is the whole fix, and it costs nothing.
+   *
+   * `dir` rides along because the panel's own `dir` (on `#settings-container`) does not reach the
+   * toasts, the fault cards or the first-run layer, which render outside it.
+   */
+  /** Frame-only. The panel reaches the tables through its own lazy chunk. */
+  const t = useCallback(
+    (key: Parameters<typeof shellString>[0]) => shellString(key, config.language),
+    [config.language],
+  );
+
+  useEffect(() => {
+    const language = normalizeLanguage(config.language);
+    document.documentElement.lang = language;
+    document.documentElement.dir = directionOf(language);
+  }, [config.language]);
 
   /**
    * One failed launch → one card, with the item that failed attached.
@@ -1383,6 +1415,7 @@ export default function App() {
   const panelTheme = config.appearanceTheme === 'white' ? 'white' : 'black';
 
   return (
+    <PanelLanguageProvider value={config.language ?? 'en'}>
     <div
       className={`
         fixed inset-0 w-full h-full overflow-hidden cursor-default select-none
@@ -1420,26 +1453,26 @@ export default function App() {
               <div
                 className="flex items-center gap-1 pointer-events-auto"
                 style={{ WebkitAppRegion: 'no-drag' } as any}
-                aria-label="Settings navigation"
+                aria-label={t('settingsNavigation')}
               >
                 <button
                   className="zenith-titlebar-btn w-8 h-6 flex items-center justify-center rounded-md"
                   onClick={() => window.dispatchEvent(new CustomEvent('zenith-settings-toggle-sidebar'))}
-                  aria-label="Hide or show sidebar"
+                  aria-label={t('toggleSidebar')}
                 >
                   <PanelLeftClose size={14} strokeWidth={1.9} />
                 </button>
                 <button
                   className="zenith-titlebar-btn w-8 h-6 flex items-center justify-center rounded-md"
                   onClick={() => window.dispatchEvent(new CustomEvent('zenith-settings-navigation', { detail: 'back' }))}
-                  aria-label="Back in settings"
+                  aria-label={t('backInSettings')}
                 >
                   <ArrowLeft size={14} strokeWidth={1.9} />
                 </button>
                 <button
                   className="zenith-titlebar-btn w-8 h-6 flex items-center justify-center rounded-md"
                   onClick={() => window.dispatchEvent(new CustomEvent('zenith-settings-navigation', { detail: 'forward' }))}
-                  aria-label="Forward in settings"
+                  aria-label={t('forwardInSettings')}
                 >
                   <ArrowRight size={14} strokeWidth={1.9} />
                 </button>
@@ -1459,21 +1492,21 @@ export default function App() {
               <button
                 className="zenith-titlebar-btn h-full w-[46px] flex items-center justify-center"
                 onClick={() => flushNeutralFrameThenMinimize()}
-                aria-label="Minimize"
+                aria-label={t('windowMinimize')}
               >
                 <Minus size={13} strokeWidth={2} />
               </button>
               <button
                 className="zenith-titlebar-btn h-full w-[46px] flex items-center justify-center"
                 onClick={() => window.electron?.toggleMaximize()}
-                aria-label={windowState === 'maximized' ? 'Restore' : 'Maximize'}
+                aria-label={windowState === 'maximized' ? t('windowRestore') : t('windowMaximize')}
               >
                 {windowState === 'maximized' ? <Square size={11} strokeWidth={2.5} /> : <Maximize size={11} strokeWidth={2.5} />}
               </button>
               <button
                 className="zenith-titlebar-btn is-close h-full w-[46px] flex items-center justify-center"
                 onClick={handleClosePanelToBackground}
-                aria-label="Close"
+                aria-label={t('windowClose')}
               >
                 <X size={13} strokeWidth={2.5} />
               </button>
@@ -1592,5 +1625,6 @@ export default function App() {
         )}
 
     </div>
+    </PanelLanguageProvider>
   );
 }

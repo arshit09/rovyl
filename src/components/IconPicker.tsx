@@ -7,7 +7,7 @@ import {
   listPickableIconNames,
   loadFullIconMap,
 } from '../iconMap';
-import { uiString } from '../strings';
+import { useTranslation } from '../i18n/useTranslation';
 import {
   buildResolvedEnglishKeywordMap,
   collectIconsForEnglishTokens,
@@ -64,6 +64,9 @@ function gridNameForSelection(
 
 export interface IconPickerProps {
   selectedIcon: string;
+  /** The panel's language. Passed in rather than read from a store: this component is used from
+   *  two places, and both already know which language the window is speaking. */
+  language?: string;
   onSelect: (iconName: string) => void;
   /** `compact`: denser grid, smaller search — for narrow panels (e.g. the workspace icon). */
   variant?: 'default' | 'compact';
@@ -72,10 +75,12 @@ export interface IconPickerProps {
 
 export const IconPicker: React.FC<IconPickerProps> = ({
   selectedIcon,
+  language,
   onSelect,
   variant = 'default',
   className = '',
 }) => {
+  const { t } = useTranslation(language);
   const compact = variant === 'compact';
   const [searchTerm, setSearchTerm] = useState('');
   const [visibleCount, setVisibleCount] = useState(compact ? 140 : 64);
@@ -196,7 +201,7 @@ export const IconPicker: React.FC<IconPickerProps> = ({
           type="text"
           value={searchTerm}
           onChange={(e) => setSearchTerm(e.target.value)}
-          placeholder={uiString('iconPicker.search_placeholder')}
+          placeholder={t('iconPickerSearch')}
           className={
             compact
               ? 'w-full bg-white/[0.04] border border-white/[0.08] rounded-lg pl-8 pr-3 py-1.5 text-xs text-white/90 placeholder:text-white/25 focus:outline-none focus:border-white/18 focus:bg-white/[0.06] transition-all'
@@ -208,7 +213,7 @@ export const IconPicker: React.FC<IconPickerProps> = ({
       <p
         className={`shrink-0 text-white/25 ${compact ? 'text-[9px] leading-snug' : 'text-[10px] leading-relaxed'}`}
       >
-        {uiString('iconPicker.english_keywords_hint')}
+        {t('iconPickerKeywordsHint')}
       </p>
 
       <div
@@ -255,7 +260,7 @@ export const IconPicker: React.FC<IconPickerProps> = ({
             style={compact ? { gridColumn: '1 / -1' } : undefined}
           >
             <p className="text-white/20 text-xs font-medium">
-              {uiString('iconPicker.no_results')}
+              {t('iconPickerNoResults')}
             </p>
           </div>
         )}
