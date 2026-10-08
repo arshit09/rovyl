@@ -16,11 +16,11 @@ import { normalizeStoredConfig } from './configHydration';
 import type { DiscoveryPhase } from './discovery';
 import { startMenuAppIdToLaunchCommand } from './utils/windowsLaunchCommand';
 /**
- * Codes and metadata only — never `./i18n/translations`, which would put all seven locale tables
+ * Codes and metadata only — never `./i18n/translations`, which would put all eight locale tables
  * in the chunk the wheel waits on. That distinction is the whole reason `languages.ts` is its own
  * file; `scripts/verify-renderer-budget.mjs` fails the build if it is ignored.
  */
-import { normalizeLanguage } from './i18n/languages';
+import { directionOf, normalizeLanguage } from './i18n/languages';
 /** `import type` is erased at compile time: `launchFailure.ts` stays only in the late card chunk. */
 import type { ExecutionErrorDetails, FaultShortcutRef, SurfacedFault } from './launchFailure';
 /** Erased too — a value import here would put the whole settings module in the wheel's chunk. */
@@ -392,6 +392,25 @@ export default function App() {
   const [config, setConfig] = useState<UIConfig>(DEFAULT_UI_CONFIG);
   const configRef = useRef(config);
   configRef.current = config;
+
+  /**
+   * Tell the document which language it is in.
+   *
+   * `index.html` is frozen at `lang="en"` because it is a build input with one value, and until now
+   * nothing corrected it at runtime. That is invisible in six of the eight locales and loud in one:
+   * with no CJK subset shipped (`src/fonts.css`, TODO §6.6) the system fallback resolves 漢字
+   * through whatever face Windows offers first, which is usually a Chinese one — so Japanese text
+   * renders with Chinese glyph forms for the characters the two scripts share. Naming the language
+   * is the whole fix, and it costs nothing.
+   *
+   * `dir` rides along because the panel's own `dir` (on `#settings-container`) does not reach the
+   * toasts, the fault cards or the first-run layer, which render outside it.
+   */
+  useEffect(() => {
+    const language = normalizeLanguage(config.language);
+    document.documentElement.lang = language;
+    document.documentElement.dir = directionOf(language);
+  }, [config.language]);
 
   /**
    * One failed launch → one card, with the item that failed attached.
