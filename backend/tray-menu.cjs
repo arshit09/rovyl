@@ -34,7 +34,25 @@ const withIcon = (icon) => (icon ? { icon } : {});
  *   menu, held on the row for a moment before it goes back to being a button
  * @param {Record<string, unknown>} state.icons resolved images by base name, any may be null
  * @param {object} actions every click handler, so this module never reaches for one
+ * @param {(key: string, vars?: Record<string, unknown>) => string} [state.t] the translator; the
+ *   default is English read straight from the table, NOT `i18n.t`, so a caller that never passes
+ *   one — `scripts/tray-menu-smoke.mjs` — gets the same labels whatever language the process is in
  */
+const { TABLES } = require("./i18n.cjs");
+
+/**
+ * English, read from the table rather than through `i18n.t`, so it does not depend on whatever
+ * language the process happens to be set to. This is only the default: `electron-main.js` passes
+ * the real translator.
+ */
+function englishLabel(key, vars) {
+  const value = TABLES.en[key] || key;
+  if (!vars) return value;
+  return String(value).replace(/\{(\w+)\}/g, (slot, name) =>
+    Object.prototype.hasOwnProperty.call(vars, name) ? String(vars[name]) : slot,
+  );
+}
+
 function buildTrayMenuTemplate({
   workspaces = [],
   activeWorkspaceIndex = 0,
@@ -47,6 +65,7 @@ function buildTrayMenuTemplate({
   updateNotice = null,
   icons = {},
   actions = {},
+  t = englishLabel,
 }) {
   const paused = pausedUntil > now;
   /**
@@ -64,7 +83,7 @@ function buildTrayMenuTemplate({
     { label: `Rovyl ${version}`, ...withIcon(icons.brand), enabled: false },
     { type: "separator" },
     {
-      label: "Open wheel",
+      label: t("trayOpenWheel"),
       ...withIcon(icons.wheel),
       click: actions.openWheel,
     },
@@ -73,10 +92,10 @@ function buildTrayMenuTemplate({
   /** With one workspace there is nothing to switch between, so the submenu does not appear. */
   if (workspaces.length > 1) {
     items.push({
-      label: "Workspace",
+      label: t("trayWorkspace"),
       ...withIcon(icons.spaces),
       submenu: workspaces.map((workspace, index) => ({
-        label: (workspace && workspace.name) || `Workspace ${index + 1}`,
+        label: (workspace && workspace.name) || t("trayWorkspaceN", { n: index + 1 }),
         type: "radio",
         checked: index === activeWorkspaceIndex,
         click: () => actions.switchWorkspace && actions.switchWorkspace(index),
@@ -87,19 +106,19 @@ function buildTrayMenuTemplate({
   items.push({ type: "separator" });
 
   items.push({
-    label: paused ? `Paused — ${minutesLeft} min left` : "Pause trigger",
+    label: paused ? t("trayPausedLeft", { minutes: minutesLeft }) : t("trayPause"),
     ...withIcon(icons.pause),
     submenu: paused
       ? [
-          { label: "Resume now", click: () => actions.setPause && actions.setPause(0) },
+          { label: t("trayResume"), click: () => actions.setPause && actions.setPause(0) },
           { type: "separator" },
           ...PAUSE_CHOICES.map((minutes) => ({
-            label: `Restart for ${minutes} minutes`,
+            label: t("trayPauseRestart", { minutes }),
             click: () => actions.setPause && actions.setPause(minutes),
           })),
         ]
       : PAUSE_CHOICES.map((minutes) => ({
-          label: `For ${minutes} minutes`,
+          label: t("trayPauseFor", { minutes }),
           click: () => actions.setPause && actions.setPause(minutes),
         })),
   });
@@ -107,7 +126,7 @@ function buildTrayMenuTemplate({
   items.push({ type: "separator" });
 
   items.push({
-    label: "Open Settings",
+    label: t("traySettings"),
     ...withIcon(icons.settings),
     click: actions.openSettings,
   });
@@ -124,13 +143,17 @@ function buildTrayMenuTemplate({
      */
     if (updateState === "ready") {
       items.push({
-        label: updateVersion ? `Restart to update to ${updateVersion}` : "Restart to update",
+        label: updateVersion
+          ? t("trayUpdateReadyVersion", { version: updateVersion })
+          : t("trayUpdateReady"),
         ...withIcon(icons.update),
         click: actions.installUpdate,
       });
     } else if (updateState === "downloading") {
       items.push({
-        label: updateVersion ? `Downloading ${updateVersion}…` : "Downloading update…",
+        label: updateVersion
+          ? t("trayDownloadingVersion", { version: updateVersion })
+          : t("trayDownloading"),
         ...withIcon(icons.update),
         enabled: false,
       });
@@ -147,13 +170,13 @@ function buildTrayMenuTemplate({
       });
     } else if (updateState === "checking") {
       items.push({
-        label: "Checking for updates…",
+        label: t("trayChecking"),
         ...withIcon(icons.update),
         enabled: false,
       });
     } else {
       items.push({
-        label: "Check for updates",
+        label: t("trayCheckUpdates"),
         ...withIcon(icons.update),
         click: actions.checkForUpdates,
       });
@@ -162,7 +185,7 @@ function buildTrayMenuTemplate({
 
   items.push({ type: "separator" });
   items.push({
-    label: "Quit",
+    label: t("trayQuit"),
     ...withIcon(icons.power),
     click: actions.quit,
   });

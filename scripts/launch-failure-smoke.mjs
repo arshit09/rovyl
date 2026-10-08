@@ -58,6 +58,19 @@ try {
     presentButRefusedCode: "unknown",
 
     deniedPortugueseCode: "permission",
+
+    /** Japanese Windows lands in the same places its English and Portuguese twins do. */
+    deniedJapaneseCode: "permission",
+    missingJapaneseCode: "missing-file",
+    notRecognisedJapaneseCode: "not-found",
+    noHandlerJapaneseCode: "no-handler",
+    japaneseKeepsRawForDetails: true,
+
+    /** The pack is injected; the verdict is not. */
+    injectedKeepsCode: true,
+    injectedKeepsRaw: true,
+    injectedKeepsReport: true,
+    injectedUsesTheStub: true,
     uacCancelledCode: "cancelled",
     deadProtocolCode: "no-handler",
     deadProtocolNamesScheme: true,
