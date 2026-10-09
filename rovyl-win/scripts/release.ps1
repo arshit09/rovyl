@@ -62,7 +62,7 @@ $date = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.fffZ")
 
 # No `.blockmap` beside it, on purpose: that is electron-builder's differential-download index, and
 # without one the updater logs "Cannot download differentially, fallback to full download" and
-# downloads the whole 3 MB file. Which is smaller than the blockmap of the installer it replaces.
+# downloads the whole 3.5 MB file. Which is smaller than the blockmap of the installer it replaces.
 @"
 version: $version
 files:

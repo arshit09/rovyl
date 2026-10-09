@@ -1704,3 +1704,69 @@ a { color: inherit; text-decoration: none; }
   .slice.is-dwelling .dwell path { animation: none !important; }
   .slice.is-fired .wave { display: none; }
 }
+
+/* ── 2.0.0: the native rebuild ────────────────────────────────────────────── */
+
+/* The one announcement on the page, above the headline. A link rather than a
+   banner: it says what changed and takes you to the section that shows it. */
+.hero-badge {
+  display: inline-flex; align-items: center; gap: var(--zn-2);
+  margin-bottom: var(--zn-5);
+  padding: 5px 12px;
+  border: 1px solid var(--zn-line);
+  border-radius: 999px;
+  background: var(--zn-sunken);
+  color: var(--zn-text-2);
+  font: 500 12px/1 var(--font-ui);
+  letter-spacing: -.005em;
+  text-decoration: none;
+  transition: border-color .15s var(--zn-ease), color .15s var(--zn-ease);
+}
+.hero-badge:hover { border-color: var(--zn-line-strong); color: var(--zn-text); }
+
+.native { text-align: center; }
+.native .tag { display: block; }
+.native-lede {
+  max-width: 54ch; margin: 0 auto var(--zn-8);
+  color: var(--zn-text-2);
+  font: 400 clamp(14px, 1.9vw, 16.5px)/1.55 var(--font-ui);
+  letter-spacing: -.01em;
+}
+
+.stats {
+  display: grid; gap: var(--zn-2);
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  max-width: 700px; margin-inline: auto;
+}
+.stat {
+  display: grid; justify-items: center; gap: 2px;
+  padding: var(--zn-6) var(--zn-4);
+  border: 1px solid var(--zn-line);
+  border-radius: var(--zn-r-panel);
+  background: var(--zn-sunken);
+}
+/* The old number is struck through rather than labelled "before": the strike is
+   the label, and it keeps the eye on the number that replaced it. */
+.stat-was {
+  color: var(--zn-text-3);
+  font: 400 12.5px/1 var(--font-ui);
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+.stat-now {
+  font: 600 clamp(22px, 3.4vw, 30px)/1.2 var(--font-display);
+  letter-spacing: -.03em;
+}
+.stat-label {
+  margin-top: 2px;
+  color: var(--zn-text-3);
+  font-size: 11.5px; font-weight: 500;
+  letter-spacing: .04em; text-transform: uppercase;
+}
+
+.native-nots { margin-top: var(--zn-2); }
+.native-note {
+  max-width: 60ch; margin: var(--zn-6) auto 0;
+  color: var(--zn-text-3);
+  font: 400 12.5px/1.6 var(--font-ui);
+}

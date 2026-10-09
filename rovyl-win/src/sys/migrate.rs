@@ -266,7 +266,7 @@ fn terminate(pid: u32) -> bool {
 ///
 /// Retried, because the failure it retries is a handle in the process of closing rather than a
 /// permission — the second pass usually clears what the first could not, and a single attempt
-/// leaves a 180 MB Electron install on disk for ever. Returns how many files survived.
+/// leaves a 296 MB Electron install on disk for ever. Returns how many files survived.
 fn remove_tree(dir: &Path, keep: Option<&Path>) -> Result<(), usize> {
     let protected = keep.filter(|k| k.starts_with(dir));
 
@@ -282,7 +282,7 @@ fn remove_tree(dir: &Path, keep: Option<&Path>) -> Result<(), usize> {
     }
 
     // Entry by entry, so the staged executable can be stepped over. What will not come out is
-    // counted rather than fought: a folder that is mostly gone is 180 MB reclaimed, and the
+    // counted rather than fought: a folder that is mostly gone is 296 MB reclaimed, and the
     // leftovers are inert.
     let mut left = 0;
     for pass in 0..3 {
@@ -326,7 +326,7 @@ fn remove_tree(dir: &Path, keep: Option<&Path>) -> Result<(), usize> {
 
 /// Empty `%LOCALAPPDATA%\rovyl-updater`, which is electron-updater's download cache.
 ///
-/// It holds the 85 MB installer downloaded to perform this very migration, and this process is
+/// It holds the 86 MB installer downloaded to perform this very migration, and this process is
 /// very likely RUNNING from inside it — so its own file is skipped and left for the operating
 /// system to clean up on the next restart.
 fn clear_updater_cache(done: &mut Vec<String>) {

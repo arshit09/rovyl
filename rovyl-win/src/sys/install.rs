@@ -1,7 +1,7 @@
 //! Installing and uninstalling, from the same binary.
 //!
-//! **Why no NSIS.** The Electron build needs an installer because it is 180 MB of Chromium in
-//! several hundred files. This is one executable. Everything an installer would do — copy a file,
+//! **Why no NSIS.** The Electron build needs an installer because it is 296 MB of Chromium across
+//! 138 files. This is one executable. Everything an installer would do — copy a file,
 //! make two shortcuts, write one registry key — the program can do for itself, and a setup `.exe`
 //! that is the application is a setup `.exe` that cannot be out of date.
 //!

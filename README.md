@@ -9,14 +9,52 @@ A radial launcher for Windows. Hold the middle mouse button anywhere, aim, relea
 [![Download Rovyl for Windows](https://img.shields.io/badge/Download%20for%20Windows-2ea44f?style=for-the-badge&logo=windows&logoColor=white)](https://github.com/arshit09/rovyl/releases/latest)
 
 ![Platform](https://img.shields.io/badge/platform-Windows%2010%20%7C%2011-0078d4?style=flat-square)
-![Electron](https://img.shields.io/badge/Electron-28-47848f?style=flat-square&logo=electron&logoColor=white)
-![React](https://img.shields.io/badge/React-18-149eca?style=flat-square&logo=react&logoColor=white)
+![Rust](https://img.shields.io/badge/Rust-1.80%2B-dea584?style=flat-square&logo=rust&logoColor=white)
+![Native](https://img.shields.io/badge/Win32-Direct2D-6e56cf?style=flat-square)
+![Size](https://img.shields.io/badge/download-3.5%20MB-2ea44f?style=flat-square)
 
 <img src="docs/media/banner.png" alt="" width="720">
 
 </div>
 
 ---
+
+## New in 2.0.0 — Rovyl is now a native Windows app
+
+Rovyl was an Electron app. It is now a single Rust executable that draws the wheel through
+Direct2D and DirectComposition — the same wheel, the same workspaces, the same settings.
+**Already running Rovyl? It updates itself into this**, and nothing in `%APPDATA%\Rovyl` is
+touched: your workspaces, your custom icons and your settings carry straight over.
+
+| | 1.19.0 (Electron) | 2.0.0 (native) |
+| --- | --- | --- |
+| Download | 85.7 MB | **3.5 MB** — 24x smaller |
+| Installed on disk | 296 MB | **3.5 MB** — 83x smaller |
+| Files installed | 138 | **1** |
+| Processes while it runs | a main process, a Chromium renderer per window, and separate helpers for the mouse hook, the foreground and the system readouts | **1** |
+| Every update downloads | 85.7 MB | **3.5 MB** |
+
+Measured on Windows 10, comparing the published 1.19.0 release and its unpacked install tree
+against the 2.0.0 release. Idle in the tray, 2.0.0 holds about 60 MB of working set — in that
+one process.
+
+**Why it is quicker, and not only smaller**
+
+- **The first frame exists before the window does.** The wheel paints from a surface that is
+  already resident, so the gesture is not waiting on a paint handshake across a process
+  boundary — which is what the Electron build needed, and needed a verification script to keep.
+- **Nothing is spawned at runtime.** The mouse and keyboard hooks are callbacks on a thread of
+  this process. The Electron build ran a long-lived PowerShell for the mouse hook, another for
+  taking the foreground, another for extracting icons, and a C# helper for the system readouts.
+- **One coordinate space.** The hook and the renderer are the same process, so there is no DIP
+  rectangle handed to a DPI-unaware helper — the Electron build's standing mixed-DPI defect,
+  absent here rather than worked around.
+- **It never takes the foreground.** Keystrokes come from the hook, so the window you were
+  typing in keeps the keyboard the whole time the wheel is open.
+
+The port lives in [`rovyl-win/`](rovyl-win/), and
+[its README](rovyl-win/README.md#succession-from-1x) explains how a 1.x install hands itself
+over to it.
 
 ## Why
 
@@ -65,10 +103,11 @@ steps:
 1. Under **Assets**, click the file ending in **`.exe`**. It saves to your `Downloads`
    folder like any other file.
 2. Open it — from your browser's download bar, or by double-clicking it in `Downloads`.
-3. Windows shows a blue **"Windows protected your PC"** screen, because this installer is
-   not signed. Click **More info**, then **Run anyway**.
-4. Follow the installer. Rovyl then lives in your system tray and updates itself from this
-   repository, so this is the only manual download you need.
+3. Windows shows a blue **"Windows protected your PC"** screen, because the file is not
+   signed. Click **More info**, then **Run anyway**.
+4. One window appears: press **Install**. Rovyl then lives in your system tray — there is no
+   wizard, no folder to choose and no admin prompt, because the whole program is that one
+   3.5 MB file and it installs itself into your own account.
 
 **From source** — see [Building](#building) below.
 
@@ -125,6 +164,12 @@ By default the wheel opens on a picker of your workspaces. Prefer number keys? G
 </div>
 
 ## Building
+
+> **The shipped app is [`rovyl-win/`](rovyl-win/) — Rust, no Node.** `cargo build --release`
+> there produces the whole program, and [its README](rovyl-win/README.md) covers the build,
+> the install and the release. Everything below builds the 1.x Electron line, which 2.0.0
+> replaced; it is kept because the website, the generated icon and language tables and the
+> update feed still come from here.
 
 Requires **Windows 10 or 11** and **Node 20+**. Windows-only by design: the trigger, the
 icon pipeline and the window handling all depend on Win32 behaviour.
