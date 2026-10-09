@@ -4,6 +4,7 @@ pub mod discovery;
 pub mod dropped;
 pub mod game;
 pub mod install;
+pub mod migrate;
 pub mod picker;
 pub mod recents;
 pub mod sound;

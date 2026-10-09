@@ -59,12 +59,23 @@ fn main() {
         );
     }
 
+    let args: Vec<String> = std::env::args().collect();
+
+    // The hand-over from the Electron build, and the double-click on the downloaded setup file.
+    //
+    // Both end in the same place — `sys::install::take_over` — and both have to be answered BEFORE
+    // anything else in this function, including the single-instance lock: an update must not be
+    // suppressed because the launcher it is replacing is running, which is the normal case.
+    if let Some(mode) = setup_mode(&args) {
+        run_setup(mode, &args);
+        return;
+    }
+
     // `--diagnose` prints what this build makes of the configuration on disk and exits.
     //
     // It exists because the two builds share one file and the failure it guards against is silent:
     // a config this one mis-reads looks like a working launcher with the wrong shortcuts on it.
     // Printing the hydrated view is the only way to see that from outside.
-    let args: Vec<String> = std::env::args().collect();
     if args.iter().any(|a| a == "--diagnose") {
         diagnose();
         return;
@@ -247,25 +258,54 @@ origin      {origin}"),
     // One executable, so there is no installer to build. Everything an installer would do -- copy
     // a file, make two shortcuts, write one registry key -- this can do for itself, and a setup
     // `.exe` that IS the application is a setup `.exe` that cannot be out of date.
+    //
+    // It takes over `%LOCALAPPDATA%\Programs\Rovyl` -- retiring a 1.x build if one is there -- so
+    // the user is left with one Rovyl rather than two launchers fighting over one shortcut.
+    // `--beside` is the old behaviour, which is for trying this next to a working 1.x install.
     if args.iter().any(|a| a == "--install") {
         attach_console();
         let desktop = !args.iter().any(|a| a == "--no-desktop-shortcut");
-        match sys::install::install(desktop) {
-            sys::install::Outcome::Installed(path) => {
-                println!("installed   {}", path.display());
-                println!("start menu  {}", sys::install::DISPLAY_NAME);
-                println!();
-                println!("It is installed BESIDE the Electron build, not over it: both read the");
-                println!("same `%APPDATA%\\Rovyl`, so they share one set of workspaces, and only one");
-                println!("of them should be running at a time -- two launchers both holding the");
-                println!("same global shortcut is one of them silently doing nothing.");
-                if !args.iter().any(|a| a == "--no-launch") {
-                    let _ = std::process::Command::new(&path).arg("--tray").spawn();
+        let beside = args.iter().any(|a| a == "--beside");
+        let done = if beside {
+            match sys::install::install(sys::install::Spot::Beside, desktop) {
+                sys::install::Outcome::Installed(path) => {
+                    println!("installed   {}", path.display());
+                    println!("start menu  {}", sys::install::Spot::Beside.display_name());
                     println!();
-                    println!("Started it in the tray.");
+                    println!("It is installed BESIDE the Electron build, not over it: both read the");
+                    println!("same `%APPDATA%\\Rovyl`, so they share one set of workspaces, and only one");
+                    println!("of them should be running at a time -- two launchers both holding the");
+                    println!("same global shortcut is one of them silently doing nothing.");
+                    Some(path)
+                }
+                sys::install::Outcome::Failed(why) => {
+                    println!("install failed: {why}");
+                    None
                 }
             }
-            sys::install::Outcome::Failed(why) => println!("install failed: {why}"),
+        } else {
+            match sys::install::take_over() {
+                Ok(path) => {
+                    println!("installed   {}", path.display());
+                    println!("start menu  {}", sys::install::Spot::Replace.display_name());
+                    println!();
+                    println!("Any 1.x build was retired: its folder, shortcuts, startup entry and");
+                    println!("uninstall entry are gone. `%APPDATA%\\Rovyl` -- the workspaces, the");
+                    println!("icons and the settings -- was not touched.");
+                    Some(path)
+                }
+                Err(why) => {
+                    println!("install failed: {why}");
+                    None
+                }
+            }
+        };
+        if let Some(path) = done {
+            if !args.iter().any(|a| a == "--no-launch") {
+                let _ = std::process::Command::new(&path).arg("--tray").spawn();
+                println!();
+                println!("Started it in the tray.");
+            }
         }
         return;
     }
@@ -320,6 +360,94 @@ origin      {origin}"),
             config::store::log_line(&format!("startup failed: {error}"));
         }
     }
+}
+
+/// Which kind of setup run this launch is, if it is one.
+enum SetupMode {
+    /// NSIS's own arguments, which is the 1.x updater handing this build the machine. No window,
+    /// no questions: the user already agreed to this in the app they were running.
+    Silent,
+    /// Somebody double-clicked the file they downloaded.
+    Window,
+}
+
+/// Work out whether this launch is a setup — from the command line, and failing that, from the
+/// file's own name.
+///
+/// The silent half is dictated by the Electron build: `backend/electron-main.js` spawns the
+/// downloaded file with `--updated /S --force-run`, which are NSIS's flags, and those three
+/// strings are everything this program is told about the hand-over.
+///
+/// The window half has to be decided by the NAME, because nothing else can decide it. This
+/// executable is the application AND its own installer, so the same bytes are `Rovyl.exe` in the
+/// install folder and `Rovyl-Setup-2.0.0.exe` in somebody's Downloads — and only the name says
+/// which of those the user double-clicked. `--setup` forces it, for testing out of a build tree.
+fn setup_mode(args: &[String]) -> Option<SetupMode> {
+    if args
+        .iter()
+        .any(|a| a.eq_ignore_ascii_case("/S") || a == "--updated" || a == "--silent")
+    {
+        return Some(SetupMode::Silent);
+    }
+    if args.iter().any(|a| a == "--setup") {
+        return Some(SetupMode::Window);
+    }
+    // Only a bare double-click. Any argument at all means somebody is driving this on purpose.
+    if args.len() > 1 || sys::install::running_installed() {
+        return None;
+    }
+    let named_setup = std::env::current_exe()
+        .ok()
+        .and_then(|exe| {
+            exe.file_stem()
+                .map(|stem| stem.to_string_lossy().to_lowercase())
+        })
+        .map(|stem| stem.starts_with("rovyl-setup"))
+        .unwrap_or(false);
+    named_setup.then_some(SetupMode::Window)
+}
+
+/// Install, with or without a window.
+fn run_setup(mode: SetupMode, args: &[String]) {
+    match mode {
+        SetupMode::Window => {
+            if let Err(error) = win::setup::run() {
+                config::store::log_line(&format!("setup: window failed: {error}"));
+            }
+        }
+        SetupMode::Silent => {
+            // Read before the migration, which deletes it: the old build's note says where the
+            // user was when they asked for this. Somebody who pressed "Restart to update" in
+            // Settings is waiting for a window; somebody who used the tray is not.
+            let reopen = pending_reopen();
+            match sys::install::take_over() {
+                Ok(path) => {
+                    config::store::log_line(&format!("setup: installed {}", path.display()));
+                    // `--force-run` is the updater asking for the app back on its feet. Without
+                    // it, the user asked for the install and nothing else.
+                    if args.iter().any(|a| a == "--force-run") {
+                        let mut command = std::process::Command::new(&path);
+                        if reopen.as_deref() != Some("window") {
+                            command.arg("--tray");
+                        }
+                        let _ = command.spawn();
+                    }
+                }
+                // Nothing is on screen -- this launch never had a window -- so the log is the only
+                // place this can be said. The old build is still installed when the copy is what
+                // failed, which is the ordering `take_over` exists to guarantee.
+                Err(why) => config::store::log_line(&format!("setup: failed: {why}")),
+            }
+        }
+    }
+}
+
+/// What the 1.x updater's note says to reopen into, if it left one.
+fn pending_reopen() -> Option<String> {
+    let note = config::store::user_data_dir().join("pending-update.json");
+    let text = std::fs::read_to_string(note).ok()?;
+    let value: serde_json::Value = serde_json::from_str(&text).ok()?;
+    Some(value.get("reopen")?.as_str()?.to_string())
 }
 
 /// Attach to the launching terminal so a diagnostic flag's output is visible.

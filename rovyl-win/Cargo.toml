@@ -1,6 +1,6 @@
 [package]
 name = "rovyl"
-version = "1.19.0"
+version = "2.0.0"
 edition = "2021"
 rust-version = "1.80"
 description = "Rovyl radial launcher — native Windows"
@@ -46,6 +46,7 @@ features = [
   "Win32_System_Power",
   "Win32_System_Registry",
   "Win32_System_Console",
+  "Win32_System_Diagnostics_ToolHelp",
   "Win32_System_SystemInformation",
   "Win32_UI_WindowsAndMessaging",
   "Win32_UI_Input_KeyboardAndMouse",

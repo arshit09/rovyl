@@ -28,26 +28,28 @@ usable the same way — only slower to open the wheel.
 
 ## Install
 
-The executable installs itself. No setup `.exe`, no admin prompt — everything goes under
+The executable installs itself. No setup `.exe` to build, no admin prompt — everything goes under
 `%LOCALAPPDATA%` and `HKEY_CURRENT_USER`.
 
 ```powershell
 .\target\release\rovyl.exe --install
 ```
 
-That copies itself to `%LOCALAPPDATA%\Programs\Rovyl Native`, makes a Start menu and a Desktop
-shortcut, registers an entry in Windows' "Installed apps" list, and starts it in the tray.
+That copies itself to `%LOCALAPPDATA%\Programs\Rovyl`, makes a Start menu and a Desktop shortcut,
+registers an entry in Windows' "Installed apps" list, and starts it in the tray. If a 1.x (Electron)
+build is installed, it is retired first — see [Succession from 1.x](#succession-from-1x).
 
 Options:
 
 | Flag | Effect |
 | --- | --- |
+| `--beside` | Install to `...\Programs\Rovyl Native` and leave a 1.x build alone |
 | `--no-desktop-shortcut` | Start menu shortcut only |
 | `--no-launch` | Install without starting it |
 
-It installs *beside* an existing Electron build of Rovyl, not over it. Both read the same
-`%APPDATA%\Rovyl`, so they share your workspaces — run only one at a time, or two launchers fight
-over the same global shortcut and one of them silently does nothing.
+`--beside` is for trying this next to a working 1.x install. Both read the same `%APPDATA%\Rovyl`,
+so they share your workspaces — run only one at a time, or two launchers fight over the same global
+shortcut and one of them silently does nothing.
 
 ### Uninstall
 
@@ -57,6 +59,46 @@ rovyl.exe --uninstall
 
 Removes the shortcuts, the startup entry and the registry entry; the install folder goes on the
 next Windows restart. Your workspaces in `%APPDATA%\Rovyl` are left alone.
+
+## Succession from 1.x
+
+Rovyl 1.x was an Electron app installed by NSIS, and every copy of it watches the same GitHub feed
+this one publishes to. That is the whole update path: publish the native build as the release's
+`.exe` with a hand-written `latest.yml` beside it, and the next update check moves everyone across.
+
+```powershell
+scripts\release.ps1
+```
+
+That writes `dist\Rovyl-Setup-<version>.exe` and `dist\latest.yml`, and prints the `gh release
+create` line to publish them. Nothing is published automatically.
+
+What a 1.x install does with it: downloads the `.exe` named in the feed, checks it against the
+feed's `sha512`, and spawns it with NSIS's arguments — `--updated /S --force-run`. There is no
+signature to satisfy (1.x shipped unsigned, so electron-updater skips that check) and no installer
+format to imitate.
+
+What this build does on the other side of that spawn ([`src/sys/migrate.rs`](src/sys/migrate.rs)):
+
+1. Copies the new executable into `%LOCALAPPDATA%\Programs\Rovyl` **first**, as `Rovyl.new.exe`.
+   Nothing is deleted until it is on disk, so a copy that fails leaves the user's launcher intact.
+2. Copies `config-v2.json` aside to `config-v2.json.pre-native.bak`.
+3. Ends every process running out of the old folder — by path, never by name, because the old
+   build's executable is also called `Rovyl.exe`.
+4. Deletes the old shortcuts (after reading each one's target, so a shortcut somebody made
+   themselves is left alone), the `com.henry.rovyl` Run entry, the NSIS uninstall entry, the
+   updater's pending-update note, and the folder's contents.
+5. Renames the staged executable to `Rovyl.exe`, writes the shortcuts and the uninstall entry, and
+   carries over "start with Windows" and the desktop shortcut exactly as they were.
+
+**It never runs `Uninstall Rovyl.exe`.** That uninstaller was built with electron-builder's
+`deleteAppDataOnUninstall: true`, so it deletes `%APPDATA%\Rovyl` — the workspaces, the custom icons
+and the settings. Handing the migration to it would empty every migrated user's wheel.
+
+Running the downloaded file by hand instead opens a window — the mark, one sentence about what
+happens to your workspaces, Install and Close. Which of the two it does is decided by the file's own
+NAME: the same bytes are the application as `Rovyl.exe` and its installer as `Rovyl-Setup-2.0.0.exe`.
+`--setup` forces the window from a build tree.
 
 ## Run
 

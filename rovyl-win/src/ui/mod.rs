@@ -22,6 +22,7 @@ pub mod fault;
 pub mod firstrun;
 pub mod preview;
 pub mod settings;
+pub mod setup;
 pub mod widgets;
 pub mod workspace;
 
