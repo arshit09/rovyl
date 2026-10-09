@@ -1,0 +1,14 @@
+pub mod autostart;
+pub mod clipboard;
+pub mod discovery;
+pub mod dropped;
+pub mod game;
+pub mod install;
+pub mod picker;
+pub mod recents;
+pub mod sound;
+pub mod sqlite;
+pub mod status;
+pub mod transfer;
+pub mod updates;
+pub mod web;

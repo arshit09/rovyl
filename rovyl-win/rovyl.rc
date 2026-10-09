@@ -1,0 +1,6 @@
+// Resources linked into the executable.
+//
+// The icon is the product's own, copied from the Electron build so the two are visually identical
+// in the taskbar, the installer and Explorer — and so that an upgrade does not look like a
+// different program appearing.
+1 ICON "build/icon.ico"
