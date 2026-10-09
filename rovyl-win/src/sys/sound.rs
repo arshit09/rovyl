@@ -46,6 +46,59 @@ pub fn normalize(value: Option<&str>, fallback: &'static str) -> &'static str {
         .unwrap_or(fallback)
 }
 
+// ─── Which note a highlight plays ───────────────────────────────────────────
+
+/// What the wheel's highlight is on, as the notes hear it.
+///
+/// By item ID and not by index, because a note belongs to a change of ITEM: typing narrows the ring
+/// and renumbers what stays lit, and a folder or workspace swap puts a different item under the
+/// same index. `Nothing` is a state and not an absence — in pointer targeting the gaps between the
+/// icons are all `Nothing`, and that is exactly the state the hover note has to be able to arrive
+/// FROM.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Highlight {
+    Nothing,
+    Hub,
+    Item(String),
+}
+
+/// How long after the opening note a highlight change stays silent — about the note's own length.
+pub const HIGHLIGHT_QUIET_MS: u128 = 150;
+
+/// The note for a highlight that has just landed on `lit`, or `None` for silence. `open` and
+/// `hover` are the chosen notes, or `None` for the ones switched off.
+///
+/// An item plays the hover note, however the aim got there. The hub plays the OPENING note — it is
+/// where the wheel starts, and aiming back at it is going back to that start — but only once the
+/// aim has been out to an item since the wheel opened: before that the pointer is simply where the
+/// wheel put it, and the hub lighting up IS the opening, which has already been heard.
+///
+/// Nothing plays within [`HIGHLIGHT_QUIET_MS`] of the opening: a wheel that opens with the pointer
+/// off to one side lights that item on its first frames, and a note there landed on top of the
+/// opening one and cut it off.
+pub fn note_for_highlight(
+    lit: &Highlight,
+    aimed_away: bool,
+    ms_since_open: u128,
+    open: Option<&'static str>,
+    hover: Option<&'static str>,
+) -> Option<&'static str> {
+    if ms_since_open < HIGHLIGHT_QUIET_MS {
+        return None;
+    }
+    match lit {
+        Highlight::Nothing => None,
+        Highlight::Hub => {
+            if aimed_away {
+                open
+            } else {
+                None
+            }
+        }
+        Highlight::Item(_) => hover,
+    }
+}
+
 /// How long after the last note the device is released.
 const SLEEP_AFTER_MS: u64 = 1500;
 
@@ -538,6 +591,65 @@ impl Drop for Device {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const OPEN: Option<&'static str> = Some("sub-tick");
+    const HOVER: Option<&'static str> = Some("thump");
+    const LATER: u128 = HIGHLIGHT_QUIET_MS + 1;
+
+    fn item(id: &str) -> Highlight {
+        Highlight::Item(id.into())
+    }
+
+    #[test]
+    fn an_item_sounds_however_the_aim_reached_it() {
+        // Pointer targeting puts dead space between the icons, so the aim arrives at nearly every
+        // icon FROM `Nothing` rather than from another icon. Requiring a previous item here left
+        // the hover note firing only when one sample happened to land on two icons in a row --
+        // which is why it "sometimes" worked.
+        assert_eq!(
+            note_for_highlight(&item("b"), true, LATER, OPEN, HOVER),
+            HOVER
+        );
+        // And from the hub, which is how it is reached on the first move of every gesture.
+        assert_eq!(
+            note_for_highlight(&item("a"), false, LATER, OPEN, HOVER),
+            HOVER
+        );
+    }
+
+    #[test]
+    fn the_gaps_are_silent() {
+        // Leaving an icon is not arriving anywhere: a sweep across the wheel must not double its
+        // notes by sounding on the way out as well as on the way in.
+        assert_eq!(
+            note_for_highlight(&Highlight::Nothing, true, LATER, OPEN, HOVER),
+            None
+        );
+    }
+
+    #[test]
+    fn the_hub_sounds_only_once_the_aim_has_been_out() {
+        // Coming back to the centre is coming back to the start, and takes the opening note.
+        assert_eq!(note_for_highlight(&Highlight::Hub, true, LATER, OPEN, HOVER), OPEN);
+        // But the wheel opens ON the hub, and that note has already been heard.
+        assert_eq!(note_for_highlight(&Highlight::Hub, false, LATER, OPEN, HOVER), None);
+    }
+
+    #[test]
+    fn the_opening_note_is_not_cut_off() {
+        // A wheel that opens with the pointer off to one side lights that item immediately.
+        assert_eq!(note_for_highlight(&item("a"), false, 0, OPEN, HOVER), None);
+        assert_eq!(
+            note_for_highlight(&item("a"), false, HIGHLIGHT_QUIET_MS - 1, OPEN, HOVER),
+            None
+        );
+    }
+
+    #[test]
+    fn a_switched_off_note_stays_off() {
+        assert_eq!(note_for_highlight(&item("a"), true, LATER, OPEN, None), None);
+        assert_eq!(note_for_highlight(&Highlight::Hub, true, LATER, None, HOVER), None);
+    }
 
     #[test]
     fn every_catalogued_note_renders_something_audible() {

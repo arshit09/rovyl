@@ -268,6 +268,26 @@ impl Wheel {
         self.center_active
     }
 
+    /// The lit item's ID.
+    pub fn active_item_id(&self) -> Option<String> {
+        self.item_id_at(self.active?)
+    }
+
+    /// What the highlight is on, as the notes hear it — see [`crate::sys::sound::Highlight`].
+    ///
+    /// The one place the three states are named, so the hover note cannot disagree with what is lit
+    /// about what counts as a change.
+    pub fn highlight(&self) -> crate::sys::sound::Highlight {
+        use crate::sys::sound::Highlight;
+        if let Some(id) = self.active_item_id() {
+            return Highlight::Item(id);
+        }
+        if self.center_active {
+            return Highlight::Hub;
+        }
+        Highlight::Nothing
+    }
+
     pub fn layout(&self) -> Layout {
         self.layout
     }
@@ -1157,6 +1177,11 @@ impl Wheel {
     }
 
     pub(super) fn item_id_at(&self, index: usize) -> Option<String> {
+        // Read without filtering when nothing is typed: `items()` clones the whole level, and this
+        // is asked once a frame by both the dwell and the hover note.
+        if self.filter.trim().is_empty() {
+            return self.level().items.get(index).map(|i| i.id.clone());
+        }
         self.items().get(index).map(|i| i.id.clone())
     }
 
@@ -1349,6 +1374,83 @@ mod tests {
             enabled: true,
             ..Workspace::default()
         }])
+    }
+
+    #[test]
+    fn pointer_targeting_sounds_on_every_icon_a_sweep_crosses() {
+        // Pointer targeting hits the ICON, so the dead space between the icons is a real state: a
+        // sweep around the ring reads item -> nothing -> item. Every arrival has to sound and no
+        // gap may, and the note that only fired when one sample happened to land on two icons in a
+        // row is why the sound "sometimes" worked.
+        use crate::sys::sound::{note_for_highlight, Highlight, HIGHLIGHT_QUIET_MS};
+        let mut cfg = one_space();
+        cfg.radial_selection_mode = Some(SelectionMode::Cursor);
+        let mut wheel = carried_wheel(&cfg);
+        let radius = wheel.layout().radius;
+        let later = HIGHLIGHT_QUIET_MS + 1;
+
+        let mut sounded: Vec<&'static str> = Vec::new();
+        let mut arrived: Vec<String> = Vec::new();
+        let mut saw_a_gap = false;
+        let mut previous = wheel.highlight();
+        // Two degrees at a time: finer than the icons are wide, so no step can jump an icon.
+        for step in 0..180 {
+            let radians = (step as f32 * 2.0).to_radians();
+            let point = (
+                wheel.center.0 + radius * radians.cos(),
+                wheel.center.1 + radius * radians.sin(),
+            );
+            wheel.pointer_moved(&cfg, point);
+            let lit = wheel.highlight();
+            if lit == previous {
+                continue;
+            }
+            if let Some(note) = note_for_highlight(&lit, true, later, Some("sub-tick"), Some("thump"))
+            {
+                sounded.push(note);
+                if let Highlight::Item(id) = &lit {
+                    arrived.push(id.clone());
+                }
+            }
+            saw_a_gap |= lit == Highlight::Nothing;
+            previous = lit;
+        }
+
+        assert!(saw_a_gap, "the sweep never crossed dead space, so it proves nothing");
+        arrived.sort();
+        assert_eq!(arrived, vec!["a", "b", "c"], "sounded: {sounded:?}");
+        // One note per arrival: the gaps are silent, so the count is the icons and nothing else.
+        assert_eq!(sounded.len(), 3, "{sounded:?}");
+        assert!(sounded.iter().all(|note| *note == "thump"), "{sounded:?}");
+    }
+
+    #[test]
+    fn area_targeting_has_no_gaps_to_fall_into() {
+        // The other half of the same rule: by area every direction belongs to a slice, so the
+        // sweep goes item -> item and the note still fires exactly once per icon.
+        use crate::sys::sound::Highlight;
+        let cfg = one_space();
+        let mut wheel = carried_wheel(&cfg);
+        let radius = wheel.layout().radius;
+        let mut changes = 0;
+        let mut previous = wheel.highlight();
+        for step in 0..180 {
+            let radians = (step as f32 * 2.0).to_radians();
+            let point = (
+                wheel.center.0 + radius * radians.cos(),
+                wheel.center.1 + radius * radians.sin(),
+            );
+            wheel.pointer_moved(&cfg, point);
+            let lit = wheel.highlight();
+            assert_ne!(lit, Highlight::Nothing, "a sector should always be lit by area");
+            if lit != previous {
+                changes += 1;
+                previous = lit;
+            }
+        }
+        // The aim starts on the hub, because no pointer has been seen yet: one change leaving it,
+        // then one per sector boundary the full circle crosses.
+        assert_eq!(changes, 4);
     }
 
     #[test]

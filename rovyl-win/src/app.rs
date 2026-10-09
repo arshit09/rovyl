@@ -26,6 +26,7 @@ use crate::icons::cache::IconCache;
 use crate::icons::extract::Extractor;
 use crate::input::{hook, hotkey, trigger};
 use crate::launch;
+use crate::sys::sound::{self, Highlight};
 use crate::wheel::render::{self, Frame};
 use crate::wheel::state::{Action, TriggerSource, Wheel};
 use crate::ui::settings::{Recording, SettingsUi};
@@ -130,9 +131,12 @@ pub struct App {
     dock_targets: Vec<crate::wheel::docks::Target>,
     /// Whether the primary button is held, for the volume bar's drag.
     pointer_down: bool,
-    /// What was lit on the last frame, so the hover note plays on a CHANGE rather than on every
-    /// frame the pointer happens to be over the same slice.
-    last_highlight: Option<usize>,
+    /// What was lit on the last frame, so a note plays on a CHANGE rather than on every frame the
+    /// pointer happens to be over the same thing.
+    last_highlight: Highlight,
+    /// Whether an item has been lit since this open, which is what lets the hub sound — see
+    /// [`App::note_for_highlight`].
+    aimed_away: bool,
     /// A Windows panel to open once the wheel is down.
     pending_panel: Option<crate::sys::status::Panel>,
     /// Settings to open once the wheel is down.
@@ -250,7 +254,8 @@ impl App {
             pending_menu_at: None,
             dock_targets: Vec::new(),
             pointer_down: false,
-            last_highlight: None,
+            last_highlight: Highlight::Nothing,
+            aimed_away: false,
             pending_panel: None,
             pending_settings: false,
             settings: None,
@@ -491,7 +496,8 @@ impl App {
             crate::sys::status::invalidate();
             crate::sys::status::poll();
         }
-        self.last_highlight = None;
+        self.last_highlight = Highlight::Nothing;
+        self.aimed_away = false;
 
         self.first_paint = None;
         // Draw and commit BEFORE showing. This is the whole of what the original's paint-token
@@ -1893,6 +1899,30 @@ impl App {
         true
     }
 
+    // ── The notes ───────────────────────────────────────────────────────────
+
+    /// The note a highlight landing on `lit` plays, with the rule in [`sound::note_for_highlight`]
+    /// and the two switched-on notes this config chose.
+    fn note_for_highlight(&mut self, lit: &Highlight) -> Option<&'static str> {
+        // Read before it is written: arriving at an item is what makes the hub audible NEXT time,
+        // not this one.
+        let aimed_away = self.aimed_away;
+        if matches!(lit, Highlight::Item(_)) {
+            self.aimed_away = true;
+        }
+        sound::note_for_highlight(
+            lit,
+            aimed_away,
+            self.first_paint?.elapsed().as_millis(),
+            self.config.open_sound_on().then(|| {
+                sound::normalize(self.config.radial_open_sound_id.as_deref(), "sub-tick")
+            }),
+            self.config.hover_sound_on().then(|| {
+                sound::normalize(self.config.radial_hover_sound_id.as_deref(), "thump")
+            }),
+        )
+    }
+
     // ── Frames ──────────────────────────────────────────────────────────────
 
     fn render(&mut self) {
@@ -2004,18 +2034,11 @@ impl App {
             let action = self.wheel.pointer_moved(&self.config, client);
             self.apply(action);
 
-            // A note each time the highlight moves to a different item — not on every sample, and
-            // not when it moves to the hub, which has its own note on the open.
-            let lit = self.wheel.active();
+            // A note each time the highlight moves to something else — not on every sample.
+            let lit = self.wheel.highlight();
             if lit != self.last_highlight {
-                if self.config.hover_sound_on() && lit.is_some() && self.last_highlight.is_some() {
-                    crate::sys::sound::play(
-                        &crate::sys::sound::normalize(
-                            self.config.radial_hover_sound_id.as_deref(),
-                            "thump",
-                        ),
-                        self.config.sound_volume(),
-                    );
+                if let Some(id) = self.note_for_highlight(&lit) {
+                    sound::play(id, self.config.sound_volume());
                 }
                 self.last_highlight = lit;
             }
