@@ -3,6 +3,7 @@ pub mod anim;
 pub mod docks;
 pub mod dwell;
 pub mod layout;
+pub mod peek;
 pub mod render;
 pub mod scrim;
 pub mod sectors;

@@ -150,6 +150,19 @@ pub enum Sensitivity {
     High,
 }
 
+/// Where a peeked workspace's shortcuts are laid out.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PeekStyle {
+    /// An arc outside the workspace, centred on the direction the workspace itself sits in. The
+    /// shortcuts stay ATTACHED to the thing they belong to, which is what makes one throw outward
+    /// reach them.
+    Fan,
+    /// A full ring outside the picker — the workspace's own wheel, drawn around it. More room for
+    /// a crowded workspace, at the cost of the shortcuts no longer lying in any one direction.
+    Ring,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum TriggerMode {
@@ -676,6 +689,18 @@ pub struct UiConfig {
     /// empty string means no key at all. Means nothing while `radial_number_launch` is off.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub radial_back_key: Option<String>,
+    /// Whether resting on a workspace fans its shortcuts out around it, without entering it.
+    ///
+    /// Off by default, like everything else here that changes what an existing gesture does: with
+    /// it on, crossing the picker makes shortcuts appear and disappear under the hand.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub radial_workspace_peek: Option<bool>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub radial_workspace_peek_style: Option<PeekStyle>,
+    /// How long the aim has to rest on a workspace before its shortcuts appear. Clamped to
+    /// [0, 1000]; zero is a choice and not a floor.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub radial_workspace_peek_delay_ms: Option<f32>,
     /// A gear in a corner of the open wheel, which opens Settings. Turning it on makes the overlay
     /// cover the whole monitor, because a "corner" of the wheel's own box is not a corner of the
     /// screen.

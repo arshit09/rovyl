@@ -2051,6 +2051,84 @@ fn advanced(f: &mut Frame, state: &mut SettingsUi, config: &mut UiConfig, reques
     }
 
     f.gap(28.0);
+    w::group(f, "Workspace peek");
+
+    // The stored switch and the effective one are read separately on purpose. By direction the
+    // feature cannot work — see `UiConfig::workspace_peek` — so the control shows off and refuses
+    // the press, while the saved value is left alone: turning the clickless launch off again has
+    // to give the peek back to whoever had it on.
+    let direction = config.direction_mode();
+    let peek_on = config.radial_workspace_peek == Some(true);
+    let r = w::row(
+        f,
+        "Peek inside a workspace",
+        if direction {
+            "Resting on a workspace fans its shortcuts out around it, to run one without entering it. Unavailable while \u{201c}Launch without clicking\u{201d} is on: that gesture hides the pointer, so there is nothing to push outward with."
+        } else {
+            "Resting on a workspace fans its shortcuts out around it. Aim at one to run it without ever entering the workspace; come back to the middle to cancel."
+        },
+        40.0,
+    );
+    if w::switch(f, "workspacePeek", r.control, peek_on && !direction, !direction) {
+        config.radial_workspace_peek = Some(!peek_on);
+        f.mark_dirty();
+    }
+    if peek_on && !direction {
+        let r = w::row(
+            f,
+            "Where the shortcuts appear",
+            "Fan puts them in an arc out past the workspace, in the direction it already sits in. Ring draws the workspace\u{2019}s own wheel around the whole picker \u{2014} more room, but no longer one direction.",
+            150.0,
+        );
+        let current = match config.peek_style() {
+            PeekStyle::Fan => "fan",
+            PeekStyle::Ring => "ring",
+        };
+        if let Some(value) = w::segmented(
+            f,
+            "peekStyle",
+            r.control,
+            &[("fan", "Fan"), ("ring", "Ring")],
+            current,
+            true,
+        ) {
+            config.radial_workspace_peek_style = Some(if value == "ring" {
+                PeekStyle::Ring
+            } else {
+                PeekStyle::Fan
+            });
+            f.mark_dirty();
+        }
+
+        let delay = config.peek_delay_ms();
+        if let Some(value) = w::slider_row(
+            f,
+            "peekDelayMs",
+            "Rest before it opens",
+            "How long the aim has to hold on a workspace. It is what stops crossing the picker opening every workspace on the way.",
+            delay,
+            config::defaults::PEEK_DELAY_MS_MIN,
+            config::defaults::PEEK_DELAY_MS_MAX,
+            10.0,
+            false,
+            None,
+            // Zero is not "0 ms", it is the wait being off — the shortcuts appear the instant the
+            // workspace lights.
+            &|v| {
+                if v.round() == 0.0 {
+                    "No rest".into()
+                } else {
+                    format!("{} ms", v.round())
+                }
+            },
+            true,
+        ) {
+            config.radial_workspace_peek_delay_ms = Some(value);
+            f.mark_dirty();
+        }
+    }
+
+    f.gap(28.0);
     w::group(f, "Number keys");
 
     let numbers_on = config.number_launch();

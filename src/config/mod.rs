@@ -115,6 +115,37 @@ impl UiConfig {
         self.radial_back_key.as_deref().unwrap_or("")
     }
 
+    /// Whether resting on a workspace fans its shortcuts out around it.
+    ///
+    /// Two conditions, and the second is not a detail. The peek is a POINTER affordance: it is
+    /// reached by pushing the aim further out than the picker's own ring. By direction the pointer
+    /// is hidden and the gesture's vector is clamped a short way past the commit threshold, so
+    /// there is no "further out" to push to — and a dwell on a workspace already drops into it,
+    /// which is the same destination by the gesture that mode is built around. Rather than ship a
+    /// switch that silently does nothing there, this reads as off.
+    pub fn workspace_peek(&self) -> bool {
+        self.radial_workspace_peek == Some(true) && !self.direction_mode()
+    }
+
+    pub fn peek_style(&self) -> PeekStyle {
+        self.radial_workspace_peek_style.unwrap_or(PeekStyle::Fan)
+    }
+
+    /// Milliseconds the aim has to rest on a workspace before its shortcuts appear.
+    ///
+    /// It is not ornament. Crossing the picker to reach the far side passes through every workspace
+    /// on the way, and without a wait each one would throw a ring of shortcuts onto the screen and
+    /// take it back — which is the whole picker flashing for a gesture aimed at one slice of it.
+    pub fn peek_delay_ms(&self) -> f32 {
+        self.radial_workspace_peek_delay_ms
+            // A hand-edited file can hold anything, and `clamp` passes NaN straight through — a
+            // comparison against which is always false, so the wait would be skipped rather than
+            // enforced.
+            .filter(|v| v.is_finite())
+            .unwrap_or(defaults::PEEK_DELAY_MS_DEFAULT)
+            .clamp(defaults::PEEK_DELAY_MS_MIN, defaults::PEEK_DELAY_MS_MAX)
+    }
+
     pub fn show_pill(&self) -> bool {
         self.show_workspace_pill != Some(false)
     }

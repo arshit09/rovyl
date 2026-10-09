@@ -79,6 +79,12 @@ pub struct Options {
     pub enter: Vec<usize>,
     /// Force both corner docks on.
     pub docks: bool,
+    /// Rest on the aimed workspace until its shortcuts fan out around it.
+    pub peek: bool,
+    /// Which layout to draw them in, when the frame should not use the saved one.
+    pub peek_style: Option<crate::config::PeekStyle>,
+    /// And then aim at this one of them.
+    pub peek_at: Option<usize>,
 }
 
 impl Options {
@@ -102,6 +108,15 @@ impl Options {
                 .map(|v| v.split(',').filter_map(|part| part.trim().parse().ok()).collect())
                 .unwrap_or_default(),
             docks: args.iter().any(|a| a == "--docks"),
+            peek: args.iter().any(|a| a == "--peek") || args.iter().any(|a| a == "--peek-at"),
+            // `--peek` takes an optional style. Matched against the two names rather than taken
+            // as "whatever follows", or a bare `--peek --active 1` would read `--active` as one.
+            peek_style: match flag("--peek").map(String::as_str) {
+                Some("fan") => Some(crate::config::PeekStyle::Fan),
+                Some("ring") => Some(crate::config::PeekStyle::Ring),
+                _ => None,
+            },
+            peek_at: flag("--peek-at").and_then(|v| v.parse().ok()),
         })
     }
 }
@@ -134,6 +149,14 @@ pub fn render_to_file(options: &Options, config: &UiConfig) -> Result<()> {
         }
         config.shortcut_dock = Some(shortcuts);
     }
+    // `--peek` turns the feature on for the frame, for the same reason `--docks` does: it is off
+    // in every real profile, so a probe that only drew what the config says could never show it.
+    if options.peek {
+        config.radial_workspace_peek = Some(true);
+        if let Some(style) = options.peek_style {
+            config.radial_workspace_peek_style = Some(style);
+        }
+    }
     let mut wheel = Wheel::new(&config);
     wheel.open(
         &config,
@@ -159,17 +182,43 @@ pub fn render_to_file(options: &Options, config: &UiConfig) -> Result<()> {
     }
     // Aim by pointing at the slice's own direction from the centre, so the aim resolves through
     // exactly the path a real gesture would rather than by setting the highlight directly.
+    let mut aimed_at = None;
     if let Some(index) = options.active {
         let count = wheel.item_count().max(1);
         let deg = crate::wheel::sectors::centre_deg(index, count) * std::f32::consts::PI / 180.0;
         let reach = wheel.layout().radius;
-        wheel.pointer_moved(
-            &config,
-            (
-                wheel.center.0 + deg.cos() * reach,
-                wheel.center.1 + deg.sin() * reach,
-            ),
+        let point = (
+            wheel.center.0 + deg.cos() * reach,
+            wheel.center.1 + deg.sin() * reach,
         );
+        wheel.pointer_moved(&config, point);
+        aimed_at = Some(point);
+    }
+    // The fan is EARNED by resting, so the probe rests — against the product's own clock rather
+    // than by reaching into the state and declaring a peek open. A probe that set the state would
+    // be a second opinion about when the thing appears.
+    if options.peek {
+        if let Some(point) = aimed_at {
+            std::thread::sleep(std::time::Duration::from_millis(
+                config.peek_delay_ms() as u64 + 20,
+            ));
+            wheel.pointer_moved(&config, point);
+            if let Some(index) = options.peek_at {
+                if let Some(shape) = wheel.peek_shape(&config) {
+                    wheel.pointer_moved(&config, shape.point_of(wheel.center, index));
+                }
+            }
+            match wheel.peek_items() {
+                Some((slice, items, _)) => {
+                    println!("peek on slice {slice}: {} shortcuts", items.len())
+                }
+                // Said out loud, because an unpeeked frame and a peeked one with an empty
+                // workspace are the same picture.
+                None => println!("peek did not open \u{2014} is --active on a workspace?"),
+            }
+        } else {
+            println!("--peek needs --active <slice>: a peek hangs off a workspace");
+        }
     }
     // The bloom is skipped: a probe of a half-expanded wheel measures the animation, not the frame.
     wheel.settle_for_probe();
@@ -194,11 +243,24 @@ pub fn render_to_file(options: &Options, config: &UiConfig) -> Result<()> {
             .collect::<Vec<_>>()
             .into_iter(),
     );
+    // The peeked workspace's own icons. They are not on the level, so `items()` does not reach
+    // them — and a fan of fallback glyphs is a picture of the extractor, not of the feature.
+    let peeked: Vec<String> = wheel
+        .peek_items()
+        .map(|(_, items, _)| {
+            items
+                .iter()
+                .filter_map(|i| i.custom_icon_url.clone())
+                .collect()
+        })
+        .unwrap_or_default();
+    icons.warm(peeked.iter().map(|s| s.as_str()));
     let wanted = wheel
         .items()
         .iter()
         .filter(|i| i.custom_icon_url.is_some())
-        .count();
+        .count()
+        + peeked.len();
     for _ in 0..200 {
         icons.pump(&gpu);
         if icons.len() >= wanted {

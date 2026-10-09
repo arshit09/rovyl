@@ -80,6 +80,7 @@ never puts a window between you and your work.
 - **Automatic discovery** — reads your Start Menu and extracts real app icons
 - **Custom icons** — any workspace or shortcut can wear a glyph, a picture (PNG, JPG, SVG, WebP, ICO…) or any icon inside an EXE or DLL
 - **Workspaces** — separate wheels for work, games, streaming; switch from the picker or with a number key
+- **Workspace peek** — optional: rest on a workspace and its shortcuts fan out around it, so one can be run without entering it
 - **Your trigger** — middle mouse button, a side button, a global hotkey, or both; each can be turned off
 - **Three aiming modes** — by direction for speed, by pointer for precision, or by area with each slice's share drawn on screen
 - **Keyboard driven** — optional: press 1–9 to open a slice, and Q to step back out of a folder

@@ -33,6 +33,15 @@ pub const DWELL_MS_DEFAULT: f32 = 400.0;
 pub const DWELL_MS_MIN: f32 = 0.0;
 pub const DWELL_MS_MAX: f32 = 2000.0;
 
+/// Long enough that crossing the picker does not open every workspace on the way, short enough
+/// that a deliberate rest reads as instant. Measured against the same hand the dwell is: a sweep
+/// across a slice takes well under this, a stop takes none of it.
+pub const PEEK_DELAY_MS_DEFAULT: f32 = 180.0;
+/// Zero is a choice: the shortcuts appear the moment the workspace lights.
+pub const PEEK_DELAY_MS_MIN: f32 = 0.0;
+/// Past a second the feature is no longer "hover to see"; it is a wait nobody sits through.
+pub const PEEK_DELAY_MS_MAX: f32 = 1000.0;
+
 pub const STATUS_DOCK_ICON_MIN: i32 = 12;
 pub const STATUS_DOCK_ICON_MAX: i32 = 32;
 pub const SHORTCUT_DOCK_ICON_MIN: i32 = 24;
@@ -351,6 +360,12 @@ pub fn ui_config() -> UiConfig {
         // On, so that turning the feature on is enough to see where the numbers are.
         radial_number_labels: Some(true),
         radial_back_key: Some(DEFAULT_BACK_KEY.into()),
+        // Off, for the reason every switch in this group is off: it changes what crossing the
+        // picker DOES, and an update must not start moving shortcuts under a hand that asked for
+        // nothing. The style only matters once it is on.
+        radial_workspace_peek: Some(false),
+        radial_workspace_peek_style: Some(PeekStyle::Fan),
+        radial_workspace_peek_delay_ms: Some(PEEK_DELAY_MS_DEFAULT),
         enable_keyboard_trigger: Some(true),
         enable_mouse_trigger: true,
         mouse_trigger_mode: Some(TriggerMode::Click),

@@ -82,7 +82,7 @@ impl IconSource2 for NoIcons {
 /// the icon-size slider moves or the wheel lands on a monitor with a different scale factor.
 pub fn prebake(p: &Painter, wheel: &Wheel, frame: &Frame) {
     let s = wheel.scale;
-    for (size, radius, blur, colour) in shadow_specs(wheel, s) {
+    for (size, radius, blur, colour) in shadow_specs(wheel, frame.config, s) {
         frame.shadows.bake_rounded(p.gpu, size, radius, blur, colour);
     }
 }
@@ -96,10 +96,19 @@ pub fn prebake(p: &Painter, wheel: &Wheel, frame: &Frame) {
 /// approximation of one.
 fn shadow_specs(
     wheel: &Wheel,
+    config: &UiConfig,
     s: f32,
-) -> [((f32, f32), f32, f32, D2D1_COLOR_F); 3] {
+) -> [((f32, f32), f32, f32, D2D1_COLOR_F); 5] {
     let l = wheel.layout();
     let hub = wheel.hub_diameter();
+    // The peek's tiles are smaller than the picker's, so they are a size of their own. With no
+    // peek up this repeats the ring's spec, which the cache answers from what it already holds —
+    // asking for it unconditionally is cheaper than branching on a state that can change between
+    // the bake and the draw.
+    let peek = wheel
+        .peek_shape(config)
+        .map(|shape| shape.icon_size)
+        .unwrap_or(l.icon_size);
     [
         // The idle tile, and the aimed one — which has a larger, softer shadow, and the highlight
         // can move to any tile without warning.
@@ -116,6 +125,18 @@ fn shadow_specs(
             pal::TILE_SHADOW_ACTIVE,
         ),
         ((hub, hub), hub / 2.0, 10.0 * s, pal::HUB_SHADOW),
+        (
+            (peek, peek),
+            pal::tile_radius(peek / s) * s,
+            pal::TILE_SHADOW_BLUR * s,
+            pal::TILE_SHADOW,
+        ),
+        (
+            (peek, peek),
+            pal::tile_radius(peek / s) * s,
+            pal::TILE_SHADOW_BLUR_ACTIVE * s,
+            pal::TILE_SHADOW_ACTIVE,
+        ),
     ]
 }
 
@@ -153,12 +174,18 @@ pub fn draw(p: &Painter, wheel: &Wheel, frame: &Frame) -> Vec<super::docks::Targ
         draw_tile(p, wheel, frame, index, item, items.len(), hover, hover_text);
     }
 
-    // 3. ORDER: labels last, over every tile. A label hangs outside the ring and a dense wheel puts
+    // 3. ORDER: the peeked workspace's shortcuts over the picker's own tiles. They sit outside the
+    //    ring, so there is barely anything to overlap — but what little there is belongs to the
+    //    ring that the aim is currently out on, which is the one the hand is reading.
+    draw_peek(p, wheel, frame, hover, hover_text);
+
+    // 4. ORDER: labels last, over every tile. A label hangs outside the ring and a dense wheel puts
     //    it across the neighbouring slice; drawn per tile it would be painted over by the next one.
     if config.show_labels {
         for (index, item) in items.iter().enumerate() {
             draw_label(p, wheel, config, index, item, items.len(), hover, hover_text);
         }
+        draw_peek_labels(p, wheel, config, hover, hover_text);
     }
 
     if config.show_pill() {
@@ -174,7 +201,7 @@ pub fn draw(p: &Painter, wheel: &Wheel, frame: &Frame) -> Vec<super::docks::Targ
         draw_direction_hint(p, wheel, &config.language);
     }
 
-    // 4. ORDER: the corner furniture last, over everything. It is the only thing on screen that
+    // 5. ORDER: the corner furniture last, over everything. It is the only thing on screen that
     //    sits outside the wheel, and a label pill from a slice near an edge would otherwise paint
     //    across it.
     super::docks::draw(
@@ -437,13 +464,78 @@ fn draw_tile(
         return;
     }
 
-    let size = l.icon_size * scale_now;
+    let (plate, radius) = paint_tile(
+        p,
+        wheel,
+        frame,
+        item,
+        center,
+        l.icon_size * scale_now,
+        l.icon_size,
+        is_active,
+        opacity,
+        hover,
+        hover_text,
+    );
+
+    // The number badge, top-left — because bottom-right is the folder badge's and the two would sit
+    // on top of each other on any folder in the first nine positions.
+    //
+    // It carries the tile's own plate and border rather than floating glyph-on-wallpaper: the wheel
+    // opens over a desktop nobody controls, and a bare digit disappears on a light one.
+    if config.number_badges() && index < 9 {
+        draw_number_badge(p, wheel, plate, index + 1, is_active, hover, hover_text, opacity);
+    }
+
+    // The sustained-aim arc. It runs OUTSIDE the plate, so nothing of it is lost behind the tile.
+    if let Some((arc_index, elapsed, _attempt)) = wheel.dwell_arc() {
+        if arc_index == index && dwell::arc_worth_drawing(config.dwell_ms()) {
+            draw_dwell_arc(p, wheel, plate, radius, elapsed, config, hover, opacity);
+        }
+    }
+
+    // The launch wave: two offset rings, not one. A single ring reads as an outline that grew; two
+    // read as something that CAME OUT of the icon. The second leaves halfway through the first,
+    // which is the gap in which the eye is still following the first and gets continuity rather
+    // than repetition.
+    if let Some((fired, progress)) = echo {
+        if fired == Some(index) {
+            draw_launch_wave(p, wheel, plate, radius, progress, hover);
+        }
+    }
+}
+
+/// The tile itself: shadow, plate, outlines, art, folder badge. Returns the plate and its corner
+/// radius, for whatever the caller hangs on it.
+///
+/// One function, because the picker's ring and a peeked workspace's ring draw the same OBJECT at
+/// different places and sizes. Two copies of this would mean two tile appearances on one wheel,
+/// drifting apart a highlight colour at a time — and the peek exists to show what a workspace
+/// holds, which only works if its icons look like the icons it is showing.
+///
+/// `nominal` is the unscaled tile size: the drop shadow is baked at that size and stretched, so a
+/// tile mid-bloom gets a shadow that grows with it rather than one blur per frame.
+#[allow(clippy::too_many_arguments)]
+fn paint_tile(
+    p: &Painter,
+    wheel: &Wheel,
+    frame: &Frame,
+    item: &AppItem,
+    center: (f32, f32),
+    size: f32,
+    nominal: f32,
+    is_active: bool,
+    opacity: f32,
+    hover: D2D1_COLOR_F,
+    hover_text: D2D1_COLOR_F,
+) -> (Rect, f32) {
+    let config = frame.config;
     let radius = pal::tile_radius(size / wheel.scale) * wheel.scale;
     let plate = Rect::centred(center.0, center.1, size, size);
+    let scale_now = if nominal > 0.0 { size / nominal } else { 1.0 };
 
     // The soft drop shadow, baked at the nominal size and stretched to the drawn one. One light
     // source for the whole wheel, from above.
-    let nominal = l.icon_size;
     let (shadow_offset, shadow_blur) = if is_active {
         (
             pal::TILE_SHADOW_OFFSET_ACTIVE * wheel.scale,
@@ -531,35 +623,11 @@ fn draw_tile(
     let content_colour = if is_active { hover_text } else { pal::rgb(pal::WHITE) };
     draw_item_art(p, frame, item, center, size, opacity, content_colour, radius);
 
-    // The number badge, top-left — because bottom-right is the folder badge's and the two would sit
-    // on top of each other on any folder in the first nine positions.
-    //
-    // It carries the tile's own plate and border rather than floating glyph-on-wallpaper: the wheel
-    // opens over a desktop nobody controls, and a bare digit disappears on a light one.
-    if config.number_badges() && index < 9 {
-        draw_number_badge(p, wheel, plate, index + 1, is_active, hover, hover_text, opacity);
-    }
-
     if item.is_folder() {
         draw_folder_badge(p, wheel, plate, opacity);
     }
 
-    // The sustained-aim arc. It runs OUTSIDE the plate, so nothing of it is lost behind the tile.
-    if let Some((arc_index, elapsed, _attempt)) = wheel.dwell_arc() {
-        if arc_index == index && dwell::arc_worth_drawing(config.dwell_ms()) {
-            draw_dwell_arc(p, wheel, plate, radius, elapsed, config, hover, opacity);
-        }
-    }
-
-    // The launch wave: two offset rings, not one. A single ring reads as an outline that grew; two
-    // read as something that CAME OUT of the icon. The second leaves halfway through the first,
-    // which is the gap in which the eye is still following the first and gets continuity rather
-    // than repetition.
-    if let Some((fired, progress)) = echo {
-        if fired == Some(index) {
-            draw_launch_wave(p, wheel, plate, radius, progress, hover);
-        }
-    }
+    (plate, radius)
 }
 
 fn draw_item_art(
@@ -752,6 +820,19 @@ fn draw_label(
     if item.label.is_empty() {
         return;
     }
+    // A peeked workspace does not wear its own pill. The fan is the information now, and the pill
+    // hangs OUTSIDE the tile — straight into the arc of shortcuts it just opened. This also holds
+    // with "always show labels" on, which is the point: the label would be across the fan.
+    //
+    // An EMPTY workspace is peeked like any other and draws nothing, so it keeps its label: taking
+    // it away there would leave an unnamed slice saying nothing at all.
+    let fanned = wheel
+        .peek_items()
+        .filter(|(_, items, _)| !items.is_empty())
+        .map(|(slice, _, _)| slice);
+    if fanned == Some(index) {
+        return;
+    }
     let bloom = wheel.bloom();
     let echo = wheel.echo();
     let is_active = match echo {
@@ -779,22 +860,56 @@ fn draw_label(
         return;
     }
 
-    let s = wheel.scale;
     let l = wheel.layout();
     let angle = sectors::centre_deg(index, count);
     let tile = polar(wheel.center, l.radius * bloom, angle);
-    let ((dx, dy), (anchor_x, anchor_y)) = layout::label_placement(angle, l.icon_size);
-
-    let style = Style::new(Family::Radial, 12.0 * s, 500, Align::Leading).tracking(-0.005);
-    let (text_w, text_h) = p.measure(&item.label, &style);
-
     // The chip: a workspace's own key, which was previously invisible. Read from the WORKSPACE and
     // not from the slice — the id holds the real index, and since a key can be recorded, the digit
     // that position would have had is no longer necessarily the key that switches to it.
     let chip = workspace_chip(config, item);
+    paint_label(
+        p,
+        wheel,
+        &item.label,
+        chip.as_deref(),
+        tile,
+        angle,
+        l.icon_size,
+        is_active,
+        always,
+        opacity,
+        hover,
+        hover_text,
+    );
+}
+
+/// One label pill, drawn beside a tile. Shared by the picker's ring and a peeked workspace's.
+///
+/// `grown` is whether the pill is one of the always-on ones: an idle label that is always present
+/// sits very slightly smaller than the aimed one, which is the whole of its idle state — never
+/// alpha, which would take the plate with it.
+#[allow(clippy::too_many_arguments)]
+fn paint_label(
+    p: &Painter,
+    wheel: &Wheel,
+    label: &str,
+    chip: Option<&str>,
+    tile: (f32, f32),
+    angle: f32,
+    icon_size: f32,
+    is_active: bool,
+    always: bool,
+    opacity: f32,
+    hover: D2D1_COLOR_F,
+    hover_text: D2D1_COLOR_F,
+) {
+    let s = wheel.scale;
+    let ((dx, dy), (anchor_x, anchor_y)) = layout::label_placement(angle, icon_size);
+
+    let style = Style::new(Family::Radial, 12.0 * s, 500, Align::Leading).tracking(-0.005);
+    let (text_w, text_h) = p.measure(label, &style);
     let chip_style = Style::new(Family::Radial, 10.0 * s, 500, Align::Center);
     let chip_w = chip
-        .as_deref()
         .map(|c| p.measure(c, &chip_style).0 + 10.0 * s)
         .unwrap_or(0.0);
 
@@ -804,8 +919,6 @@ fn draw_label(
     let pill_w = pad_left + text_w + gap + chip_w + pad_right;
     let pill_h = text_h.max(14.0 * s) + 12.0 * s;
 
-    // The label scales a little when it is not the aimed one, which is the whole of its idle state:
-    // never alpha, which would take the plate with it.
     let scale = if always {
         if is_active { 1.0 } else { 0.94 }
     } else if is_active {
@@ -829,7 +942,7 @@ fn draw_label(
 
     let text_top = pill.top + (h - text_h * scale) / 2.0;
     p.text(
-        &item.label,
+        label,
         Rect::new(pill.left + pad_left * scale, text_top, pill.right, pill.bottom),
         &style,
         fade(text_colour, opacity),
@@ -856,9 +969,9 @@ fn draw_label(
             pal::CHIP_PLATE
         };
         p.fill_round_rect(chip_rect, pal::R_CHIP * s * 0.85, fade(chip_plate, opacity));
-        let (_, ch) = p.measure(&chip, &chip_style);
+        let (_, ch) = p.measure(chip, &chip_style);
         p.text(
-            &chip,
+            chip,
             Rect::new(
                 chip_rect.left,
                 chip_rect.top + (chip_h - ch) / 2.0,
@@ -889,6 +1002,180 @@ fn workspace_chip(config: &UiConfig, item: &AppItem) -> Option<String> {
     let workspace = config.workspaces.get(index)?;
     let key = config::workspace_key_at(workspace, index);
     (!key.is_empty()).then_some(key)
+}
+
+// ─── The peek ───────────────────────────────────────────────────────────────
+
+/// A peeked workspace's shortcuts, on their own ring outside the picker.
+///
+/// The tiles bloom out of the WORKSPACE, not out of the hub, and that is the one thing this draws
+/// differently from the picker's ring. The hub is where a level comes from; a peek is not a level —
+/// it belongs to the slice the hand is resting on, and coming out of that slice is what says so.
+fn draw_peek(
+    p: &Painter,
+    wheel: &Wheel,
+    frame: &Frame,
+    hover: D2D1_COLOR_F,
+    hover_text: D2D1_COLOR_F,
+) {
+    let Some(shape) = wheel.peek_shape(frame.config) else {
+        return;
+    };
+    let Some((slice, items, bloom)) = wheel.peek_items() else {
+        return;
+    };
+
+    let from = peek_origin(wheel, slice);
+    let echo = wheel.echo();
+    let fired = wheel.peek_echo();
+
+    for (index, item) in items.iter().enumerate().take(shape.count) {
+        let Some((center, size, opacity, is_active)) =
+            peek_tile_geometry(wheel, &shape, from, bloom, index, echo, fired)
+        else {
+            continue;
+        };
+        let (plate, radius) = paint_tile(
+            p,
+            wheel,
+            frame,
+            item,
+            center,
+            size,
+            shape.icon_size,
+            is_active,
+            opacity,
+            hover,
+            hover_text,
+        );
+        if let Some((fired_index, progress)) = fired {
+            if fired_index == index {
+                draw_launch_wave(p, wheel, plate, radius, progress, hover);
+            }
+        }
+    }
+}
+
+/// The same ring's labels, after every tile on it — the reason given at order note 4.
+fn draw_peek_labels(
+    p: &Painter,
+    wheel: &Wheel,
+    config: &UiConfig,
+    hover: D2D1_COLOR_F,
+    hover_text: D2D1_COLOR_F,
+) {
+    let Some(shape) = wheel.peek_shape(config) else {
+        return;
+    };
+    let Some((slice, items, bloom)) = wheel.peek_items() else {
+        return;
+    };
+
+    let from = peek_origin(wheel, slice);
+    let echo = wheel.echo();
+    let fired = wheel.peek_echo();
+    let always = config.always_show_app_labels;
+
+    for (index, item) in items.iter().enumerate().take(shape.count) {
+        if item.label.is_empty() {
+            continue;
+        }
+        let Some((center, _, tile_opacity, is_active)) =
+            peek_tile_geometry(wheel, &shape, from, bloom, index, echo, fired)
+        else {
+            continue;
+        };
+        // An idle label is either fully present or not drawn at all, which is the rule the
+        // picker's own labels follow: dimming the pill fades the TEXT, not the highlight.
+        let base = if always {
+            if is_active {
+                1.0
+            } else {
+                0.9
+            }
+        } else if is_active {
+            1.0
+        } else {
+            0.0
+        };
+        let opacity = base * tile_opacity;
+        if opacity <= 0.01 {
+            continue;
+        }
+        paint_label(
+            p,
+            wheel,
+            &item.label,
+            // No chip: a chip is a workspace's own switch key, and these are shortcuts.
+            None,
+            center,
+            shape.angle_of(index),
+            shape.icon_size,
+            is_active,
+            always,
+            opacity,
+            hover,
+            hover_text,
+        );
+    }
+}
+
+/// Where a peek's tiles travel out from: the workspace's own tile, at the point it is drawn.
+fn peek_origin(wheel: &Wheel, slice: usize) -> (f32, f32) {
+    let l = wheel.layout();
+    let angle = sectors::centre_deg(slice, wheel.item_count());
+    polar(wheel.center, l.radius * wheel.bloom(), angle)
+}
+
+/// One peeked tile's place, size, opacity and highlight — read by the tile and by its label, so the
+/// two cannot disagree about where the pill goes or whether it is lit.
+#[allow(clippy::too_many_arguments)]
+fn peek_tile_geometry(
+    wheel: &Wheel,
+    shape: &super::peek::Shape,
+    from: (f32, f32),
+    bloom: f32,
+    index: usize,
+    echo: Option<(Option<usize>, f32)>,
+    fired: Option<(usize, f32)>,
+) -> Option<((f32, f32), f32, f32, bool)> {
+    // During the echo the highlight is the CONFIRMED shortcut, not the aim — the same divergence
+    // the picker's tiles guard against: the pointer goes on moving over a wheel already leaving.
+    let is_active = match fired {
+        Some((fired_index, _)) => fired_index == index,
+        None => wheel.peek_active() == Some(index),
+    };
+    // Binary, through the same curve the picker's ring reads: lit, or one of the rest. Distance
+    // from the aim is deliberately not a channel here — the fan is already a short arc, and
+    // shading it by distance would read as several shortcuts being partly chosen.
+    let (presence_opacity, presence_scale) =
+        layout::slice_presence(Some(if is_active { 0 } else { 1 }));
+
+    let echo_fade = match (fired, echo) {
+        // The one that was launched holds, whatever else the wheel is doing.
+        (Some((fired_index, _)), _) if fired_index == index => 1.0,
+        // Anything else confirmed on this wheel takes the whole fan with it, at twice the rate —
+        // including a launch off the picker itself, which the peek is not part of.
+        (_, Some((_, progress))) => (1.0 - progress * 2.0).max(0.0),
+        _ => 1.0,
+    };
+
+    let scale_now = if is_active && fired.is_some() {
+        layout::FIRED_SLICE_SCALE
+    } else {
+        0.2 + (presence_scale - 0.2) * bloom
+    };
+    let opacity = presence_opacity * bloom * echo_fade;
+    if opacity <= 0.004 {
+        return None;
+    }
+
+    let target = shape.point_of(wheel.center, index);
+    let center = (
+        from.0 + (target.0 - from.0) * bloom,
+        from.1 + (target.1 - from.1) * bloom,
+    );
+    Some((center, shape.icon_size * scale_now, opacity, is_active))
 }
 
 // ─── The hub ────────────────────────────────────────────────────────────────

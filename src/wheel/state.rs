@@ -15,6 +15,7 @@
 use super::aim::{self, Aim, AimContext};
 use super::anim::{self, Tween};
 use super::layout::{self, Layout};
+use super::peek;
 use crate::config::{
     self, AppItem, CenterKind, ItemKind, SelectionMode, UiConfig, Workspace,
 };
@@ -76,6 +77,10 @@ struct Echo {
     index: Option<usize>,
     center: bool,
     at: Instant,
+    /// Which peeked shortcut was the one confirmed, when the launch came off a peek. `index` then
+    /// names the WORKSPACE it came from, which is the tile that keeps the highlight — the peek's
+    /// own tile is a different ring and cannot be addressed by the same number.
+    peek: Option<usize>,
 }
 
 pub struct Wheel {
@@ -135,6 +140,13 @@ pub struct Wheel {
     level_generation: u64,
 
     dwell: Dwell,
+    /// The workspace whose shortcuts are fanned out, if any, and the rest on a workspace that has
+    /// not yet earned one.
+    peek: Option<Peek>,
+    peek_pending: Option<(usize, Instant)>,
+    /// Which peeked shortcut is aimed at. Separate from `active`, which stays on the WORKSPACE the
+    /// peek belongs to — both are lit at once, and they are not the same ring.
+    peek_active: Option<usize>,
     direction: Direction,
     hint_shown_at: Option<Instant>,
     hint_reported: bool,
@@ -194,6 +206,27 @@ pub(super) struct Dwell {
     pub(super) attempt: u64,
 }
 
+/// A workspace's shortcuts, shown around it without entering it.
+///
+/// The items are a SNAPSHOT, taken when the peek opened, and that is deliberate for the same
+/// reason the dwell's target carries an item id: what is on screen has to be what launches. The
+/// config can be edited from the settings window while the wheel is up, and a peek that re-read
+/// `config.workspaces[i].apps` every frame would relabel its own tiles under the hand.
+#[derive(Debug)]
+struct Peek {
+    /// The slice on the picker this hangs off, for the direction it points in and the tile it
+    /// blooms out of.
+    slice: usize,
+    /// The real workspace index, which is what makes the snapshot checkable against the config.
+    workspace: usize,
+    items: Vec<AppItem>,
+    /// The level this peek belongs to. A level change under a resting hand must not leave a fan
+    /// attached to a slice that is now something else.
+    generation: u64,
+    /// The tiles' own entry, out of the workspace they belong to.
+    bloom: Tween,
+}
+
 /// Direction aiming — the mode the clickless launch lives in.
 ///
 /// The pointer is hidden and parked at the wheel's centre, so the slice comes from the VECTOR the
@@ -234,6 +267,9 @@ impl Wheel {
             consumed: false,
             level_generation: 0,
             dwell: Dwell::default(),
+            peek: None,
+            peek_pending: None,
+            peek_active: None,
             hub_drag: None,
             direction: Direction::default(),
             hint_shown_at: None,
@@ -287,12 +323,23 @@ impl Wheel {
         self.item_id_at(self.active?)
     }
 
+    /// The aimed peeked shortcut's ID, when the aim is out on a peek.
+    fn peek_active_item_id(&self) -> Option<String> {
+        let index = self.peek_active?;
+        self.peek.as_ref()?.items.get(index).map(|i| i.id.clone())
+    }
+
     /// What the highlight is on, as the notes hear it — see [`crate::sys::sound::Highlight`].
     ///
     /// The one place the three states are named, so the hover note cannot disagree with what is lit
     /// about what counts as a change.
     pub fn highlight(&self) -> crate::sys::sound::Highlight {
         use crate::sys::sound::Highlight;
+        // A peeked shortcut outranks the workspace it hangs off, which stays lit underneath it.
+        // Both are lit; only one is what the aim is ON, and the note is about movement of the aim.
+        if let Some(id) = self.peek_active_item_id() {
+            return Highlight::Item(id);
+        }
         if let Some(id) = self.active_item_id() {
             return Highlight::Item(id);
         }
@@ -359,6 +406,15 @@ impl Wheel {
         self.echo.map(|e| e.center).unwrap_or(false)
     }
 
+    /// The peeked shortcut that was confirmed, and how far through the echo it is.
+    pub fn peek_echo(&self) -> Option<(usize, f32)> {
+        let echo = self.echo?;
+        let index = echo.peek?;
+        let progress =
+            (echo.at.elapsed().as_secs_f32() * 1000.0 / anim::ECHO_MS).clamp(0.0, 1.0);
+        Some((index, progress))
+    }
+
     /// Whether the progress arc should be drawn, and on which slice.
     ///
     /// It appears only once the pointer has settled, from an aim re-resolved at that moment, and
@@ -382,6 +438,11 @@ impl Wheel {
             || self.echo.is_some()
             || self.exiting_since.is_some()
             || self.dwell.settled_at.is_some()
+            // A rest that has not yet earned its peek is a clock with nothing else driving it: the
+            // hand has stopped, so no move will arrive to open the fan. Without this the peek
+            // appears on the next tremor instead of after the wait.
+            || self.peek_pending.is_some()
+            || self.peek.as_ref().map(|p| p.bloom.animating()).unwrap_or(false)
     }
 
     // ── Opening and closing ─────────────────────────────────────────────────
@@ -408,6 +469,7 @@ impl Wheel {
         self.echo = None;
         self.consumed = false;
         self.dwell = Dwell::default();
+        self.clear_peek();
         self.direction = Direction::default();
         self.hint_shown_at = None;
         self.hint_reported = false;
@@ -450,6 +512,12 @@ impl Wheel {
         self.bloom.retarget(0.0, anim::EXIT_MS, anim::ease_out);
         self.scrim.retarget(0.0, anim::EXIT_MS, anim::ease_out);
         self.dwell = Dwell::default();
+        // The fan leaves with the wheel, on the wheel's own clock. It has a bloom of its own and
+        // nothing else would ever retarget it, so without this the shortcuts hang at full size
+        // over a desktop the launcher has already left.
+        if let Some(peek) = self.peek.as_mut() {
+            peek.bloom.retarget(0.0, anim::EXIT_MS, anim::ease_out);
+        }
     }
 
     /// Whether the exit has finished and the window may be hidden.
@@ -466,6 +534,7 @@ impl Wheel {
         self.echo = None;
         self.pointer = None;
         self.active = None;
+        self.clear_peek();
         self.bloom.set(0.0);
         self.scrim.set(0.0);
     }
@@ -504,6 +573,36 @@ impl Wheel {
     /// from a corner the user deliberately opened it in.
     pub fn ring_reach(&self) -> f32 {
         layout::ring_reach(&self.layout)
+    }
+
+    /// The same, with room reserved for the widest peek any workspace could ask for.
+    ///
+    /// The overlay's box and the clamp that keeps the wheel clear of the screen edges are both
+    /// fixed when the wheel opens, before anything has been hovered. Sized for the picker alone,
+    /// the first peek would be drawn into a window that is not there — and in a corner, onto tiles
+    /// that cannot be aimed at. So the room is reserved for the largest workspace whether or not
+    /// that is the one the hand ends up on.
+    pub fn reach_with_peek(&self, config: &UiConfig) -> f32 {
+        let ring = self.ring_reach();
+        if !config.workspace_peek() || !self.root_is_picker(config) {
+            return ring;
+        }
+        let probe = peek::Input {
+            style: config.peek_style(),
+            item_count: 0,
+            // The direction does not change the reach; only the count and the style do.
+            anchor_deg: -90.0,
+            ring_radius: self.layout.radius,
+            ring_icon: self.layout.icon_size,
+            min_gap: config.app_spacing * self.scale,
+            viewport: self.viewport,
+        };
+        let counts = config
+            .workspaces
+            .iter()
+            .filter(|w| w.enabled)
+            .map(|w| w.apps.len());
+        ring.max(peek::max_reach(&probe, counts))
     }
 
     // ── Carrying the wheel ──────────────────────────────────────────────────
@@ -631,7 +730,16 @@ impl Wheel {
     /// The pool's radius for the layout as it stands, with no clock on it.
     fn pool_radius(&self, config: &UiConfig) -> f32 {
         let min_gap = config.app_spacing * self.scale;
-        (self.layout.radius + self.layout.icon_size * 0.75 + min_gap.max(18.0 * self.scale)).ceil()
+        let ring =
+            self.layout.radius + self.layout.icon_size * 0.75 + min_gap.max(18.0 * self.scale);
+        // A peek puts tiles outside the pool, where the desktop is undimmed — an icon on a bright
+        // wallpaper with no lit ground under it. The pool follows it out, on the `pool` tween, so
+        // the dimming spreads with the fan rather than snapping.
+        let peek = self
+            .peek_shape(config)
+            .map(|shape| shape.radius + shape.icon_size * 0.75 + min_gap.max(18.0 * self.scale))
+            .unwrap_or(0.0);
+        ring.max(peek).ceil()
     }
 
     /// Where the area wedges stop: as far as they can go, which is the nearest edge of the window.
@@ -697,6 +805,7 @@ impl Wheel {
                 dead_zone
             },
             direction_mode,
+            peek: self.peek_shape(config),
         }
     }
 
@@ -758,12 +867,15 @@ impl Wheel {
             }
         }
 
-        let previous = (self.active, self.center_active);
+        let previous = (self.active, self.center_active, self.peek_active);
         let aim = self.resolve_live(config);
         self.apply_aim(aim);
+        // After the aim, never before: the peek is driven by what the pointer resolved to, and the
+        // aim was resolved against the peek that is already up.
+        self.update_peek(config);
         super::dwell::on_pointer(self, config, observed);
 
-        if (self.active, self.center_active) == previous {
+        if (self.active, self.center_active, self.peek_active) == previous {
             Action::Redraw
         } else {
             // The highlight changed, which is also what the hover note plays on.
@@ -815,6 +927,7 @@ impl Wheel {
     }
 
     fn apply_aim(&mut self, aim: Aim) {
+        self.peek_active = aim.peek();
         match aim {
             Aim::Center => {
                 self.center_active = true;
@@ -823,6 +936,13 @@ impl Wheel {
             Aim::Slice(index) => {
                 self.center_active = false;
                 self.active = Some(index);
+            }
+            // The workspace the peek hangs off STAYS lit while a shortcut on it is aimed at. It is
+            // not a level the wheel has left: the picker is still on screen, and darkening the
+            // slice the fan grows out of would detach the two.
+            Aim::Peek(_) => {
+                self.center_active = false;
+                self.active = self.peek.as_ref().map(|p| p.slice);
             }
             Aim::Nothing => {
                 self.center_active = false;
@@ -844,6 +964,10 @@ impl Wheel {
         // an MRU fetch resolving after the user has already navigated elsewhere.
         self.level_generation += 1;
         self.dwell = Dwell::default();
+        // A fan belongs to the picker it grew out of. Leaving that level takes it with it, and
+        // re-earning one costs a fresh rest on a workspace — which is also what stops a peek
+        // launch chaining straight into another peek.
+        self.clear_peek();
         // Changing level is navigating, not confirming: the next gesture has to count again.
         self.consumed = false;
 
@@ -864,6 +988,215 @@ impl Wheel {
 
         let aim = self.resolve_live(config);
         self.apply_aim(aim);
+    }
+
+    // ── The peek ────────────────────────────────────────────────────────────
+    //
+    // Resting on a workspace fans its shortcuts out around it, so one gesture reaches an app two
+    // levels down without ever committing to a level. Four rules, and they are the same KIND of
+    // rule the dwell's are: each one is about an absence.
+    //
+    // 1. **The peek is earned by resting, not by crossing.** Crossing the picker to reach the far
+    //    side passes through every workspace on the way, and a peek that opened on contact would
+    //    throw a ring of shortcuts onto the screen and take it back for each one. The wait is
+    //    `peek_delay_ms`, and it is measured per SLICE: moving to another workspace restarts it.
+    //
+    // 2. **Aiming at a peeked shortcut keeps the peek alive, and does not move the level.** The
+    //    picker is still the level on screen. That is what lets the aim travel out of the band,
+    //    along the fan and back in without anything underneath it changing.
+    //
+    // 3. **The items are a snapshot.** Taken when the peek opens, and checked against the config
+    //    before anything launches, because the settings window can rewrite a workspace while the
+    //    wheel is up. A peek that re-read the config every frame would relabel its own tiles under
+    //    a resting hand; one that never re-read it would launch a shortcut that has been deleted.
+    //
+    // 4. **A peek belongs to one level generation.** Any level change clears it, which also stops
+    //    a launch off a peek chaining into another peek: the next one costs a fresh rest.
+
+    /// The peeked ring's geometry, or `None` when nothing is peeked.
+    ///
+    /// Recomputed rather than cached, for the same reason [`Aim`] is a value: a cached shape is a
+    /// second opinion about where the tiles are, and the one defect this wheel cannot have is
+    /// lighting one icon and opening another. It is a handful of transcendentals a frame.
+    pub fn peek_shape(&self, config: &UiConfig) -> Option<peek::Shape> {
+        let peek = self.peek.as_ref()?;
+        // Rule 4. Checked rather than trusted, even though `level_changed` also clears the peek
+        // outright: this is the read every hit test goes through.
+        if peek.generation != self.level_generation {
+            return None;
+        }
+        peek::shape(&peek::Input {
+            style: config.peek_style(),
+            item_count: peek.items.len(),
+            anchor_deg: super::sectors::centre_deg(peek.slice, self.item_count()),
+            ring_radius: self.layout.radius,
+            ring_icon: self.layout.icon_size,
+            min_gap: config.app_spacing * self.scale,
+            viewport: self.viewport,
+        })
+    }
+
+    /// The peeked workspace's slice on the picker, its shortcuts, and the tiles' entry progress.
+    pub fn peek_items(&self) -> Option<(usize, &[AppItem], f32)> {
+        let peek = self.peek.as_ref()?;
+        Some((peek.slice, &peek.items, peek.bloom.sample(anim::slice_ease)))
+    }
+
+    /// Which peeked shortcut is aimed at.
+    pub fn peek_active(&self) -> Option<usize> {
+        self.peek_active
+    }
+
+    fn clear_peek(&mut self) {
+        self.peek = None;
+        self.peek_pending = None;
+        self.peek_active = None;
+    }
+
+    /// Fold this frame's aim into the peek. Called from [`Wheel::pointer_moved`] after the aim has
+    /// been applied — the aim is what drives the peek, and it was resolved against the peek that is
+    /// already up.
+    fn update_peek(&mut self, config: &UiConfig) {
+        if !config.workspace_peek() || self.closing || !self.is_picker_root(config) {
+            if self.peek.is_some() || self.peek_pending.is_some() {
+                self.clear_peek();
+                self.retarget_pool(config);
+            }
+            return;
+        }
+
+        // Rule 2: the aim is inside the peek, which is the one state that cannot close it.
+        if self.peek_active.is_some() {
+            self.peek_pending = None;
+            return;
+        }
+
+        let Some(on) = self.active else {
+            // The hub, or nothing at all. Either way the hand has left.
+            if self.peek.is_some() || self.peek_pending.is_some() {
+                self.clear_peek();
+                self.retarget_pool(config);
+            }
+            return;
+        };
+
+        if self.peek.as_ref().map(|p| p.slice) == Some(on) {
+            // Back on the workspace the fan belongs to: still inside its own gesture.
+            self.peek_pending = None;
+            return;
+        }
+
+        // A different workspace, or none peeked yet. Rule 1: the wait restarts per slice.
+        //
+        // The clock is read on the SAME sample that starts it, not on the next one. A wait of zero
+        // is a legitimate setting — it means "the instant the workspace lights" — and returning
+        // early to wait for another frame would turn it into "on the next twitch of the mouse",
+        // which on a hand that has stopped moving is never.
+        let since = match self.peek_pending {
+            Some((slice, since)) if slice == on => since,
+            _ => {
+                let now = Instant::now();
+                self.peek_pending = Some((on, now));
+                // The old fan is dropped the moment the aim moves to another workspace, not when
+                // the next one opens. Holding it through the wait would leave shortcuts hanging
+                // off a slice that is no longer lit.
+                if self.peek.take().is_some() {
+                    self.peek_active = None;
+                    self.retarget_pool(config);
+                }
+                now
+            }
+        };
+        if since.elapsed().as_secs_f32() * 1000.0 < config.peek_delay_ms() {
+            return;
+        }
+
+        self.peek_pending = None;
+        let Some(workspace) = self.item_id_at(on).as_deref().and_then(workspace_pick_index) else {
+            return;
+        };
+        let items = config
+            .workspaces
+            .get(workspace)
+            .map(|w| w.apps.clone())
+            .unwrap_or_default();
+        let mut bloom = Tween::held(0.0);
+        // The tiles come out of the WORKSPACE, not out of the hub: the fan has to read as
+        // belonging to the thing the hand is resting on.
+        bloom.retarget(1.0, anim::SLICE_IN_MS, anim::slice_ease);
+        self.peek = Some(Peek {
+            slice: on,
+            workspace,
+            items,
+            generation: self.level_generation,
+            bloom,
+        });
+        self.retarget_pool(config);
+    }
+
+    /// Glide the scrim's pool to cover whatever is on screen now.
+    fn retarget_pool(&mut self, config: &UiConfig) {
+        if !self.open {
+            return;
+        }
+        let pool = self.pool_radius(config);
+        self.pool.retarget(pool, anim::SLICE_IN_MS, anim::slice_ease);
+    }
+
+    /// Run a shortcut from a peeked workspace, without entering it.
+    ///
+    /// The active workspace is deliberately NOT changed. The peek's whole proposition is reaching
+    /// an app in another context without moving into it; a launch that silently switched contexts
+    /// would make it a slower way of clicking.
+    pub fn activate_peek(&mut self, config: &mut UiConfig, index: usize) -> Action {
+        if self.closing || self.consumed {
+            return Action::Idle;
+        }
+        let Some(peek) = self.peek.as_ref() else {
+            return Action::Idle;
+        };
+        let Some(item) = peek.items.get(index).cloned() else {
+            return Action::Idle;
+        };
+        let (slice, workspace) = (peek.slice, peek.workspace);
+
+        // Rule 3: the snapshot is checked, not trusted. The settings window can delete a shortcut
+        // while the wheel is up, and launching one that is gone runs a command the user has
+        // already removed.
+        let still_there = config
+            .workspaces
+            .get(workspace)
+            .map(|w| w.apps.iter().any(|a| a.id == item.id))
+            .unwrap_or(false);
+        if !still_there {
+            self.clear_peek();
+            self.retarget_pool(config);
+            return Action::Redraw;
+        }
+
+        self.dwell = Dwell::default();
+
+        if item.is_folder() {
+            // Pushed onto the PICKER, with no workspace switch: the hub then says Back and leads
+            // to the workspaces, which is where the gesture came from. A folder needs a level
+            // because it needs that way out, and a peek has none.
+            let children = item.child_slice().to_vec();
+            self.filter.clear();
+            self.stack.push(Level {
+                label: item.label.clone(),
+                items: children,
+                parent: Some(Box::new(item)),
+            });
+            self.level_changed(config);
+            return Action::Redraw;
+        }
+
+        if item.wants_recents() {
+            return Action::FetchRecents(Box::new(item));
+        }
+
+        self.begin_peek_echo(slice, index);
+        Action::Launch(Box::new(item))
     }
 
     // ── Navigation ──────────────────────────────────────────────────────────
@@ -1091,6 +1424,7 @@ impl Wheel {
         match self.resolve_live(config) {
             Aim::Center => self.center_activate(config),
             Aim::Slice(index) => self.activate(config, index),
+            Aim::Peek(index) => self.activate_peek(config, index),
             // Past the dead zone but on nothing — pointer mode, released away from every icon.
             Aim::Nothing => {
                 self.begin_exit();
@@ -1105,6 +1439,19 @@ impl Wheel {
             index,
             center,
             at: Instant::now(),
+            peek: None,
+        });
+    }
+
+    /// The echo for a launch off a peeked workspace: the workspace keeps the highlight and the
+    /// shortcut gets the wave.
+    fn begin_peek_echo(&mut self, slice: usize, index: usize) {
+        self.consumed = true;
+        self.echo = Some(Echo {
+            index: Some(slice),
+            center: false,
+            at: Instant::now(),
+            peek: Some(index),
         });
     }
 
@@ -1141,6 +1488,12 @@ impl Wheel {
     }
 
     fn after_filter(&mut self, config: &UiConfig) -> Action {
+        // A fan is anchored to a SLICE, and filtering renumbers the slices: the index the peek
+        // hangs off names a different workspace after a keystroke, or none at all. So the peek
+        // goes before the aim is re-resolved, and the next one costs a fresh rest — the same rule
+        // a level change follows, for the same reason.
+        self.clear_peek();
+        self.retarget_pool(config);
         self.relayout(config);
         // Filtering reshapes the ring, so the aim has to be re-resolved — the slice under the
         // cursor is a different item now.
@@ -1422,6 +1775,252 @@ mod tests {
             enabled: true,
             ..Workspace::default()
         }])
+    }
+
+    // ── The peek ────────────────────────────────────────────────────────────
+
+    fn peek_spaces() -> UiConfig {
+        let mut cfg = config_with(vec![
+            Workspace {
+                id: "w1".into(),
+                name: "One".into(),
+                enabled: true,
+                apps: vec![app("a", "A"), app("b", "B")],
+                ..Workspace::default()
+            },
+            Workspace {
+                id: "w2".into(),
+                name: "Two".into(),
+                enabled: true,
+                apps: vec![app("c", "C"), app("d", "D"), app("e", "E")],
+                ..Workspace::default()
+            },
+            Workspace {
+                id: "w3".into(),
+                name: "Three".into(),
+                enabled: true,
+                apps: vec![app("f", "F")],
+                ..Workspace::default()
+            },
+        ]);
+        cfg.radial_workspace_peek = Some(true);
+        cfg.radial_workspace_peek_delay_ms = Some(0.0);
+        cfg
+    }
+
+    /// A point out along the direction slice `index` sits in, at `radius`.
+    fn along(wheel: &Wheel, index: usize, count: usize, radius: f32) -> (f32, f32) {
+        let rad = super::super::sectors::centre_deg(index, count) * std::f32::consts::PI / 180.0;
+        (
+            wheel.center.0 + radius * rad.cos(),
+            wheel.center.1 + radius * rad.sin(),
+        )
+    }
+
+    #[test]
+    fn resting_on_a_workspace_fans_its_shortcuts_out() {
+        let cfg = peek_spaces();
+        let mut wheel = carried_wheel(&cfg);
+        let radius = wheel.layout().radius;
+        wheel.pointer_moved(&cfg, along(&wheel, 1, 3, radius));
+        let (slice, items, _) = wheel.peek_items().expect("a peek");
+        assert_eq!(slice, 1);
+        // Workspace Two's own shortcuts, and nothing from the level on screen.
+        let labels: Vec<&str> = items.iter().map(|i| i.label.as_str()).collect();
+        assert_eq!(labels, ["C", "D", "E"]);
+    }
+
+    #[test]
+    fn the_wait_has_to_pass_before_anything_appears() {
+        // Rule 1. Crossing the picker must not open every workspace on the way.
+        let mut cfg = peek_spaces();
+        cfg.radial_workspace_peek_delay_ms = Some(600.0);
+        let mut wheel = carried_wheel(&cfg);
+        let radius = wheel.layout().radius;
+        for _ in 0..30 {
+            wheel.pointer_moved(&cfg, along(&wheel, 1, 3, radius));
+        }
+        assert!(wheel.peek_items().is_none());
+    }
+
+    #[test]
+    fn moving_to_another_workspace_drops_the_fan_and_starts_the_wait_again() {
+        let mut cfg = peek_spaces();
+        cfg.radial_workspace_peek_delay_ms = Some(600.0);
+        let mut wheel = carried_wheel(&cfg);
+        let radius = wheel.layout().radius;
+        // Open one by hand, by resting with no wait at all, then put the wait back.
+        cfg.radial_workspace_peek_delay_ms = Some(0.0);
+        wheel.pointer_moved(&cfg, along(&wheel, 1, 3, radius));
+        assert!(wheel.peek_items().is_some());
+        cfg.radial_workspace_peek_delay_ms = Some(600.0);
+        wheel.pointer_moved(&cfg, along(&wheel, 2, 3, radius));
+        assert!(wheel.peek_items().is_none(), "the old fan outlived its slice");
+    }
+
+    #[test]
+    fn the_peeked_workspace_stays_lit_while_a_shortcut_on_it_is_aimed_at() {
+        // Rule 2: the picker is still the level on screen, and the slice the fan grows out of is
+        // what attaches the two.
+        let cfg = peek_spaces();
+        let mut wheel = carried_wheel(&cfg);
+        let radius = wheel.layout().radius;
+        wheel.pointer_moved(&cfg, along(&wheel, 1, 3, radius));
+        let shape = wheel.peek_shape(&cfg).expect("a shape");
+        let at = shape.point_of(wheel.center, 1);
+        wheel.pointer_moved(&cfg, at);
+        assert_eq!(wheel.peek_active(), Some(1));
+        assert_eq!(wheel.active(), Some(1));
+        assert!(wheel.peek_items().is_some());
+        // And it is the shortcut, not the workspace, that the hover note follows.
+        assert_eq!(
+            wheel.highlight(),
+            crate::sys::sound::Highlight::Item("d".into())
+        );
+    }
+
+    #[test]
+    fn a_peeked_shortcut_launches_without_entering_its_workspace() {
+        let mut cfg = peek_spaces();
+        let mut wheel = carried_wheel(&cfg);
+        let radius = wheel.layout().radius;
+        wheel.pointer_moved(&cfg, along(&wheel, 1, 3, radius));
+        let shape = wheel.peek_shape(&cfg).expect("a shape");
+        wheel.pointer_moved(&cfg, shape.point_of(wheel.center, 2));
+        let action = wheel.confirm(&mut cfg);
+        match action {
+            Action::Launch(item) => assert_eq!(item.id, "e"),
+            other => panic!("{other:?}"),
+        }
+        // The whole proposition: the context did not move.
+        assert_eq!(cfg.active_workspace_index, 0);
+        assert!(wheel.is_root());
+    }
+
+    #[test]
+    fn the_hub_still_cancels_with_a_fan_on_screen() {
+        let mut cfg = peek_spaces();
+        let mut wheel = carried_wheel(&cfg);
+        let radius = wheel.layout().radius;
+        wheel.pointer_moved(&cfg, along(&wheel, 1, 3, radius));
+        assert!(wheel.peek_items().is_some());
+        wheel.pointer_moved(&cfg, wheel.center);
+        assert!(wheel.peek_items().is_none());
+        assert_eq!(wheel.confirm(&mut cfg), Action::Close);
+    }
+
+    #[test]
+    fn clicking_the_workspace_itself_still_enters_it() {
+        // The peek adds a target; it does not take the old one away.
+        let mut cfg = peek_spaces();
+        let mut wheel = carried_wheel(&cfg);
+        let radius = wheel.layout().radius;
+        wheel.pointer_moved(&cfg, along(&wheel, 1, 3, radius));
+        assert!(wheel.peek_items().is_some());
+        let action = wheel.confirm(&mut cfg);
+        assert_eq!(action, Action::WorkspaceChanged(1));
+        assert_eq!(cfg.active_workspace_index, 1);
+        // Rule 4: the level moved, so the fan is gone.
+        assert!(wheel.peek_items().is_none());
+    }
+
+    #[test]
+    fn a_peeked_folder_opens_over_the_picker_rather_than_inside_the_workspace() {
+        // A folder needs a level, because it needs a way back out, and a peek has none. The level
+        // is pushed onto the PICKER, so the hub leads back to the workspaces.
+        let mut cfg = peek_spaces();
+        cfg.workspaces[1].apps = vec![folder("fold", "Tools", vec![app("x", "X")])];
+        let mut wheel = carried_wheel(&cfg);
+        let radius = wheel.layout().radius;
+        wheel.pointer_moved(&cfg, along(&wheel, 1, 3, radius));
+        let shape = wheel.peek_shape(&cfg).expect("a shape");
+        wheel.pointer_moved(&cfg, shape.point_of(wheel.center, 0));
+        assert_eq!(wheel.confirm(&mut cfg), Action::Redraw);
+        assert_eq!(cfg.active_workspace_index, 0);
+        assert!(!wheel.is_root());
+        assert_eq!(wheel.items()[0].id, "x");
+        assert_eq!(wheel.center_label(&cfg), "Back");
+    }
+
+    #[test]
+    fn a_shortcut_deleted_while_the_wheel_was_up_is_not_launched() {
+        // Rule 3: the snapshot is checked against the config before anything runs.
+        let mut cfg = peek_spaces();
+        let mut wheel = carried_wheel(&cfg);
+        let radius = wheel.layout().radius;
+        wheel.pointer_moved(&cfg, along(&wheel, 1, 3, radius));
+        let shape = wheel.peek_shape(&cfg).expect("a shape");
+        wheel.pointer_moved(&cfg, shape.point_of(wheel.center, 0));
+        // The settings window can rewrite a workspace while the wheel is open.
+        cfg.workspaces[1].apps.retain(|a| a.id != "c");
+        assert_eq!(wheel.confirm(&mut cfg), Action::Redraw);
+        assert!(wheel.peek_items().is_none());
+    }
+
+    #[test]
+    fn typing_on_the_wheel_takes_the_fan_with_it() {
+        // A fan is anchored to a SLICE, and filtering renumbers the slices.
+        let cfg = peek_spaces();
+        let mut wheel = carried_wheel(&cfg);
+        let radius = wheel.layout().radius;
+        wheel.pointer_moved(&cfg, along(&wheel, 1, 3, radius));
+        assert!(wheel.peek_items().is_some());
+        wheel.type_char(&cfg, 't');
+        assert!(wheel.peek_items().is_none());
+    }
+
+    #[test]
+    fn the_clickless_launch_turns_the_peek_off() {
+        // There is no pointer to push outward with by direction, and a switch that silently does
+        // nothing is indistinguishable from a bug.
+        let mut cfg = peek_spaces();
+        cfg.radial_instant_activate = Some(config::InstantActivate::Dwell);
+        assert!(!cfg.workspace_peek());
+        let mut wheel = carried_wheel(&cfg);
+        let radius = wheel.layout().radius;
+        wheel.pointer_moved(&cfg, along(&wheel, 1, 3, radius));
+        assert!(wheel.peek_items().is_none());
+    }
+
+    #[test]
+    fn one_workspace_has_no_picker_to_peek_from() {
+        // With a single workspace the wheel opens on its shortcuts; there is no slice that stands
+        // for a workspace, so nothing may fan out of one.
+        let mut cfg = one_space();
+        cfg.radial_workspace_peek = Some(true);
+        cfg.radial_workspace_peek_delay_ms = Some(0.0);
+        let mut wheel = carried_wheel(&cfg);
+        let radius = wheel.layout().radius;
+        wheel.pointer_moved(&cfg, along(&wheel, 0, 3, radius));
+        assert!(wheel.peek_items().is_none());
+    }
+
+    #[test]
+    fn the_window_reserves_room_for_the_widest_fan() {
+        // The box and the centre clamp are fixed at the open, before anything is hovered.
+        let cfg = peek_spaces();
+        let wheel = carried_wheel(&cfg);
+        assert!(wheel.reach_with_peek(&cfg) > wheel.ring_reach());
+
+        let mut off = cfg.clone();
+        off.radial_workspace_peek = Some(false);
+        let wheel = carried_wheel(&off);
+        assert_eq!(wheel.reach_with_peek(&off), wheel.ring_reach());
+    }
+
+    #[test]
+    fn the_dimming_reaches_past_the_fan() {
+        // A tile outside the pool is an icon on an undimmed desktop with no lit ground under it.
+        let cfg = peek_spaces();
+        let mut wheel = carried_wheel(&cfg);
+        let before = wheel.backdrop_radius(&cfg);
+        let radius = wheel.layout().radius;
+        wheel.pointer_moved(&cfg, along(&wheel, 1, 3, radius));
+        let shape = wheel.peek_shape(&cfg).expect("a shape");
+        wheel.settle_for_probe();
+        let after = wheel.backdrop_radius(&cfg);
+        assert!(after > before);
+        assert!(after >= shape.radius, "{after} < {}", shape.radius);
     }
 
     #[test]
@@ -2052,6 +2651,12 @@ impl Wheel {
     pub fn settle_for_probe(&mut self) {
         self.bloom.set(1.0);
         self.scrim.set(1.0);
+        // The fan has a clock of its own, started by the rest that opened it. Left running, a
+        // probe taken moments later draws it half way out of the workspace -- the animation again,
+        // in the one picture that must not have it.
+        if let Some(peek) = self.peek.as_mut() {
+            peek.bloom.set(1.0);
+        }
         // The pool too, or a probe taken with `--enter` draws it mid-travel toward the level it
         // was asked for -- which is the animation again, in the one picture that must not have it.
         self.pool.set(self.pool.target());

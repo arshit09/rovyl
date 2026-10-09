@@ -12,6 +12,7 @@
 //! 2. **A slice's hit area matches its paint.** `resolve` is the only hit test — there are no
 //!    per-tile rectangles that could disagree with where the tile was drawn.
 
+use super::peek;
 use super::sectors;
 use crate::config::SelectionMode;
 use std::f32::consts::PI;
@@ -23,6 +24,9 @@ pub enum Aim {
     Center,
     /// A slice, by index into the level on screen.
     Slice(usize),
+    /// A shortcut on the peeked workspace's own ring, by index into it. A level the wheel is not
+    /// standing on: resolving one does not change which level is.
+    Peek(usize),
     /// Past the dead zone but on nothing — only reachable in pointer mode, where releasing away
     /// from every icon cancels.
     Nothing,
@@ -32,6 +36,13 @@ impl Aim {
     pub fn slice(self) -> Option<usize> {
         match self {
             Aim::Slice(i) => Some(i),
+            _ => None,
+        }
+    }
+
+    pub fn peek(self) -> Option<usize> {
+        match self {
+            Aim::Peek(i) => Some(i),
             _ => None,
         }
     }
@@ -58,6 +69,9 @@ pub struct AimContext {
     /// Whether the pointer is hidden and parked at the centre, so the aim comes from the VECTOR the
     /// hand drew rather than from a position.
     pub direction_mode: bool,
+    /// The peeked workspace's ring, when one is up. Present means there is a second set of targets
+    /// on the plane, and that is the only thing that makes `Aim::Peek` reachable.
+    pub peek: Option<peek::Shape>,
 }
 
 /// The target for a point, or `None` when there is no point yet.
@@ -74,6 +88,31 @@ pub fn resolve(ctx: &AimContext, point: Option<(f32, f32)>) -> Aim {
     let dy = py - ctx.center.1;
     if dx * dx + dy * dy < ctx.aim_gate * ctx.aim_gate {
         return Aim::Center;
+    }
+
+    // The peek is tested FIRST, and only inside its band. Its region starts outside the picker's
+    // own tiles, so there is no point this can take away from them — and in area mode, where a
+    // slice owns its share of the plane all the way to the screen edge, this is the only thing
+    // that stops the workspace underneath answering for a shortcut drawn beyond it.
+    if let Some(shape) = ctx.peek {
+        if shape.in_band(dx, dy) {
+            if let Some(index) = shape.index_for(dx, dy) {
+                // Pointer mode asks the same question of a peek tile that it asks of a slice: is
+                // the pointer ON the icon? A band that launched on direction alone would be a
+                // different targeting rule for the two rings of one wheel.
+                if matches!(ctx.mode, SelectionMode::Cursor) && !ctx.direction_mode {
+                    let hit = (shape.icon_size * 0.85).max(22.0);
+                    let (tx, ty) = shape.point_of((0.0, 0.0), index);
+                    let (ddx, ddy) = (dx - tx, dy - ty);
+                    if ddx * ddx + ddy * ddy > hit * hit {
+                        return Aim::Nothing;
+                    }
+                }
+                return Aim::Peek(index);
+            }
+            // Past the ends of a fan: rule 2 in `peek`. The point falls through to the picker,
+            // which is what lets a hand pushed out in the wrong direction retarget.
+        }
     }
     if ctx.item_count == 0 {
         // An empty level has no slice to launch, and nothing to light either.
@@ -130,6 +169,7 @@ mod tests {
             mode,
             aim_gate: 60.0,
             direction_mode: false,
+            peek: None,
         }
     }
 
@@ -190,6 +230,72 @@ mod tests {
         c.direction_mode = true;
         c.aim_gate = 18.0;
         assert_eq!(resolve(&c, Some((500.0, 475.0))), Aim::Slice(0));
+    }
+
+    fn peek_ctx(count: usize, mode: SelectionMode, style: crate::config::PeekStyle) -> AimContext {
+        let mut c = ctx(4, mode);
+        c.peek = peek::shape(&peek::Input {
+            style,
+            item_count: count,
+            // Item 0 of a four-item picker: twelve o'clock.
+            anchor_deg: sectors::centre_deg(0, 4),
+            ring_radius: c.radius,
+            ring_icon: c.icon_size,
+            min_gap: 10.0,
+            viewport: (1920.0, 1080.0),
+        });
+        c
+    }
+
+    #[test]
+    fn the_picker_keeps_everything_inside_the_band() {
+        // The peek must not take a single point away from the ring it hangs off.
+        let c = peek_ctx(6, SelectionMode::Area, crate::config::PeekStyle::Fan);
+        assert_eq!(resolve(&c, Some((500.0, 500.0 - 170.0))), Aim::Slice(0));
+        assert_eq!(resolve(&c, Some((500.0, 500.0 - 100.0))), Aim::Slice(0));
+    }
+
+    #[test]
+    fn past_the_band_the_peek_answers() {
+        let c = peek_ctx(6, SelectionMode::Area, crate::config::PeekStyle::Fan);
+        let shape = c.peek.unwrap();
+        for index in 0..6 {
+            let (dx, dy) = shape.point_of((0.0, 0.0), index);
+            let aim = resolve(&c, Some((500.0 + dx, 500.0 + dy)));
+            assert_eq!(aim, Aim::Peek(index), "index={index}");
+        }
+    }
+
+    #[test]
+    fn a_fan_gives_the_far_side_of_the_wheel_back_to_the_picker() {
+        // The fan points up; a hand thrown straight down is choosing a workspace, not one of the
+        // peeked shortcuts.
+        let c = peek_ctx(6, SelectionMode::Area, crate::config::PeekStyle::Fan);
+        assert_eq!(resolve(&c, Some((500.0, 1400.0))), Aim::Slice(2));
+    }
+
+    #[test]
+    fn a_ring_keeps_the_whole_band() {
+        // The difference between the two styles, at the one place it decides what launches.
+        let c = peek_ctx(6, SelectionMode::Area, crate::config::PeekStyle::Ring);
+        assert!(matches!(resolve(&c, Some((500.0, 1400.0))), Aim::Peek(_)));
+    }
+
+    #[test]
+    fn pointer_mode_still_wants_the_pointer_on_the_peeked_icon() {
+        // One targeting rule for both rings: in pointer mode a near miss is a miss on either.
+        let c = peek_ctx(6, SelectionMode::Cursor, crate::config::PeekStyle::Ring);
+        let shape = c.peek.unwrap();
+        let (dx, dy) = shape.point_of((0.0, 0.0), 0);
+        assert_eq!(resolve(&c, Some((500.0 + dx, 500.0 + dy))), Aim::Peek(0));
+        assert_eq!(resolve(&c, Some((500.0, 500.0 - 2000.0))), Aim::Nothing);
+    }
+
+    #[test]
+    fn the_hub_outranks_the_peek() {
+        // Cancelling has to stay reachable with a ring of shortcuts on screen.
+        let c = peek_ctx(6, SelectionMode::Area, crate::config::PeekStyle::Ring);
+        assert_eq!(resolve(&c, Some((500.0, 500.0))), Aim::Center);
     }
 
     #[test]

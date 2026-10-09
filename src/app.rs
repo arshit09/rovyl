@@ -439,7 +439,10 @@ impl App {
             (display.work_width() as f32, display.work_height() as f32),
             scale,
         );
-        let reach = self.wheel.ring_reach();
+        // With the peek on, the room a fan will need is reserved now: this number sizes the
+        // window AND clamps the centre away from the screen edges, and both are fixed before
+        // anything has been hovered.
+        let reach = self.wheel.reach_with_peek(&self.config);
 
         let center_screen = overlay::center_for(&display, self.config.placement(), cursor, reach);
         let full_bleed = self.config.needs_full_bleed();
