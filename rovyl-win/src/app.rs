@@ -35,9 +35,10 @@ use std::time::Instant;
 use windows::core::{w, PCWSTR, Result};
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, WPARAM};
 use windows::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, DispatchMessageW, PeekMessageW, PostQuitMessage,
-    RegisterClassExW, TranslateMessage, WaitMessage, MSG, PM_REMOVE, WM_APP, WM_CLOSE,
-    WM_DESTROY, WM_DISPLAYCHANGE, WM_HOTKEY, WM_QUIT, WNDCLASSEXW, WS_EX_TOOLWINDOW, WS_POPUP,
+    CreateWindowExW, DefWindowProcW, DispatchMessageW, InSendMessage, PeekMessageW, PostMessageW,
+    PostQuitMessage, RegisterClassExW, TranslateMessage, WaitMessage, MSG, PM_REMOVE, WM_APP,
+    WM_CLOSE, WM_DESTROY, WM_DISPLAYCHANGE, WM_HOTKEY, WM_MOUSEMOVE, WM_QUIT, WNDCLASSEXW,
+    WS_EX_TOOLWINDOW, WS_POPUP,
 };
 
 const CLASS_NAME: PCWSTR = w!("RovylApp");
@@ -261,7 +262,7 @@ impl App {
             split_present: 0.0,
             split_show: 0.0,
             tray: None,
-            taskbar_created: tray::taskbar_created_message(),
+            taskbar_created: taskbar_created(),
             wake_message: instance::wake_message(),
             paused: false,
             paused_until: None,
@@ -702,18 +703,17 @@ impl App {
         // answer comes from the tray itself rather than from the message alone.
         let version_4 = self.tray.as_ref().is_some_and(tray::Tray::version_4);
         match tray::Tray::classify(l, version_4) {
-            tray::TrayEvent::Activate => {
-                if self.wheel.open {
-                    self.close_wheel();
-                } else if self.may_open() {
-                    self.open_wheel(TriggerSource::Shortcut);
-                }
-            }
-            tray::TrayEvent::Settings => {
-                // The double click's FIRST click has already been acted on — the shell reports a
-                // double click as a click and then a double click, under every contract. So the
-                // wheel is up by now, and leaving it there would put it behind a settings window
-                // it cannot be used alongside.
+            // A click on the icon opens Settings, and so does a double click — which is what the
+            // build this one replaces does, and what the shell's vocabulary forces anyway. One
+            // double click arrives as NIN_SELECT, then WM_LBUTTONDBLCLK, then NIN_SELECT again:
+            // three events for one gesture, and the only way that reads as one action is if all
+            // three mean the same thing. Showing a window that is already up is free; a click that
+            // toggled something would have opened it, swapped it, and opened it again.
+            //
+            // The wheel keeps the trigger, the shortcut and its own row in this menu. It does not
+            // also need the icon, and it must not be left standing behind a settings window it
+            // cannot be used alongside.
+            tray::TrayEvent::Activate | tray::TrayEvent::Settings => {
                 if self.wheel.open {
                     self.close_wheel();
                 }
@@ -2581,7 +2581,45 @@ fn create_message_window() -> Result<HWND> {
     }
 }
 
+/// The `TaskbarCreated` id, looked up once.
+///
+/// [`app_proc`] needs it and has no `App` to read it from — it is a free function, and it runs
+/// before the one in `App::new` exists. `RegisterWindowMessageW` is a string lookup in a global
+/// table, which is not something to do for every message a window receives.
+fn taskbar_created() -> u32 {
+    static ID: std::sync::OnceLock<u32> = std::sync::OnceLock::new();
+    *ID.get_or_init(tray::taskbar_created_message)
+}
+
+/// Whether a message that arrived SENT has to be put back into the queue for [`App::pump`].
+///
+/// **The bug this exists for.** `PeekMessage` returns POSTED messages and nothing else. A message
+/// another process SENDS is handed straight to the window procedure while the peek is running and
+/// never enters the queue at all — so it reached `app_proc`, fell through to `DefWindowProc`, and
+/// went no further. The whole notification area is sent rather than posted: every click on the
+/// icon, `TaskbarCreated`, and `WM_DISPLAYCHANGE` with it. The icon was inert — no menu on a right
+/// click, no settings on a double click, nothing at all — and the handlers for them in
+/// [`App::on_message`] had never once run.
+///
+/// The icon's own `WM_MOUSEMOVE` is deliberately left out. It is most of what the callback ever
+/// says — one for every position the pointer passes over the icon — nothing acts on it, and
+/// forwarding it would wake the loop out of `WaitMessage` for each one.
+fn forwards_to_the_pump(message: u32, l: LPARAM) -> bool {
+    if message == tray::MSG_TRAY {
+        return (l.0 as u32) & 0xFFFF != WM_MOUSEMOVE;
+    }
+    message == WM_DISPLAYCHANGE || message == taskbar_created()
+}
+
 unsafe extern "system" fn app_proc(hwnd: HWND, message: u32, w: WPARAM, l: LPARAM) -> LRESULT {
+    // Posted back to this same window, unchanged, so the main loop finds it the way it finds
+    // everything else. `InSendMessage` is what keeps this from looping forever: it is true only
+    // while the procedure is handling a message sent from ANOTHER thread, and the copy posted here
+    // comes back through `DispatchMessage` on this one — where it is left alone.
+    if InSendMessage().as_bool() && forwards_to_the_pump(message, l) {
+        let _ = PostMessageW(hwnd, message, w, l);
+        return LRESULT(0);
+    }
     match message {
         WM_DESTROY => {
             PostQuitMessage(0);
@@ -2626,5 +2664,46 @@ fn char_for(vk: u16) -> Option<char> {
             .next()?
             .ok()
             .filter(|c| !c.is_control())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use windows::Win32::UI::WindowsAndMessaging::{WM_CONTEXTMENU, WM_LBUTTONDBLCLK};
+
+    /// A tray callback as the shell packs one: the event in the low word, the icon id in the high.
+    fn tray_callback(event: u32) -> LPARAM {
+        LPARAM((1isize << 16) | event as isize)
+    }
+
+    #[test]
+    fn everything_the_shell_sends_is_put_back_into_the_queue() {
+        // The bug this exists for: a sent message never comes out of `PeekMessage`, so the only
+        // way the main loop can act on one is if the window procedure posts it back. Miss one and
+        // the feature behind it is silently dead — the tray icon was, in full.
+        assert!(forwards_to_the_pump(tray::MSG_TRAY, tray_callback(tray::NIN_SELECT)));
+        assert!(forwards_to_the_pump(tray::MSG_TRAY, tray_callback(tray::NIN_KEYSELECT)));
+        assert!(forwards_to_the_pump(tray::MSG_TRAY, tray_callback(WM_CONTEXTMENU)));
+        assert!(forwards_to_the_pump(tray::MSG_TRAY, tray_callback(WM_LBUTTONDBLCLK)));
+        assert!(forwards_to_the_pump(WM_DISPLAYCHANGE, LPARAM(0)));
+        assert!(forwards_to_the_pump(taskbar_created(), LPARAM(0)));
+    }
+
+    #[test]
+    fn the_icons_own_mouse_moves_are_not() {
+        // One for every position the pointer passes over the icon, and nothing reads them.
+        // Forwarded, they would wake the loop out of `WaitMessage` for each one — which is the
+        // whole cost the loop is shaped to avoid.
+        assert!(!forwards_to_the_pump(tray::MSG_TRAY, tray_callback(WM_MOUSEMOVE)));
+    }
+
+    #[test]
+    fn an_ordinary_message_is_left_to_the_default_procedure() {
+        // Forwarding indiscriminately would post a copy of everything the window is sent, and
+        // `DefWindowProc` would never see the original.
+        for message in [WM_CLOSE, WM_DESTROY, WM_HOTKEY, MSG_WORKER] {
+            assert!(!forwards_to_the_pump(message, LPARAM(0)), "{message:#X}");
+        }
     }
 }

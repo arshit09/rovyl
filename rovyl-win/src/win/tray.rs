@@ -421,9 +421,9 @@ impl Tray {
         }
         if version_4 {
             return match message {
-                // A single left click, or Enter/Space on the icon with the keyboard. Both open the
-                // wheel: that is the gesture people try first, and a tray icon that does nothing
-                // on it reads as broken.
+                // A single left click, or Enter/Space on the icon with the keyboard. Both open
+                // Settings, which is also where a double click lands — see `App::on_tray` for why
+                // one gesture reaching three events leaves no other sensible answer.
                 NIN_SELECT | NIN_KEYSELECT => TrayEvent::Activate,
                 // Sent for a right click AND for the menu key, which is the point of answering
                 // this rather than `WM_RBUTTONUP`.
@@ -441,8 +441,15 @@ impl Tray {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TrayEvent {
+    /// The icon was activated: one click, or Enter/Space on it.
+    ///
+    /// Kept apart from [`TrayEvent::Settings`] even though both open the same window. This is the
+    /// shell's own distinction, it is the only spelling the KEYBOARD has, and collapsing the two
+    /// here would mean `classify` no longer says what the shell said.
     Activate,
+    /// A double click.
     Settings,
+    /// A right click, or the menu key.
     Menu,
     Nothing,
 }
