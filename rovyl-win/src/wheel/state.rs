@@ -111,6 +111,18 @@ pub struct Wheel {
     echo: Option<Echo>,
 
     bloom: Tween,
+    /// The scrim's own clock. NOT `bloom`.
+    ///
+    /// It used to share one, and `bloom` is reset to zero on every level change — so entering a
+    /// workspace from the picker, or a folder from a workspace, undimmed the desktop completely
+    /// and dimmed it again behind the new ring. That read as the app blinking in the middle of a
+    /// gesture that never left it.
+    ///
+    /// The dimming belongs to the wheel BEING open, not to which level it is showing: it fades in
+    /// once at the open, holds through every navigation inside it, and fades out with the exit.
+    scrim: Tween,
+    /// Where the scrim's pool ends, glided rather than cut. See [`Wheel::backdrop_radius`].
+    pool: Tween,
     layout: Layout,
     hub_diameter: f32,
     /// Whether this gesture has already launched something. A second confirmation from the same
@@ -215,6 +227,8 @@ impl Wheel {
             exiting_since: None,
             echo: None,
             bloom: Tween::held(0.0),
+            scrim: Tween::held(0.0),
+            pool: Tween::held(0.0),
             layout: Layout { radius: 170.0, icon_size: 56.0 },
             hub_diameter: 62.0,
             consumed: false,
@@ -322,7 +336,7 @@ impl Wheel {
     }
 
     pub fn scrim_bloom(&self) -> f32 {
-        self.bloom.sample(anim::scrim_ease)
+        self.scrim.sample(anim::scrim_ease)
     }
 
     pub fn hub_bloom(&self) -> f32 {
@@ -363,6 +377,8 @@ impl Wheel {
     /// Whether anything on screen still needs frames.
     pub fn animating(&self) -> bool {
         self.bloom.animating()
+            || self.scrim.animating()
+            || self.pool.animating()
             || self.echo.is_some()
             || self.exiting_since.is_some()
             || self.dwell.settled_at.is_some()
@@ -415,6 +431,13 @@ impl Wheel {
         // out of the point the gesture happened at.
         self.bloom.set(0.0);
         self.bloom.retarget(1.0, anim::SLICE_IN_MS, anim::slice_ease);
+        // The scrim comes in on its own, slower clock, and from here it is the only thing that
+        // moves it until the wheel leaves.
+        self.scrim.set(0.0);
+        self.scrim.retarget(1.0, anim::SCRIM_IN_MS, anim::scrim_ease);
+        // Full size from the first frame: the pool FADES in, it does not grow in. `relayout` just
+        // above left this mid-glide toward the new ring from whatever the last open's was.
+        self.pool.set(self.pool_radius(config));
     }
 
     /// Begin the exit. The window stays up for `EXIT_MS` so the wheel can be seen leaving.
@@ -425,6 +448,7 @@ impl Wheel {
         self.closing = true;
         self.exiting_since = Some(Instant::now());
         self.bloom.retarget(0.0, anim::EXIT_MS, anim::ease_out);
+        self.scrim.retarget(0.0, anim::EXIT_MS, anim::ease_out);
         self.dwell = Dwell::default();
     }
 
@@ -443,6 +467,7 @@ impl Wheel {
         self.pointer = None;
         self.active = None;
         self.bloom.set(0.0);
+        self.scrim.set(0.0);
     }
 
     /// Recompute the ring for the current item count and viewport.
@@ -458,6 +483,17 @@ impl Wheel {
             viewport: self.viewport,
         });
         self.hub_diameter = layout::hub_diameter(config.icon_size * self.scale, &self.layout);
+
+        // The pool is sized from the ring, and the scrim no longer fades out and back in between
+        // levels — so a level with a wider ring would snap the dimming a couple of hundred pixels
+        // outward in a single frame, which is the blink again in another form. On the slices' own
+        // clock the pool simply travels with the tiles that moved it.
+        let pool = self.pool_radius(config);
+        if self.open {
+            self.pool.retarget(pool, anim::SLICE_IN_MS, anim::slice_ease);
+        } else {
+            self.pool.set(pool);
+        }
     }
 
     /// How far the drawn wheel reaches from its centre, for the placement clamp.
@@ -581,7 +617,19 @@ impl Wheel {
     /// or the highlight would stop somewhere the dimming does not, which reads as a ring drawn
     /// around the wheel. Comfortably past the icon ring, so everything inside it is the part with
     /// the shortcuts in it.
+    ///
+    /// Sampled, so a level change moves it over the slices' clock instead of cutting to it. Both
+    /// callers read it through here, which is what keeps the scrim and the wedges agreeing on the
+    /// way across as well as at either end.
     pub fn backdrop_radius(&self, config: &UiConfig) -> f32 {
+        if !self.open {
+            return self.pool_radius(config);
+        }
+        self.pool.sample(anim::slice_ease)
+    }
+
+    /// The pool's radius for the layout as it stands, with no clock on it.
+    fn pool_radius(&self, config: &UiConfig) -> f32 {
         let min_gap = config.app_spacing * self.scale;
         (self.layout.radius + self.layout.icon_size * 0.75 + min_gap.max(18.0 * self.scale)).ceil()
     }
@@ -1647,6 +1695,86 @@ mod tests {
     }
 
     #[test]
+    fn the_dimming_holds_through_a_workspace_switch() {
+        // The blink. The scrim used to be sampled from `bloom`, which every level change resets to
+        // zero -- so dropping into a workspace from the picker undimmed the whole desktop and then
+        // dimmed it again behind the new ring, in the middle of a gesture that never left the app.
+        let mut cfg = config_with(vec![
+            Workspace { id: "w1".into(), name: "One".into(), enabled: true, apps: vec![app("a", "A")], ..Workspace::default() },
+            Workspace { id: "w2".into(), name: "Two".into(), enabled: true, apps: vec![app("b", "B"), app("c", "C")], ..Workspace::default() },
+        ]);
+        let mut wheel = Wheel::new(&cfg);
+        wheel.open(&cfg, TriggerSource::Shortcut, (500.0, 500.0), (1000.0, 1000.0), 1.0);
+        wheel.settle_for_probe();
+        assert_eq!(wheel.scrim_bloom(), 1.0);
+
+        wheel.activate(&mut cfg, 1);
+        // The tiles are reborn at the hub, which is the level change being shown...
+        assert!(wheel.bloom() < 0.01, "got {}", wheel.bloom());
+        // ...and the desktop behind them never brightens for it.
+        assert_eq!(wheel.scrim_bloom(), 1.0);
+
+        // A folder inside the workspace is the same event with the same answer.
+        wheel.center_activate(&mut cfg);
+        assert_eq!(wheel.scrim_bloom(), 1.0);
+    }
+
+    #[test]
+    fn the_dimming_still_arrives_with_the_open_and_leaves_with_the_exit() {
+        // Holding it across a level change must not turn it into something that is simply always
+        // on: the fade in and the fade out are the only two times it is allowed to move.
+        let cfg = one_space();
+        let mut wheel = Wheel::new(&cfg);
+        assert_eq!(wheel.scrim_bloom(), 0.0, "a closed wheel dims nothing");
+        wheel.open(&cfg, TriggerSource::Shortcut, (500.0, 400.0), (1920.0, 1040.0), 1.0);
+        assert!(wheel.scrim_bloom() < 1.0, "it fades in, it does not cut in");
+        wheel.settle_for_probe();
+        wheel.begin_exit();
+        // A quarter of the exit, so the fall is measurable rather than inferred.
+        std::thread::sleep(std::time::Duration::from_millis(30));
+        assert!(wheel.scrim_bloom() < 1.0, "and it leaves with the wheel");
+        wheel.close_now();
+        assert_eq!(wheel.scrim_bloom(), 0.0);
+    }
+
+    #[test]
+    fn the_pool_travels_to_the_new_ring_rather_than_cutting_to_it() {
+        // With the scrim no longer fading out and back in, a level whose ring is much wider would
+        // snap the dimming outward in one frame -- the blink again, as a jump instead of a flash.
+        let mut cfg = config_with(vec![
+            Workspace { id: "w1".into(), name: "One".into(), enabled: true, apps: vec![app("a", "A")], ..Workspace::default() },
+            Workspace {
+                id: "w2".into(),
+                name: "Two".into(),
+                enabled: true,
+                apps: (0..12).map(|i| app(&format!("i{i}"), "X")).collect(),
+                ..Workspace::default()
+            },
+        ]);
+        let mut wheel = Wheel::new(&cfg);
+        wheel.open(&cfg, TriggerSource::Shortcut, (500.0, 500.0), (1000.0, 1000.0), 1.0);
+        let picker_pool = wheel.backdrop_radius(&cfg);
+
+        wheel.activate(&mut cfg, 1);
+        let wide = wheel.pool_radius(&cfg);
+        assert!(wide > picker_pool + 1.0, "a twelve-app ring should be the wider one");
+        // Mid-flight it is somewhere between the two, not already at the far end.
+        let live = wheel.backdrop_radius(&cfg);
+        assert!(live >= picker_pool - 1.0 && live < wide, "{live} should be travelling from {picker_pool} to {wide}");
+    }
+
+    #[test]
+    fn an_open_paints_its_pool_at_full_size_from_the_first_frame() {
+        // The pool fades in; it does not grow in. `open` relayouts while the wheel already counts
+        // as open, so without an explicit snap the first open after a narrower one would start
+        // mid-glide.
+        let cfg = one_space();
+        let mut wheel = Wheel::new(&cfg);
+        wheel.open(&cfg, TriggerSource::Shortcut, (500.0, 400.0), (1920.0, 1040.0), 1.0);
+        assert_eq!(wheel.backdrop_radius(&cfg), wheel.pool_radius(&cfg));
+    }
+
+    #[test]
     fn folders_push_and_the_hub_pops() {
         let mut cfg = config_with(vec![Workspace {
             id: "w".into(),
@@ -1923,5 +2051,9 @@ impl Wheel {
     /// animation's timing rather than the frame's geometry, and the two want looking at separately.
     pub fn settle_for_probe(&mut self) {
         self.bloom.set(1.0);
+        self.scrim.set(1.0);
+        // The pool too, or a probe taken with `--enter` draws it mid-travel toward the level it
+        // was asked for -- which is the animation again, in the one picture that must not have it.
+        self.pool.set(self.pool.target());
     }
 }
