@@ -1,54 +1,45 @@
-# Logs
+# Rust build output. `target/` rather than `/target` on purpose: rust-analyzer's flycheck
+# writes one next to whatever Cargo.toml it was last pointed at, which after a move is a
+# directory that no longer belongs to the project.
+target/
+*.pdb
+*.rs.bk
+
+# What scripts/release.ps1 writes: the setup .exe and the update feed.
+dist
+
+# Logs and crash dumps
 logs
 *.log
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-lerna-debug.log*
+*.dmp
 
-node_modules
-node_modules.onedrive-*/
-dist
-dist-ssr
+# What the diagnostic flags write when run from the repo root: `--probe out.png`,
+# `--probe-settings out.png`, `scripts/shot.ps1 -Out settings.png`. Root-anchored, so the
+# artwork under design/, docs/media/ and website/assets/ is untouched.
+/*.png
+/*.exe
+
+# Secrets. `.env.example` is committed on purpose and must not be matched here.
+.env
+.env.local
+.env.*.local
 *.local
 
-# Build outputs
-build/icon.ico
-# Compiled from backend/native-helper/rovyl-helper.cs by scripts/build-native-helper.cjs,
-# which runs first in `npm run build`/`dist`. csc stamps a fresh MVID every compile, so a
-# tracked copy is dirty after every build and the committed bytes are never the shipped ones.
-backend/rovyl-helper.exe
-resources/bin/rovyl-helper.exe
-build-out*
-release
-diagnostic.log
-
-# Local / one-off artifacts (keep repo lean)
-*_errors.txt
-tsc_output.txt
-clean_log.txt
-temp*.txt
-temp_*.txt
-patch_*.js
-*_patch.js
-apply_*.js
-surgical_patch.js
-backend/*.backup
-backend/debug_*.json
-
-# Editor directories and files
+# Editor, OS and tooling droppings
 .vscode/*
 !.vscode/extensions.json
 .idea
 .DS_Store
+Thumbs.db
+desktop.ini
 *.suo
 *.ntvs*
 *.njsproj
 *.sln
 *.sw?
 
-# Assistant / editor tooling — local to whoever is working, not part of the project
+# Assistant / editor tooling — local to whoever is working, not part of the project.
+# The skills under .claude/skills/ are the exception and are committed.
 .claude/*
 !.claude/skills/
 !.claude/skills/**
@@ -59,9 +50,36 @@ backend/debug_*.json
 .agents/
 .agent/
 
-# Local build verification runs
-build-out-update-validation/
-build/appx/
+# Local / one-off artifacts (keep the repo lean)
+*_errors.txt
+tsc_output.txt
+clean_log.txt
+temp*.txt
+temp_*.txt
+patch_*.js
+*_patch.js
+apply_*.js
+surgical_patch.js
 
-# Markdown preview exports
-TODO.html
+# archive/electron/ — the retired 1.x build. Nothing there is built any more, but these rules
+# keep a checkout clean for anyone who opens it and runs `npm install`.
+#
+# Every one of them is anchored to that folder. They were written when that tree was the repo
+# root, and a bare basename like `release` matches at every level — which is how an unanchored
+# copy of this list quietly ignored .claude/skills/release.
+node_modules
+node_modules.onedrive-*/
+dist-ssr
+archive/electron/release/
+archive/electron/build-out*
+archive/electron/build-out-update-validation/
+archive/electron/build/icon.ico
+archive/electron/build/appx/
+# Compiled from backend/native-helper/rovyl-helper.cs by scripts/build-native-helper.cjs,
+# which ran first in `npm run build`/`dist`. csc stamps a fresh MVID every compile, so a
+# tracked copy was dirty after every build and the committed bytes were never the shipped ones.
+archive/electron/backend/rovyl-helper.exe
+archive/electron/resources/bin/rovyl-helper.exe
+archive/electron/backend/*.backup
+archive/electron/backend/debug_*.json
+archive/electron/TODO.html

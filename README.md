@@ -52,9 +52,10 @@ one process.
 - **It never takes the foreground.** Keystrokes come from the hook, so the window you were
   typing in keeps the keyboard the whole time the wheel is open.
 
-The port lives in [`rovyl-win/`](rovyl-win/), and
-[its README](rovyl-win/README.md#succession-from-1x) explains how a 1.x install hands itself
-over to it.
+The native build is the repository now — Rust at the root, and the Electron line it replaced
+kept in [`archive/electron/`](archive/electron/).
+[docs/BUILD.md](docs/BUILD.md#succession-from-1x) explains how a 1.x install hands itself
+over to this one.
 
 ## Why
 
@@ -165,69 +166,57 @@ By default the wheel opens on a picker of your workspaces. Prefer number keys? G
 
 ## Building
 
-> **The shipped app is [`rovyl-win/`](rovyl-win/) — Rust, no Node.** `cargo build --release`
-> there produces the whole program, and [its README](rovyl-win/README.md) covers the build,
-> the install and the release. Everything below builds the 1.x Electron line, which 2.0.0
-> replaced; it is kept because the website, the generated icon and language tables and the
-> update feed still come from here.
+Requires **Windows 10 or 11**, [Rust](https://rustup.rs) 1.80 or later on the MSVC toolchain
+(`stable-x86_64-pc-windows-msvc`), and Visual Studio Build Tools with "Desktop development
+with C++" — the build links with `link.exe`. Windows-only by design: the trigger, the icon
+pipeline, the compositor and the window handling are all Win32.
 
-Requires **Windows 10 or 11** and **Node 20+**. Windows-only by design: the trigger, the
-icon pipeline and the window handling all depend on Win32 behaviour.
-
-```bash
+```powershell
 git clone https://github.com/arshit09/rovyl
 cd rovyl
-npm install
-npm start
+cargo build --release
 ```
 
-`npm start` builds once if `dist/` is missing, then runs the production renderer under
-Electron — no dev server. For hot reload, `npm run start:dev` brings up Vite and waits for it
-before launching Electron; to run the halves separately, use `npm run dev` and
-`npm run electron`. Anything that only exists in a real install (the updater, for one) needs
-`npm run start:packaged`, which packages the app without an installer and runs it.
+That produces the whole program, `target\release\rovyl.exe`. There is no installer to
+build — the executable installs itself, under `%LOCALAPPDATA%` and `HKEY_CURRENT_USER`, with
+no admin prompt:
 
-Google sign-in needs credentials of your own — copy `.env.example` to `.env.local` and
-fill in a client ID from your own Google Cloud project. There is deliberately no default,
-so a fork never inherits someone else's OAuth client.
+```powershell
+.\target\release\rovyl.exe --install
+```
 
-> The dev app and the packaged app share `%APPDATA%\Rovyl`, because Electron derives it
-> from `productName`. A dev session therefore reads and writes your real configuration.
-> Pass `--user-data-dir` to work against a clean profile.
+To work on it, point it at a throwaway profile so the session does not read and write your
+real configuration, and build through the wrapper — a running executable holds its own file
+open, so a plain rebuild fails with "Access is denied":
 
-<details>
-<summary><b>All scripts</b></summary>
+```powershell
+$env:ROVYL_USER_DATA = "$env:TEMP\rovyl-dev"
+scripts\dev.ps1 cargo build
+.\target\debug\rovyl.exe --seed
+```
 
-| Command | What it does |
-| --- | --- |
-| `npm start` | Production build under Electron, builds first if needed |
-| `npm run start:dev` | Vite dev server + Electron |
-| `npm run start:packaged` | Packaged app without an installer, built to `%LOCALAPPDATA%` |
-| `npm run dev` | Vite only |
-| `npm run electron` | Electron only, waits for port 5173 |
-| `npm run build` | Native helper → `tsc` → Vite build → radial and renderer-budget checks → icons and Store assets |
-| `npm run dist` | `build` + electron-builder, installer in `build-out/` |
-| `npm run dist:store` | `build` + electron-builder, MSIX package for the Store |
-| `npm run release` | Cuts a release (`release:check` to dry-run) |
-| `npm run verify:radial-windowing` | Checks the wheel/Settings window-split invariants |
-| `npm run verify:renderer-budget` | Keeps the wheel's bundle within its size budget |
-| `npm run test:win32-launch` | Command parsing and quoting |
-| `npm run test:persistence-shape` | Persistence blob normalisation |
-| `npm run test:window-split` | Starts the real app on a throwaway profile and opens the wheel |
+**[docs/BUILD.md](docs/BUILD.md)** is the full account: the install flags, how a 1.x install
+hands itself over, the diagnostic flags that draw a frame or the settings window offscreen,
+the generated icon and language tables, and the three bundled typefaces.
 
-The other `test:*` scripts in `package.json` are focused smoke tests, one per feature.
+### The 1.x Electron line
 
-</details>
+The Electron app 2.0.0 replaced is kept in **[`archive/electron/`](archive/electron/)** — its
+renderer, its main process and PowerShell helpers, its installer config, and its own
+[architecture notes](archive/electron/docs/ARCHITECTURE.md). Nothing ships from there any
+more. It is kept to read, and because two of this build's generated tables are derived from
+it rather than retyped — see [docs/BUILD.md](docs/BUILD.md#development).
 
 ## Contributing
 
-Issues and pull requests are welcome. Before changing anything that looks arbitrary, read
-**[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** — most of it exists because something
-broke, and the reason is written down.
+Issues and pull requests are welcome. Before changing anything that looks arbitrary, read the
+comments around it: they explain *why* rather than *what*, and most of them are there because
+something broke once.
 
-Two things worth knowing up front: the code comments explain *why* rather than *what*, and
-`npm run build` runs verification scripts that enforce the wheel's window contract and bundle
-budget. If one fails, the contract was broken, not the test.
+`cargo test` covers what can be checked without a window. The rest is checked by drawing real
+frames — `--probe`, `--probe-settings` and `--bench` in
+[docs/BUILD.md](docs/BUILD.md#development) render offscreen and exit, so a change to the wheel
+or the settings window can be looked at without a hand on the mouse.
 
 ## Links
 

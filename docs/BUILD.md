@@ -1,8 +1,10 @@
-# Rovyl (native Windows)
+# Building Rovyl
 
-A radial launcher for Windows. Hold the middle mouse button anywhere, aim, release.
+Everything behind `cargo build`: the toolchain, the self-install, how a 1.x install hands
+itself over, the development loop, and the flags that photograph a window.
 
-One executable, one process — no installer to build and nothing to spawn at runtime.
+One executable, one process — no installer to build and nothing to spawn at runtime. See the
+[README](../README.md) for what the program is and does.
 
 ## Requirements
 
@@ -78,7 +80,7 @@ feed's `sha512`, and spawns it with NSIS's arguments — `--updated /S --force-r
 signature to satisfy (1.x shipped unsigned, so electron-updater skips that check) and no installer
 format to imitate.
 
-What this build does on the other side of that spawn ([`src/sys/migrate.rs`](src/sys/migrate.rs)):
+What this build does on the other side of that spawn ([`src/sys/migrate.rs`](../src/sys/migrate.rs)):
 
 1. Copies the new executable into `%LOCALAPPDATA%\Programs\Rovyl` **first**, as `Rovyl.new.exe`.
    Nothing is deleted until it is on disk, so a copy that fails leaves the user's launcher intact.
@@ -174,13 +176,16 @@ dev wrapper, which stops only the copy under this tree:
 scripts\dev.ps1 cargo build
 ```
 
-Two tables are generated from the Electron build rather than retyped, so the two never drift —
-the settings panel's seven languages, and the icon picker's English keywords:
+Two tables are generated from the archived Electron tree rather than retyped, so the two never
+drift — the settings panel's seven languages, and the icon picker's English keywords:
 
 ```powershell
-node scripts\gen-i18n.mjs          <rovyl>\src\i18n\translations.ts              src\i18n\settings_strings.rs
-node scripts\gen-icon-keywords.mjs <rovyl>\src\utils\iconPickerEnglishKeywords.ts src\gfx\icon_keywords.rs
+node scripts\gen-i18n.mjs          archive\electron\src\i18n\translations.ts              src\i18n\settings_strings.rs
+node scripts\gen-icon-keywords.mjs archive\electron\src\utils\iconPickerEnglishKeywords.ts src\gfx\icon_keywords.rs
 ```
+
+Keeping those two files readable is the only reason that tree is still here; nothing is built
+from it.
 
 Tests:
 

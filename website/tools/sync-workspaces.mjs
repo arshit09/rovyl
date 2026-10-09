@@ -28,6 +28,14 @@ const CONFIG = path.join(DATA_DIR, 'config-v2.json');
 const ICON_STORE = path.join(DATA_DIR, 'icons');
 
 const OUT_ICONS = path.join(SITE, 'assets', 'icons');
+
+/** The shipped version, from Cargo.toml - the manifest of the build the site advertises. */
+function appVersion() {
+  const manifest = fs.readFileSync(path.resolve(SITE, '..', 'Cargo.toml'), 'utf8');
+  const found = /^version = "(.+)"/m.exec(manifest);
+  if (!found) throw new Error('no version in Cargo.toml');
+  return found[1];
+}
 const OUT_DATA = path.join(SITE, 'workspaces.js');
 const LUCIDE = path.resolve(SITE, '..', 'node_modules', 'lucide-react', 'dist', 'esm', 'icons');
 
@@ -129,7 +137,7 @@ const look = {
   mouseMode: appearance.mouseTriggerMode ?? 'hold',
   theme: appearance.appearanceTheme ?? 'black',
   /* The version in the settings mock's footer, from the app's own manifest. */
-  version: JSON.parse(fs.readFileSync(path.resolve(SITE, '..', 'package.json'), 'utf8')).version,
+  version: appVersion(),
   /* There is no picker/keys switch any more: with more than one workspace the
      wheel always opens on the home launcher, which site.js works out itself. */
   activeWorkspace: appearance.activeWorkspaceIndex ?? 0,
