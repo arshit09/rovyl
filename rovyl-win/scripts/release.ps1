@@ -15,10 +15,16 @@
 #   scripts\release.ps1              # build and write dist\
 #   scripts\release.ps1 -SkipBuild   # just rewrite the feed from what is already built
 #
+# `-Binary` takes the executable from somewhere other than `target\release\rovyl.exe`, which a
+# running copy of the launcher holds open — cargo cannot replace a file Windows has locked, so a
+# build while Rovyl is running from the build tree fails with "Access is denied". Build into
+# another directory (`cargo build --release --target-dir target\setup-build`) and point this at it.
+#
 # It does NOT publish. The command to do that is printed at the end, to be run deliberately.
 
 param(
-    [switch] $SkipBuild
+    [switch] $SkipBuild,
+    [string] $Binary
 )
 
 $ErrorActionPreference = 'Stop'
@@ -34,7 +40,7 @@ if (-not $SkipBuild) {
     if ($LASTEXITCODE -ne 0) { throw "cargo build failed" }
 }
 
-$built = "$root\target\release\rovyl.exe"
+$built = if ($Binary) { $Binary } else { "$root\target\release\rovyl.exe" }
 if (-not (Test-Path $built)) { throw "no binary at $built" }
 
 $dist = "$root\dist"
