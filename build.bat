@@ -1,14 +1,20 @@
 @echo off
 rem ===========================================================================
-rem  Rovyl - double-click build
+rem  Rovyl - double-click build and run
 rem
-rem  Rebuilds target\release\rovyl.exe and prints how long the build took.
+rem  Rebuilds target\release\rovyl.exe, prints how long the build took, and
+rem  starts the binary it just built.
 rem
-rem  A running executable holds its own file open, so the link step would fail
-rem  with "Access is denied" - this stops the rovyl.exe started from THIS tree
-rem  first, and only that one, never the copy installed under %LOCALAPPDATA%.
-rem  Matching on the full path rather than the process name is the whole point,
-rem  same rule as scripts\dev.ps1.
+rem  It stops EVERY running rovyl.exe first, the copy installed under
+rem  %LOCALAPPDATA% included. Two reasons, and both are hard: a running
+rem  executable holds its own file open, so the link step would fail with
+rem  "Access is denied"; and the launcher takes a named single-instance mutex,
+rem  so a second copy would hand off to the first and exit without ever
+rem  showing the build that was just made.
+rem
+rem  scripts\dev.ps1 still stops only this tree's copy - it is the careful
+rem  door, for a session that must leave the installed Rovyl alone. This file
+rem  is the blunt one: it exists to put the newest build on screen.
 rem ===========================================================================
 
 setlocal
@@ -17,17 +23,21 @@ cd /d "%~dp0"
 
 set "PS=powershell -NoProfile -ExecutionPolicy Bypass -Command"
 set "ROVYL_BUILD_STAMP=%TEMP%\rovyl-build-start.txt"
+set "ROVYL_EXE=%~dp0target\release\rovyl.exe"
 
 echo ===========================================================================
-echo   Rovyl  -  cargo build --release
+echo   Rovyl  -  cargo build --release  ^+  run
 echo ===========================================================================
 echo.
 
 where cargo >nul 2>&1
 if errorlevel 1 goto :nocargo
 
-echo   Closing any rovyl.exe launched from this folder...
-%PS% "Get-Process -Name rovyl -ErrorAction SilentlyContinue | Where-Object { $_.Path -like ($PWD.Path + '\*') } | Stop-Process -Force -ErrorAction SilentlyContinue; Start-Sleep -Milliseconds 300; [DateTime]::UtcNow.Ticks | Set-Content -LiteralPath $env:ROVYL_BUILD_STAMP"
+echo   Closing every running rovyl.exe...
+rem  Wait-Process after Stop-Process, not just a sleep: the file lock and the
+rem  mutex are released when the process is GONE, and a fixed delay is either
+rem  too short on a loaded machine or wasted on every other run.
+%PS% "$p = @(Get-Process -Name rovyl -ErrorAction SilentlyContinue); if ($p.Count) { $p | Stop-Process -Force -ErrorAction SilentlyContinue; $p | Wait-Process -Timeout 10 -ErrorAction SilentlyContinue; Write-Host ('  Stopped    : {0} running cop{1}' -f $p.Count, $(if ($p.Count -eq 1) { 'y' } else { 'ies' })) } else { Write-Host '  Stopped    : nothing was running' }; [DateTime]::UtcNow.Ticks | Set-Content -LiteralPath $env:ROVYL_BUILD_STAMP"
 echo.
 
 cargo build --release
@@ -40,16 +50,27 @@ echo ---------------------------------------------------------------------------
 if not "%RC%"=="0" goto :failed
 
 echo   Status     : OK
-for %%F in ("target\release\rovyl.exe") do echo   Output     : %%~fF
-for %%F in ("target\release\rovyl.exe") do echo   Size       : %%~zF bytes, written %%~tF
-goto :done
+for %%F in ("%ROVYL_EXE%") do echo   Output     : %%~fF
+for %%F in ("%ROVYL_EXE%") do echo   Size       : %%~zF bytes, written %%~tF
+echo   Starting   : the build above, in the notification area
+echo ---------------------------------------------------------------------------
+del /q "%ROVYL_BUILD_STAMP%" >nul 2>&1
+rem  `start` detaches, so this window can close while the launcher keeps
+rem  running. The empty "" is the window title argument start insists on when
+rem  the path it is given is quoted.
+start "" "%ROVYL_EXE%"
+echo.
+echo   Press the trigger (Alt+Z by default) to open the wheel.
+timeout /t 4 /nobreak >nul 2>&1
+exit /b 0
 
 :failed
 echo   Status     : FAILED  -  cargo exited with code %RC%
-
-:done
 echo ---------------------------------------------------------------------------
 del /q "%ROVYL_BUILD_STAMP%" >nul 2>&1
+echo.
+echo   Nothing was started: the old copies are stopped and the build did not
+echo   produce a new one. Fix the errors above and run this again.
 echo.
 pause
 exit /b %RC%
