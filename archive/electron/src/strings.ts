@@ -4,7 +4,7 @@
  * There are six, and they are still English in every locale. That is a scope line, not an
  * oversight (TODO §6.5). The wheel renders from the critical chunk — the JS parsed before the
  * first frame — and `src/i18n/translations.ts` cannot be tree-shaken, because `t()` indexes it by a
- * runtime key. Six strings do not justify putting seven locale tables in front of first paint; the
+ * runtime key. Six strings do not justify putting eight locale tables in front of first paint; the
  * settings panel, with 107 keys' worth and a lazy chunk of its own, does.
  *
  * So the split is by chunk, not by conviction: `useTranslation` for anything inside
