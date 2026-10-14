@@ -114,14 +114,16 @@ pub enum Cursor {
 
 /// How far through its travel a switch is, this frame.
 ///
-/// Both numbers run 0 at off to 1 at on, and both are already eased — a caller multiplies and
-/// mixes with them rather than curving them again.
+/// `knob` and `tint` run 0 at off to 1 at on, `stretch` 0 at rest to 1 held down, and all three
+/// are already eased — a caller multiplies and mixes with them rather than curving them again.
 #[derive(Debug, Clone, Copy)]
 pub struct Toggle {
     /// The knob's position along the track.
     pub knob: f32,
     /// How far the track, its edge and the knob's colour have crossed over.
     pub tint: f32,
+    /// How far a press has stretched the knob.
+    pub stretch: f32,
     /// Still moving, so the surface needs another frame.
     pub animating: bool,
 }
@@ -149,13 +151,14 @@ pub struct Ui {
     menu_choice: Option<(String, String)>,
     /// Per-scroller offsets, by id.
     scroll: Vec<(String, f32)>,
-    /// Per-switch travel, by id: where the knob is, and how far the colours have gone over.
+    /// Per-switch travel, by id: where the knob is, how far the colours have gone over, and how
+    /// far a press has stretched it.
     ///
     /// The one piece of state here that is not a copy of anything — a switch's VALUE lives in the
     /// configuration, and this is only where the drawing of it has got to. Keeping it on the
     /// context rather than in the config is what lets the widget stay a pure function of `on`:
     /// nineteen call sites pass a bool and none of them know that anything moves.
-    toggles: Vec<(String, Tween, Tween)>,
+    toggles: Vec<(String, Tween, Tween, Tween)>,
     /// Text being edited, so a field can hold a value the config has not accepted yet.
     editing: Option<(String, String, usize)>,
     /// A transient message, and when it was shown.
@@ -306,22 +309,35 @@ impl Ui {
     ///
     /// Interruption is the `Tween`'s doing: flipping something twice quickly re-aims from wherever
     /// the knob actually is, so the second press continues the motion instead of restarting it.
-    pub fn toggle(&mut self, id: &str, on: bool) -> Toggle {
+    ///
+    /// The stretch runs on the knob's own clock and curve. Letting go starts both at once, so the
+    /// knob gives its stretch back AS it travels and its leading edge only ever moves forward. A
+    /// stretch that cut in and out on its own was a wobble: a 3 px lunge towards the far end on the
+    /// press, a snap back on the release, and only then the slide.
+    pub fn toggle(&mut self, id: &str, on: bool, held: bool) -> Toggle {
         let target = if on { 1.0 } else { 0.0 };
-        if !self.toggles.iter().any(|(key, _, _)| key == id) {
-            self.toggles
-                .push((id.to_string(), Tween::held(target), Tween::held(target)));
+        let squeeze = if held { 1.0 } else { 0.0 };
+        if !self.toggles.iter().any(|(key, ..)| key == id) {
+            self.toggles.push((
+                id.to_string(),
+                Tween::held(target),
+                Tween::held(target),
+                Tween::held(0.0),
+            ));
         }
-        let Some((_, knob, tint)) = self.toggles.iter_mut().find(|(key, _, _)| key == id) else {
+        let Some((_, knob, tint, stretch)) = self.toggles.iter_mut().find(|(key, ..)| key == id)
+        else {
             // Pushed a line ago, so this cannot happen; `unreachable!` in a paint path can.
-            return Toggle { knob: target, tint: target, animating: false };
+            return Toggle { knob: target, tint: target, stretch: squeeze, animating: false };
         };
         knob.retarget(target, anim::TOGGLE_KNOB_MS, anim::standard);
         tint.retarget(target, anim::TOGGLE_TINT_MS, anim::css_ease_out);
+        stretch.retarget(squeeze, anim::TOGGLE_KNOB_MS, anim::standard);
         Toggle {
             knob: knob.sample(anim::standard),
             tint: tint.sample(anim::css_ease_out),
-            animating: knob.animating() || tint.animating(),
+            stretch: stretch.sample(anim::standard),
+            animating: knob.animating() || tint.animating() || stretch.animating(),
         }
     }
 
@@ -670,11 +686,11 @@ mod tests {
     fn a_switch_is_settled_the_first_time_it_is_seen() {
         // Otherwise opening the panel is nineteen knobs sliding in, claiming changes nobody made.
         let mut ui = Ui::new();
-        let on = ui.toggle("sounds", true);
+        let on = ui.toggle("sounds", true, false);
         assert_eq!((on.knob, on.tint), (1.0, 1.0));
         assert!(!on.animating);
 
-        let off = ui.toggle("game", false);
+        let off = ui.toggle("game", false, false);
         assert_eq!((off.knob, off.tint), (0.0, 0.0));
         assert!(!off.animating);
     }
@@ -682,8 +698,8 @@ mod tests {
     #[test]
     fn flipping_a_switch_travels() {
         let mut ui = Ui::new();
-        ui.toggle("sounds", false);
-        let moving = ui.toggle("sounds", true);
+        ui.toggle("sounds", false, false);
+        let moving = ui.toggle("sounds", true, false);
         assert!(moving.animating, "the frame of the press has to ask for the next one");
         // Neither channel is allowed to arrive on the frame of the press — that is the cut this
         // replaces. Which of the two is ahead early on is the easing curves' business, not a
@@ -697,22 +713,39 @@ mod tests {
         // Sixty frames a second re-assert the same bool. Any of them restarting the clock would
         // leave the knob stuck a few pixels in for as long as the panel stayed open.
         let mut ui = Ui::new();
-        ui.toggle("sounds", false);
-        let first = ui.toggle("sounds", true).knob;
+        ui.toggle("sounds", false, false);
+        let first = ui.toggle("sounds", true, false).knob;
         std::thread::sleep(std::time::Duration::from_millis(30));
-        let second = ui.toggle("sounds", true).knob;
+        let second = ui.toggle("sounds", true, false).knob;
         assert!(second > first, "{second} did not advance past {first}");
+    }
+
+    #[test]
+    fn a_held_knob_stretches_and_lets_go_without_snapping() {
+        // Cut in on the press and out on the release, the stretch was a lunge and a snap back
+        // before the knob had moved at all.
+        let mut ui = Ui::new();
+        ui.toggle("sounds", false, false);
+        let pressed = ui.toggle("sounds", false, true);
+        assert!(pressed.animating, "the stretch has to be given frames");
+        assert!(pressed.stretch < 1.0, "a stretch that arrives on the frame of the press is a cut");
+        std::thread::sleep(std::time::Duration::from_millis(30));
+        let stretching = ui.toggle("sounds", false, true).stretch;
+        assert!(stretching > pressed.stretch, "{stretching} did not grow past {}", pressed.stretch);
+        let released = ui.toggle("sounds", true, false);
+        assert!(released.stretch > 0.0, "nor may it snap back on the release");
+        assert!(released.animating);
     }
 
     #[test]
     fn switches_travel_independently() {
         let mut ui = Ui::new();
-        ui.toggle("sounds", true);
-        ui.toggle("game", false);
-        let flipped = ui.toggle("sounds", false);
+        ui.toggle("sounds", true, false);
+        ui.toggle("game", false, false);
+        let flipped = ui.toggle("sounds", false, false);
         assert!(flipped.animating);
         // The untouched one is still where it was, and still asking for nothing.
-        let other = ui.toggle("game", false);
+        let other = ui.toggle("game", false, false);
         assert_eq!(other.knob, 0.0);
         assert!(!other.animating);
         assert_eq!(ui.toggles.len(), 2, "one slot per id, not one per frame");

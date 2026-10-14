@@ -314,11 +314,17 @@ pub fn switch(f: &mut Frame, id: &str, at: Rect, on: bool, enabled: bool) -> boo
 
     // `on` is the state the configuration holds THIS frame, and on the frame of a press that is
     // still the OLD one: the call site flips the value from the `true` this function is about to
-    // return. So the travel begins one frame later, and that frame has to be asked for — a click
-    // that arrives with the pointer perfectly still puts nothing in the message queue, and without
-    // this the panel would sit on the state the user just left until the hand moved again.
-    let phase = f.ui.toggle(id, on);
-    if clicked || phase.animating {
+    // return. So the travel is aimed at the state the click is about to make, and begins on the
+    // frame of the release — the same frame the stretch starts giving itself back. Aimed a frame
+    // later, the knob let go of its stretch at the end it was leaving and then set off, which is
+    // a step backwards before every slide. The next frame re-asserts the same target and the
+    // `Tween` leaves it alone.
+    //
+    // Held is read after `clicked`, which is what clears it: on the release frame it is already
+    // false.
+    let held = enabled && f.ui.is_active(id);
+    let phase = f.ui.toggle(id, on != clicked, held);
+    if phase.animating {
         f.want_frame();
     }
 
@@ -367,12 +373,10 @@ pub fn switch(f: &mut Frame, id: &str, at: Rect, on: bool, enabled: bool) -> boo
 
     // Held down, the knob stretches into a capsule along the track rather than scaling — the end
     // it is resting against stays put and the other end reaches towards where it is going. It is
-    // the press feedback the original has and the only part of this control that was missing.
-    let held = enabled && f.ui.is_active(id);
-    let knob_w = if held { f.px(17.0) } else { knob_d };
-    // No frame is asked for on account of the squish: the press and the release each arrive as a
-    // message and each draws, and between them nothing about the knob changes. Asking here would
-    // spin the loop for as long as a finger stays down.
+    // the press feedback the original has, and like the original's `width` transition it EASES:
+    // its frames are asked for only while it is changing, never for as long as a finger stays
+    // down.
+    let knob_w = knob_d + f.px(3.0) * phase.stretch;
     let reach = travel - (knob_w - knob_d);
     let x = rect.left + inset + reach * phase.knob;
     f.p.fill_round_rect(

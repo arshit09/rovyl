@@ -2289,6 +2289,8 @@ impl App {
             self.open_wheel(TriggerSource::Shortcut);
         }
 
+        // Whether the last wait was on the settings window's frame-latency object. See below.
+        let mut settings_paced = false;
         while !self.quit {
             if !self.pump() {
                 break;
@@ -2318,6 +2320,7 @@ impl App {
             // window and most frames have nothing new in them.
             let settings_wants_more = self.settings_frame();
             let card_wants_more = self.card_frame();
+            let was_paced = std::mem::take(&mut settings_paced);
 
             if self.needs_frames() {
                 let wants_more = self.tick();
@@ -2342,14 +2345,52 @@ impl App {
                     );
                 }
             } else if settings_wants_more {
-                // Something in the panel is animating — a drag, a toast, a caret. Paced to the
-                // display, like the wheel.
+                // Something in the panel is animating — a drag, a toast, a caret, a switch. Paced
+                // to the display, like the wheel: on the window's own frame-latency object, which
+                // is signalled when the frame just presented has gone to the screen.
+                //
+                // A bare 16 ms timeout stood in for it, and that does not mean 16 ms: Windows
+                // rounds a wait up to its 15.6 ms tick, so the panel woke after 16 or 31 ms,
+                // unevenly — about 36 frames a second, a switch's knob stepping across its track
+                // rather than sliding. The timeout is now only the floor for a window the
+                // compositor is not showing, whose frames never come back.
+                let waitable = self.settings.as_ref().map(|w| w.surface.frame_latency_waitable);
                 unsafe {
+                    use windows::Win32::Foundation::WAIT_OBJECT_0;
+                    use windows::Win32::System::Threading::WaitForSingleObject;
                     use windows::Win32::UI::WindowsAndMessaging::{
                         MsgWaitForMultipleObjectsEx, MWMO_INPUTAVAILABLE, QS_ALLINPUT,
                     };
-                    let _ = MsgWaitForMultipleObjectsEx(None, 16, QS_ALLINPUT, MWMO_INPUTAVAILABLE);
+                    match waitable {
+                        Some(handle) => {
+                            // It is a semaphore, and every frame the panel presented while nothing
+                            // was moving counted it up with nobody waiting. Spent on the way in,
+                            // or each of those lets a frame through unpaced.
+                            if !was_paced {
+                                for _ in 0..16 {
+                                    if WaitForSingleObject(handle, 0) != WAIT_OBJECT_0 {
+                                        break;
+                                    }
+                                }
+                            }
+                            let _ = MsgWaitForMultipleObjectsEx(
+                                Some(&[handle]),
+                                34,
+                                QS_ALLINPUT,
+                                MWMO_INPUTAVAILABLE,
+                            );
+                        }
+                        None => {
+                            let _ = MsgWaitForMultipleObjectsEx(
+                                None,
+                                16,
+                                QS_ALLINPUT,
+                                MWMO_INPUTAVAILABLE,
+                            );
+                        }
+                    }
                 }
+                settings_paced = true;
             } else if card_wants_more {
                 // A card is up. It has nothing to animate, but its linger clock has to be able to
                 // run out with no input at all -- so this wakes four times a second rather than
