@@ -99,25 +99,31 @@ pub enum UpdateLine {
     Idle,
     Checking,
     UpToDate,
-    Available(String),
+    /// The version on its way down.
+    Downloading(String),
+    /// The version downloaded and waiting: the item is the restart, not another check.
+    Ready(String),
     Unreachable,
+    Failed,
 }
 
 impl UpdateLine {
-    pub fn label(&self) -> &'static str {
+    pub fn label(&self) -> String {
         match self {
-            UpdateLine::Idle => "Check for updates",
-            UpdateLine::Checking => "Checking for updates\u{2026}",
-            UpdateLine::UpToDate => "You are on the latest version",
-            UpdateLine::Available(_) => "An update is available",
-            UpdateLine::Unreachable => "Could not check for updates",
+            UpdateLine::Idle => "Check for updates".into(),
+            UpdateLine::Checking => "Checking for updates\u{2026}".into(),
+            UpdateLine::UpToDate => "You are on the latest version".into(),
+            UpdateLine::Downloading(version) => format!("Downloading {version}\u{2026}"),
+            UpdateLine::Ready(version) => format!("Restart to update to {version}"),
+            UpdateLine::Unreachable => "Could not check for updates".into(),
+            UpdateLine::Failed => "Could not download the update".into(),
         }
     }
 
-    /// Whether pressing it does anything. A check already running is the one state with no action
+    /// Whether pressing it does anything. Work already under way is the one state with no action
     /// behind it — and a live item that silently did nothing is worse than a greyed one.
     pub fn pressable(&self) -> bool {
-        !matches!(self, UpdateLine::Checking)
+        !matches!(self, UpdateLine::Checking | UpdateLine::Downloading(_))
     }
 }
 
@@ -324,7 +330,7 @@ impl Tray {
             submenus.push(sub);
 
             let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());
-            let updates = wide(state.update.label());
+            let updates = wide(&state.update.label());
             let _ = AppendMenuW(
                 menu,
                 MF_STRING | if state.update.pressable() { MF_STRING } else { MF_GRAYED },
@@ -625,17 +631,20 @@ mod tests {
     }
 
     #[test]
-    fn a_check_already_running_is_the_only_unpressable_update_line() {
+    fn only_work_already_under_way_greys_the_update_line_out() {
         for line in [
             UpdateLine::Idle,
             UpdateLine::UpToDate,
-            UpdateLine::Available("1.20.0".into()),
+            UpdateLine::Ready("2.3.0".into()),
             UpdateLine::Unreachable,
+            UpdateLine::Failed,
         ] {
             assert!(line.pressable(), "{line:?}");
             assert!(!line.label().is_empty());
         }
         assert!(!UpdateLine::Checking.pressable());
+        assert!(!UpdateLine::Downloading("2.3.0".into()).pressable());
+        assert_eq!(UpdateLine::Ready("2.3.0".into()).label(), "Restart to update to 2.3.0");
     }
 
     #[test]

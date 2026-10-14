@@ -126,16 +126,23 @@ pub enum Outcome {
 /// Staging first means that failure ends with the user still running what they were running.
 pub fn take_over() -> Result<PathBuf, String> {
     let previous = crate::sys::migrate::previous();
+    let dir = install_dir(Spot::Replace);
+    let target = installed_exe(Spot::Replace);
     // Mirror what was there rather than imposing a default: somebody who deleted the desktop
     // shortcut deleted it on purpose, and an update that puts it back is an update that litters.
-    let desktop = previous.as_ref().map(|p| p.desktop_shortcut).unwrap_or(true);
+    // That holds for this build updating itself too, where there is no 1.x build to read it from.
+    let desktop = match previous.as_ref() {
+        Some(previous) => previous.desktop_shortcut,
+        None if target.exists() => desktop_link(Spot::Replace)
+            .map(|link| link.exists())
+            .unwrap_or(false),
+        None => true,
+    };
     let at_login = previous
         .as_ref()
         .map(|p| p.starts_with_windows)
         .unwrap_or(false);
 
-    let dir = install_dir(Spot::Replace);
-    let target = installed_exe(Spot::Replace);
     let staged = dir.join("Rovyl.new.exe");
     let source = std::env::current_exe().map_err(|e| format!("cannot find this executable: {e}"))?;
     if source == target {

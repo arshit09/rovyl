@@ -85,6 +85,8 @@ pub struct Options {
     pub peek_style: Option<crate::config::PeekStyle>,
     /// And then aim at this one of them.
     pub peek_at: Option<usize>,
+    /// Draw the hub's badge for a downloaded update.
+    pub update_ready: bool,
 }
 
 impl Options {
@@ -117,6 +119,7 @@ impl Options {
                 _ => None,
             },
             peek_at: flag("--peek-at").and_then(|v| v.parse().ok()),
+            update_ready: args.iter().any(|a| a == "--update-ready"),
         })
     }
 }
@@ -290,7 +293,7 @@ pub fn render_to_file(options: &Options, config: &UiConfig) -> Result<()> {
             battery: 61,
             charging: false,
         },
-        update_ready: false,
+        update_ready: options.update_ready,
         discovering: false,
         // Computed, not assumed: the hint is the one thing on the wheel whose visibility depends
         // on configuration the probe is being pointed at.
@@ -716,6 +719,19 @@ pub fn run_settings(args: &[String]) {
     if let Some(key) = flag("--confirming") {
         state.confirming = Some(key.clone());
     }
+
+    // `--update downloading|ready|failed` puts the updates row in that state. Each is minutes of a
+    // real release away otherwise, and the row's wording changes with every one of them.
+    state.update_state = match flag("--update").map(String::as_str) {
+        Some("checking") => Some(crate::ui::settings::UpdateState::Checking),
+        Some("downloading") => Some(crate::ui::settings::UpdateState::Downloading {
+            version: "2.3.0".into(),
+            percent: Some(42),
+        }),
+        Some("ready") => Some(crate::ui::settings::UpdateState::Ready { version: "2.3.0".into() }),
+        Some("failed") => Some(crate::ui::settings::UpdateState::Failed { version: "2.3.0".into() }),
+        _ => None,
+    };
 
     // `--rail` collapses the sidebar, which is the other half of a layout that has two.
     if args.iter().any(|a| a == "--rail") {

@@ -193,13 +193,29 @@ fn back_up_config(done: &mut Vec<String>) {
 /// of itself, all with different names — and its name, `Rovyl.exe`, is also this build's own. A
 /// kill by name during a migration is a program killing itself halfway through replacing another.
 pub(crate) fn kill_in(dir: &Path) -> usize {
-    let mut killed = 0;
-    let ours = std::process::id();
     let prefix = dir.to_string_lossy().to_lowercase();
+    let mut killed = 0;
+    for (pid, path) in processes() {
+        if path.to_lowercase().starts_with(&prefix) && terminate(pid) {
+            killed += 1;
+        }
+    }
+    killed
+}
 
+/// Whether any process other than this one is running `exe`.
+pub(crate) fn is_running(exe: &Path) -> bool {
+    let wanted = exe.to_string_lossy().to_lowercase();
+    processes().any(|(_, path)| path.to_lowercase() == wanted)
+}
+
+/// Every other process this user can see, with the full path of its executable.
+fn processes() -> impl Iterator<Item = (u32, String)> {
+    let ours = std::process::id();
+    let mut found = Vec::new();
     unsafe {
         let Ok(snapshot) = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0) else {
-            return 0;
+            return found.into_iter();
         };
         let mut entry = PROCESSENTRY32W {
             dwSize: std::mem::size_of::<PROCESSENTRY32W>() as u32,
@@ -210,9 +226,7 @@ pub(crate) fn kill_in(dir: &Path) -> usize {
                 let pid = entry.th32ProcessID;
                 if pid != ours && pid != 0 {
                     if let Some(path) = image_path(pid) {
-                        if path.to_lowercase().starts_with(&prefix) && terminate(pid) {
-                            killed += 1;
-                        }
+                        found.push((pid, path));
                     }
                 }
                 if Process32NextW(snapshot, &mut entry).is_err() {
@@ -222,7 +236,7 @@ pub(crate) fn kill_in(dir: &Path) -> usize {
         }
         let _ = CloseHandle(snapshot);
     }
-    killed
+    found.into_iter()
 }
 
 /// Where a process's executable actually lives.

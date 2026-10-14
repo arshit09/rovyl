@@ -1355,13 +1355,30 @@ fn draw_logo(
     p.fill_circle(center, 54.0 * k, behind);
 }
 
-fn draw_update_badge(p: &Painter, wheel: &Wheel, center: (f32, f32), diameter: f32, opacity: f32) {
-    let s = wheel.scale;
+/// Where the update badge sits on a hub of `diameter` around `center`, and how big it is.
+fn update_badge_at(center: (f32, f32), diameter: f32) -> ((f32, f32), f32) {
     let size = (diameter * 0.32).round();
     let at = (
         center.0 + diameter / 2.0 - size * 0.4,
         center.1 - diameter / 2.0 + size * 0.4,
     );
+    (at, size)
+}
+
+/// Whether a point, in client pixels, is on the update badge of a wheel at rest.
+///
+/// A little generous: the badge is a third of the hub across, and a target that small is missed by
+/// as much as it is hit when the hand is on its way somewhere.
+pub fn on_update_badge(wheel: &Wheel, point: (f32, f32)) -> bool {
+    let (at, size) = update_badge_at(wheel.center, wheel.hub_diameter());
+    let reach = size / 2.0 + 4.0 * wheel.scale;
+    let (dx, dy) = (point.0 - at.0, point.1 - at.1);
+    dx * dx + dy * dy <= reach * reach
+}
+
+fn draw_update_badge(p: &Painter, wheel: &Wheel, center: (f32, f32), diameter: f32, opacity: f32) {
+    let s = wheel.scale;
+    let (at, size) = update_badge_at(center, diameter);
     // A ring in the background colour separates it from the hub without adding a new outline.
     p.fill_circle(at, size / 2.0, fade(pal::rgb(0x0A_0A_0A), opacity));
     let inset = (diameter * 0.026).max(2.0);

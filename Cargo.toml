@@ -66,6 +66,7 @@ features = [
   "Win32_NetworkManagement_IpHelper",
   "Win32_Storage_FileSystem",
   "Win32_Security",
+  "Win32_Security_Cryptography",
   "Foundation_Numerics",
 ]
 

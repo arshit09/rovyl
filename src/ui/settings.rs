@@ -100,6 +100,8 @@ pub struct Request {
     pub preview_sound: Option<String>,
     /// Go and ask the release feed what the newest version is.
     pub check_updates: bool,
+    /// Install the downloaded update now: quit, and let the installer start the new version.
+    pub install_update: bool,
     /// Store this icon out of this library, and put it on the target the picker is open for.
     pub take_library_icon: Option<(std::path::PathBuf, u32)>,
     /// Open the system's file dialog and put the chosen picture on this target.
@@ -117,14 +119,20 @@ pub struct Request {
     pub pick_path: Option<super::workspace::AddMode>,
 }
 
-/// Where an update check got to.
+/// Where the updater has got to. One state for the panel and the tray, so the two never disagree.
 #[derive(Debug, Clone, PartialEq)]
 pub enum UpdateState {
     Checking,
     UpToDate,
-    Available { version: String, url: String },
+    /// Found and on its way down. `percent` is `None` until the size is known.
+    Downloading { version: String, percent: Option<u8> },
+    /// Downloaded and verified; only a restart is missing. FINAL: nothing moves the row back from
+    /// here, because the one button that matters would go with it.
+    Ready { version: String },
     /// Asked and could not be answered — no network, a rate limit, a feed that moved.
     Unreachable,
+    /// Found, but the download failed or did not match the feed.
+    Failed { version: String },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -991,54 +999,71 @@ fn general(
         f.mark_dirty();
     }
 
-    // The release feed both builds publish to, asked only when somebody asks. A launcher that
-    // phones home on every start is a launcher with a network dependency it did not need, and
-    // this one opens in four milliseconds on a machine with no network at all.
-    let (description, label, enabled) = match state.update_state.as_ref() {
+    // One row, derived from where the updater is — never a "Check" sitting beside an update that
+    // is already downloaded. While something is under way the row is information, not a button;
+    // once an installer is ready, the only thing left to choose is when to restart.
+    let (title, description, label, enabled) = match state.update_state.as_ref() {
         None => (
+            "Check for updates".to_string(),
             format!("You are on {version}."),
             "Check".to_string(),
             true,
         ),
         Some(UpdateState::Checking) => (
+            "Check for updates".to_string(),
             "Asking the release feed\u{2026}".to_string(),
             "Checking".to_string(),
             false,
         ),
         Some(UpdateState::UpToDate) => (
+            "Check for updates".to_string(),
             format!("{version} is the newest there is."),
             "Check again".to_string(),
             true,
         ),
-        Some(UpdateState::Available { version: found, .. }) => (
-            format!("{found} is out. You are on {version}."),
-            "Open release".to_string(),
+        Some(UpdateState::Downloading { version: found, percent }) => (
+            format!("Downloading {found}"),
+            match percent {
+                Some(percent) => format!("{percent}% done. Rovyl installs the update the next time it starts."),
+                None => "Rovyl installs the update the next time it starts.".to_string(),
+            },
+            "Downloading".to_string(),
+            false,
+        ),
+        Some(UpdateState::Ready { version: found }) => (
+            format!("Version {found} is ready"),
+            "Downloaded and verified. Rovyl installs the update the next time it starts.".to_string(),
+            "Restart now".to_string(),
             true,
         ),
         Some(UpdateState::Unreachable) => (
+            "Check for updates".to_string(),
             "Could not reach the release feed.".to_string(),
             "Try again".to_string(),
             true,
         ),
+        Some(UpdateState::Failed { version: found }) => (
+            "Check for updates".to_string(),
+            format!("{found} could not be downloaded."),
+            "Try again".to_string(),
+            true,
+        ),
     };
-    let r = w::row(f, "Check for updates", &description, 130.0);
-    let primary = matches!(state.update_state, Some(UpdateState::Available { .. }));
+    let r = w::row(f, &title, &description, 130.0);
+    let ready = matches!(state.update_state, Some(UpdateState::Ready { .. }));
     if w::button(
         f,
         "updates",
         r.control,
         &label,
-        if primary { ButtonKind::Primary } else { ButtonKind::Normal },
+        if ready { ButtonKind::Primary } else { ButtonKind::Normal },
         enabled,
     ) {
-        match state.update_state.as_ref() {
-            Some(UpdateState::Available { url, .. }) => {
-                request.open_url = Some(url.clone());
-            }
-            _ => {
-                state.update_state = Some(UpdateState::Checking);
-                request.check_updates = true;
-            }
+        if ready {
+            request.install_update = true;
+        } else {
+            state.update_state = Some(UpdateState::Checking);
+            request.check_updates = true;
         }
     }
 

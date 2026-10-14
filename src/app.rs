@@ -97,8 +97,8 @@ pub struct App {
     fault: Option<(crate::ui::fault::Fault, std::time::Instant)>,
     /// Whether the card's Copy button has been pressed for this fault.
     fault_copied: bool,
-    /// An update check in flight.
-    update_check: Option<std::sync::mpsc::Receiver<Option<crate::sys::updates::Release>>>,
+    /// The updater's thread: it checks, downloads and verifies, and reports here.
+    updater: crate::sys::updates::Updater,
     /// Prefetches in flight, so one is not started twice.
     recents_jobs: Vec<String>,
     recents_results: Option<std::sync::mpsc::Receiver<(String, Vec<crate::config::AppItem>)>>,
@@ -236,7 +236,22 @@ impl App {
             fault: None,
             fault_copied: false,
             recents_cache: Vec::new(),
-            update_check: None,
+            updater: {
+                // An installed copy checks on its own, the way the Electron build did. A
+                // development build checks only when asked: it is started a dozen times a day,
+                // and a download it finds is installed over the INSTALLED copy, not itself.
+                let automatic = crate::sys::install::running_installed()
+                    && crate::sys::updates::ready(env!("CARGO_PKG_VERSION")).is_none();
+                let wake = hwnd.0 as isize;
+                crate::sys::updates::Updater::start(env!("CARGO_PKG_VERSION"), automatic, move || unsafe {
+                    let _ = windows::Win32::UI::WindowsAndMessaging::PostMessageW(
+                        HWND(wake as _),
+                        MSG_WORKER,
+                        WPARAM(0),
+                        LPARAM(0),
+                    );
+                })
+            },
             recents_jobs: Vec::new(),
             recents_results: None,
             recents_sender: None,
@@ -278,6 +293,12 @@ impl App {
         hook::set_target(hwnd);
         hook::start();
         app.extractor.wake_on(hwnd.0 as isize, MSG_WORKER);
+        // An installer downloaded in an earlier session and not yet installed — a development
+        // build, or one that gave up on it — is offered as ready rather than fetched again.
+        if let Some(note) = crate::sys::updates::ready(env!("CARGO_PKG_VERSION")) {
+            app.settings_ui.update_state =
+                Some(crate::ui::settings::UpdateState::Ready { version: note.version });
+        }
         app.arm_triggers();
         app.tray = Some(tray::Tray::new(hwnd));
         Ok(app)
@@ -811,10 +832,12 @@ impl App {
                 None => tray::UpdateLine::Idle,
                 Some(UpdateState::Checking) => tray::UpdateLine::Checking,
                 Some(UpdateState::UpToDate) => tray::UpdateLine::UpToDate,
-                Some(UpdateState::Available { version, .. }) => {
-                    tray::UpdateLine::Available(version.clone())
+                Some(UpdateState::Downloading { version, .. }) => {
+                    tray::UpdateLine::Downloading(version.clone())
                 }
+                Some(UpdateState::Ready { version }) => tray::UpdateLine::Ready(version.clone()),
                 Some(UpdateState::Unreachable) => tray::UpdateLine::Unreachable,
+                Some(UpdateState::Failed { .. }) => tray::UpdateLine::Failed,
             },
         }
     }
@@ -871,25 +894,52 @@ impl App {
 
     /// The tray's updates line, pressed.
     ///
-    /// The same check the panel's row runs, and the same page: there is one updater and this is a
-    /// second door to it, not a second copy of it.
+    /// The same updater the panel's row drives: there is one, and this is a second door to it, not
+    /// a second copy of it. With an installer ready the line is the restart.
     fn updates_from_tray(&mut self) {
         use crate::ui::settings::UpdateState;
-        if let Some(UpdateState::Available { url, .. }) = self.settings_ui.update_state.as_ref() {
-            crate::launch::open_url(&url.clone());
-            return;
+        match self.settings_ui.update_state {
+            Some(UpdateState::Ready { .. }) => self.install_update("tray"),
+            Some(UpdateState::Checking) | Some(UpdateState::Downloading { .. }) => {}
+            _ => {
+                self.settings_ui.update_state = Some(UpdateState::Checking);
+                self.updater.check_now();
+            }
         }
-        if self.update_check.is_some() {
+    }
+
+    /// Whether an installer is downloaded and waiting, which is what puts the badge on the hub.
+    fn update_ready(&self) -> bool {
+        matches!(
+            self.settings_ui.update_state,
+            Some(crate::ui::settings::UpdateState::Ready { .. })
+        )
+    }
+
+    /// Hand the machine to the downloaded installer and quit.
+    ///
+    /// `reopen` is where the new version comes back: `window` from Settings, `tray` from the tray,
+    /// where the user was not looking at a window. The installer waits for this process to finish
+    /// exiting — saving the configuration included — before it replaces anything.
+    fn install_update(&mut self, reopen: &str) {
+        use crate::ui::settings::UpdateState;
+        let Some(note) = crate::sys::updates::ready(env!("CARGO_PKG_VERSION")) else {
+            // The file went between the download and the press. Asking again fetches it again.
+            self.settings_ui.update_state = Some(UpdateState::Checking);
+            self.updater.check_now();
             return;
+        };
+        let version = note.version.clone();
+        match crate::sys::updates::start_installer(note, reopen) {
+            Ok(()) => self.quit = true,
+            Err(why) => {
+                config::store::log_line(&format!("updates: {why}"));
+                self.settings_ui.update_state = Some(UpdateState::Failed { version });
+            }
         }
-        let (sender, receiver) = std::sync::mpsc::channel();
-        self.update_check = Some(receiver);
-        self.settings_ui.update_state = Some(UpdateState::Checking);
-        let _ = std::thread::Builder::new()
-            .name("rovyl-updates".into())
-            .spawn(move || {
-                let _ = sender.send(crate::sys::updates::latest());
-            });
+        if let Some(window) = self.settings.as_mut() {
+            window.state.needs_frame = true;
+        }
     }
 
     fn on_trigger_down(&mut self, at: POINT) {
@@ -996,6 +1046,13 @@ impl App {
                         "carried the wheel to ({:.0}, {:.0})",
                         self.wheel.center.0, self.wheel.center.1
                     ));
+                    return;
+                }
+                // The badge on the hub is the restart, as it was in the Electron build. Pressed on
+                // the wheel rather than in a window, so the new version comes back in the tray.
+                if self.update_ready() && crate::wheel::render::on_update_badge(&self.wheel, client) {
+                    self.wheel.begin_exit();
+                    self.install_update("tray");
                     return;
                 }
                 // The corners first. A release over a dock icon or the gear belongs to that, and
@@ -1333,24 +1390,11 @@ impl App {
         if let Some((path, index)) = request.take_library_icon.clone() {
             self.take_library_icon(&path, index);
         }
-        if request.check_updates && self.update_check.is_none() {
-            let (sender, receiver) = std::sync::mpsc::channel();
-            self.update_check = Some(receiver);
-            let wake = self.hwnd.0 as isize;
-            std::thread::Builder::new()
-                .name("rovyl-updates".into())
-                .spawn(move || {
-                    let _ = sender.send(crate::sys::updates::latest());
-                    unsafe {
-                        let _ = windows::Win32::UI::WindowsAndMessaging::PostMessageW(
-                            HWND(wake as _),
-                            MSG_WORKER,
-                            WPARAM(0),
-                            LPARAM(0),
-                        );
-                    }
-                })
-                .ok();
+        if request.check_updates {
+            self.updater.check_now();
+        }
+        if request.install_update {
+            self.install_update("window");
         }
         if let Some(on) = request.set_autostart {
             crate::sys::autostart::set(on);
@@ -1561,32 +1605,33 @@ impl App {
         }
     }
 
-    /// Take a finished update check and tell the panel what it found.
+    /// Take whatever the updater has found and tell the panel and the tray.
     fn pump_updates(&mut self) {
-        let Some(receiver) = self.update_check.as_ref() else {
-            return;
-        };
-        let Ok(answer) = receiver.try_recv() else {
-            return;
-        };
-        self.update_check = None;
-        let current = env!("CARGO_PKG_VERSION");
-        self.settings_ui.update_state = Some(match answer {
-            Some(release) if crate::sys::updates::is_newer(&release.version, current) => {
-                config::store::log_line(&format!(
-                    "updates: {} is available (running {current})",
-                    release.version
-                ));
-                crate::ui::settings::UpdateState::Available {
-                    version: release.version,
-                    url: release.url,
-                }
+        use crate::sys::updates::Event;
+        use crate::ui::settings::UpdateState;
+        let mut changed = false;
+        while let Some(event) = self.updater.next_event() {
+            // `Ready` is final. The installer is on disk and the restart still works; a later
+            // check that fails must not take the only button that matters off the row.
+            if matches!(self.settings_ui.update_state, Some(UpdateState::Ready { .. }))
+                && !matches!(event, Event::Ready { .. })
+            {
+                continue;
             }
-            Some(_) => crate::ui::settings::UpdateState::UpToDate,
-            None => crate::ui::settings::UpdateState::Unreachable,
-        });
-        if let Some(window) = self.settings.as_mut() {
-            window.state.needs_frame = true;
+            self.settings_ui.update_state = Some(match event {
+                Event::Checking => UpdateState::Checking,
+                Event::UpToDate => UpdateState::UpToDate,
+                Event::Unreachable => UpdateState::Unreachable,
+                Event::Downloading { version, percent } => UpdateState::Downloading { version, percent },
+                Event::Ready { version } => UpdateState::Ready { version },
+                Event::Failed { version } => UpdateState::Failed { version },
+            });
+            changed = true;
+        }
+        if changed {
+            if let Some(window) = self.settings.as_mut() {
+                window.state.needs_frame = true;
+            }
         }
     }
 
@@ -1970,7 +2015,7 @@ impl App {
             )),
             pointer_down: self.pointer_down,
             status: crate::sys::status::latest(),
-            update_ready: false,
+            update_ready: self.update_ready(),
             discovering: false,
             direction_hint,
             clear_first: true,

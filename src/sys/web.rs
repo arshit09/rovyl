@@ -98,6 +98,126 @@ pub fn with_scheme(url: &str) -> String {
 /// the caller's next move is the same for all of them: try the next candidate, or give up and
 /// leave the glyph alone.
 pub fn fetch(url: &str) -> Option<Vec<u8>> {
+    let response = get(
+        url,
+        "Accept: image/avif,image/webp,image/png,image/*,text/html;q=0.9,*/*;q=0.8\r\n",
+    )?;
+    let mut body: Vec<u8> = Vec::with_capacity(16 * 1024);
+    let mut chunk = [0u8; 16 * 1024];
+    loop {
+        let read = response.read(&mut chunk)?;
+        if read == 0 {
+            break;
+        }
+        body.extend_from_slice(&chunk[..read]);
+        if body.len() > MAX_BYTES {
+            // Truncated rather than refused: a page whose head is in the first half megabyte
+            // still has a title, and an image that large was never a favicon.
+            body.truncate(MAX_BYTES);
+            break;
+        }
+    }
+    if body.is_empty() {
+        None
+    } else {
+        Some(body)
+    }
+}
+
+/// GET a URL into a file, reporting progress as it goes.
+///
+/// For the one body this program fetches that is not small: an update's installer. `fetch` would
+/// hold all of it in memory and stop at half a megabyte; this streams it to `to` and refuses
+/// anything over `max_bytes`, so a feed that points somewhere strange cannot fill the disk.
+///
+/// `progress` is called with the bytes so far and the total, when the server said what it was.
+/// A partial file is left behind on failure, for the caller to delete.
+pub fn download(
+    url: &str,
+    to: &std::path::Path,
+    max_bytes: u64,
+    mut progress: impl FnMut(u64, Option<u64>),
+) -> Result<u64, String> {
+    use std::io::Write;
+    let response = get(url, "Accept: application/octet-stream, */*\r\n")
+        .ok_or_else(|| format!("no answer from {url}"))?;
+    let total = response.content_length();
+    if let Some(total) = total.filter(|total| *total > max_bytes) {
+        return Err(format!("{url} is {total} bytes, over the {max_bytes} allowed"));
+    }
+    let mut file =
+        std::fs::File::create(to).map_err(|e| format!("cannot write {}: {e}", to.display()))?;
+    let mut written: u64 = 0;
+    let mut chunk = vec![0u8; 64 * 1024];
+    loop {
+        let read = response
+            .read(&mut chunk)
+            .ok_or_else(|| format!("the connection dropped after {written} bytes"))?;
+        if read == 0 {
+            break;
+        }
+        written += read as u64;
+        if written > max_bytes {
+            return Err(format!("{url} ran past the {max_bytes} bytes allowed"));
+        }
+        file.write_all(&chunk[..read])
+            .map_err(|e| format!("cannot write {}: {e}", to.display()))?;
+        progress(written, total);
+    }
+    file.flush()
+        .map_err(|e| format!("cannot write {}: {e}", to.display()))?;
+    Ok(written)
+}
+
+/// An answered request, with its body still to be read.
+///
+/// The fields drop in the order they are declared, which is the order WinHTTP wants its handles
+/// closed in: the request, then the connection, then the session.
+struct Response {
+    request: Handle,
+    _connect: Handle,
+    _session: Handle,
+}
+
+impl Response {
+    /// The next piece of the body. `Some(0)` is the end of it; `None` is a failure.
+    fn read(&self, into: &mut [u8]) -> Option<usize> {
+        let mut read: u32 = 0;
+        unsafe {
+            WinHttpReadData(
+                self.request.0,
+                into.as_mut_ptr() as *mut _,
+                into.len() as u32,
+                &mut read,
+            )
+            .ok()?;
+        }
+        Some(read as usize)
+    }
+
+    /// The `Content-Length` the server sent, if it sent one.
+    fn content_length(&self) -> Option<u64> {
+        let mut length: u32 = 0;
+        let mut size = std::mem::size_of::<u32>() as u32;
+        unsafe {
+            WinHttpQueryHeaders(
+                self.request.0,
+                WINHTTP_QUERY_CONTENT_LENGTH | WINHTTP_QUERY_FLAG_NUMBER,
+                PCWSTR::null(),
+                Some(&mut length as *mut u32 as *mut _),
+                &mut size,
+                std::ptr::null_mut(),
+            )
+            .ok()?;
+        }
+        Some(length as u64)
+    }
+}
+
+/// Send a GET and wait for the answer. `None` unless it was a 200.
+///
+/// `accept` is the request's whole extra header block, CRLF-terminated.
+fn get(url: &str, accept: &str) -> Option<Response> {
     unsafe {
         let session = WinHttpOpen(
             &HSTRING::from(USER_AGENT),
@@ -158,10 +278,7 @@ pub fn fetch(url: &str) -> Option<Vec<u8>> {
         let request = Handle(request);
 
         // UTF-16 with no terminator: WinHTTP takes the headers as a counted slice.
-        let headers: Vec<u16> =
-            "Accept: image/avif,image/webp,image/png,image/*,text/html;q=0.9,*/*;q=0.8\r\n"
-                .encode_utf16()
-                .collect();
+        let headers: Vec<u16> = accept.encode_utf16().collect();
         WinHttpSendRequest(request.0, Some(&headers), None, 0, 0, 0).ok()?;
         WinHttpReceiveResponse(request.0, std::ptr::null_mut()).ok()?;
 
@@ -181,37 +298,11 @@ pub fn fetch(url: &str) -> Option<Vec<u8>> {
         if status != 200 {
             return None;
         }
-
-        let mut body: Vec<u8> = Vec::with_capacity(16 * 1024);
-        let mut chunk = [0u8; 16 * 1024];
-        loop {
-            let mut read: u32 = 0;
-            if WinHttpReadData(
-                request.0,
-                chunk.as_mut_ptr() as *mut _,
-                chunk.len() as u32,
-                &mut read,
-            )
-            .is_err()
-            {
-                return None;
-            }
-            if read == 0 {
-                break;
-            }
-            body.extend_from_slice(&chunk[..read as usize]);
-            if body.len() > MAX_BYTES {
-                // Truncated rather than refused: a page whose head is in the first half megabyte
-                // still has a title, and an image that large was never a favicon.
-                body.truncate(MAX_BYTES);
-                break;
-            }
-        }
-        if body.is_empty() {
-            None
-        } else {
-            Some(body)
-        }
+        Some(Response {
+            request,
+            _connect: connect,
+            _session: session,
+        })
     }
 }
 

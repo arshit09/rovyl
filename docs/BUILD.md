@@ -102,6 +102,26 @@ happens to your workspaces, Install and Close. Which of the two it does is decid
 NAME: the same bytes are the application as `Rovyl.exe` and its installer as `Rovyl-Setup-2.0.0.exe`.
 `--setup` forces the window from a build tree.
 
+## Updates
+
+From 2.3.0 this build updates itself the way 1.x did, from the same feed
+([`src/sys/updates.rs`](../src/sys/updates.rs)):
+
+1. An installed copy reads `latest.yml` ten seconds after it starts and every six hours after
+   that; any copy reads it when **Check** is pressed in Settings → General or in the tray.
+2. A newer version downloads straight away into `%LOCALAPPDATA%\Rovyl\updates`, and counts as
+   downloaded only once its size and `sha512` match the feed.
+3. `pending-update.json` beside the configuration records it, with 1.x's field names. Settings
+   then offers **Restart now**, the tray **Restart to update to X**, and the wheel's hub a badge.
+4. Restarting runs the downloaded file with `--updated /S --force-run --wait <pid>`: the setup's
+   silent mode waits for the old process to exit, replaces `Rovyl.exe`, and starts the new one —
+   into Settings when the restart came from there, into the tray otherwise.
+5. An update nobody restarted for installs on the next launch, before any of the app exists. Two
+   failed goes at the same installer and the launcher stops trying and starts on what it has.
+
+`rovyl --updates --as 2.1.0` runs steps 1–3 as that version would, printing each step and
+installing nothing; with `ROVYL_USER_DATA` set, the download and the note land in that profile.
+
 ## Run
 
 Run the binary directly, without installing:
@@ -202,10 +222,10 @@ Useful flags — all of them print to the terminal they were launched from and e
 | `--bench [rounds]` | Measures the open path against the real window and swapchain |
 | `--web <url>` | What a web shortcut would be born with: title, favicon, timings |
 | `--recents <label> <command>` | What the MRU ring would show for a shortcut |
-| `--updates` | What the release feed would tell the settings panel |
+| `--updates [--as <version>]` | What the release feed would tell the settings panel; with `--as`, the whole check and download as that version |
 | `--icon-from <file> [n]` | Stores a picture, or one icon out of a program or DLL, and names the reference |
 | `--probe-drop` | Reads the clipboard as if it had been dropped on Settings: formats, entries, shortcuts |
-| `--probe-settings <out.png>` | Draws the settings window offscreen; `--section`, `--workspace`, `--icons`, `--card`, `--code` pick what |
+| `--probe-settings <out.png>` | Draws the settings window offscreen; `--section`, `--workspace`, `--icons`, `--card`, `--code`, `--update <state>` pick what |
 | `--probe-fonts` | What the three bundled faces resolved to, and a measured width per role and weight |
 
 `--code` opens the workspace's JSON editor rather than its controls. `--code-text <file>` puts that

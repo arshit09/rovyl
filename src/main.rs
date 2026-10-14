@@ -205,17 +205,33 @@ fn main() {
         return;
     }
     // `--updates` asks the release feed what it would tell the panel.
+    //
+    // `--updates --as <version>` runs the whole check as that version would — feed, download,
+    // hash, note — and prints every step. It installs nothing; point `ROVYL_USER_DATA` at a
+    // scratch folder and the download and the note land there too.
     if args.iter().any(|a| a == "--updates") {
         attach_console();
-        let current = env!("CARGO_PKG_VERSION");
+        let pretend = args
+            .iter()
+            .position(|a| a == "--as")
+            .and_then(|at| args.get(at + 1))
+            .cloned();
+        let current = pretend.as_deref().unwrap_or(env!("CARGO_PKG_VERSION"));
         println!("running     {current}");
+        if pretend.is_some() {
+            let ready = sys::updates::check(current, &|event| println!("event       {event:?}"));
+            println!("ready       {ready}");
+            println!("note        {:?}", sys::updates::read_note());
+            return;
+        }
         match sys::updates::latest() {
-            Some(release) => println!(
-                "latest      {}  ({})
+            Some(feed) => println!(
+                "latest      {}  ({}, {} bytes)
 newer?      {}",
-                release.version,
-                release.url,
-                sys::updates::is_newer(&release.version, current)
+                feed.version,
+                feed.file,
+                feed.size.unwrap_or(0),
+                sys::updates::is_newer(&feed.version, current)
             ),
             None => println!("latest      (could not reach the feed)"),
         }
@@ -337,6 +353,16 @@ origin      {origin}"),
         win::instance::Outcome::Already => return,
     };
 
+    // An update downloaded in an earlier session installs NOW, before any of the app exists: no
+    // window, no hook, no file the installer is about to replace held open by this process. After
+    // the lock, so a second click on the icon cannot start a second installer.
+    if sys::updates::install_at_launch(
+        env!("CARGO_PKG_VERSION"),
+        win::instance::starts_in_tray(&args),
+    ) {
+        return;
+    }
+
     match app::App::new() {
         Ok(mut app) => {
             // `--bench N` measures the open path and exits. It is here rather than in `probe.rs`
@@ -420,6 +446,17 @@ fn run_setup(mode: SetupMode, args: &[String]) {
             // user was when they asked for this. Somebody who pressed "Restart to update" in
             // Settings is waiting for a window; somebody who used the tray is not.
             let reopen = pending_reopen();
+            // `--wait <pid>` is this build's own updater, which starts the installer and then
+            // quits. The quit is still saving the configuration when this starts, and `take_over`
+            // ends whatever is running out of the install folder.
+            if let Some(pid) = args
+                .iter()
+                .position(|a| a == "--wait")
+                .and_then(|at| args.get(at + 1))
+                .and_then(|pid| pid.parse().ok())
+            {
+                sys::updates::wait_for(pid);
+            }
             match sys::install::take_over() {
                 Ok(path) => {
                     config::store::log_line(&format!("setup: installed {}", path.display()));
@@ -442,7 +479,7 @@ fn run_setup(mode: SetupMode, args: &[String]) {
     }
 }
 
-/// What the 1.x updater's note says to reopen into, if it left one.
+/// What the updater's note says to reopen into, if it left one -- this build's or 1.x's.
 fn pending_reopen() -> Option<String> {
     let note = config::store::user_data_dir().join("pending-update.json");
     let text = std::fs::read_to_string(note).ok()?;
