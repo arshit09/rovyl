@@ -9,7 +9,7 @@
 //! are not. Translating more here than the original translates would make the two panels say
 //! different things to the same user.
 //!
-//! 8 languages, 290 keys.
+//! 8 languages, 293 keys.
 
 use super::strings::Entry;
 
@@ -468,6 +468,18 @@ pub const SETTINGS: &[Entry] = &[
     Entry {
         key: "hoverTimeDesc",
         values: &["How long a target must stay aimed before it opens. Drag to zero and the direction opens the moment it commits.", "Cuánto tiempo debe mantenerse apuntado un objetivo antes de abrirse. Llévalo a cero y la dirección abre en cuanto se confirma.", "目标需要被瞄准多久才会打开。拖到零，方向一旦确定就立即打开。", "対象を狙ったまま何秒待つと開くか。ゼロまで下げると、向きが決まった瞬間に開きます。", "Quanto tempo um alvo precisa ficar mirado antes de abrir. Leve a zero e a direção abre assim que é confirmada.", "Сколько цель должна оставаться под прицелом до открытия. Сдвиньте к нулю — направление откроется сразу после подтверждения.", "Wie lange ein Ziel anvisiert bleiben muss, bis es öffnet. Auf null gezogen öffnet die Richtung im Moment der Festlegung.", "كم يجب أن يبقى الهدف مُصوَّبًا قبل أن يُفتح. اسحبه إلى الصفر ليُفتح الاتجاه لحظة تثبيته."],
+    },
+    Entry {
+        key: "iconPickerKeywordsHint",
+        values: &["Tip: English words (work, time, home…) also surface related icons by meaning, not only by name.", "Consejo: las palabras en inglés (work, time, home…) también muestran iconos relacionados por significado, no solo por nombre.", "提示：英文词（work、time、home…）也能按含义找出相关图标，而不只是按名称匹配。", "ヒント：英単語（work、time、home…）でも、名前だけでなく意味の近いアイコンが出てきます。", "Dica: palavras em inglês (work, time, home…) também trazem ícones relacionados por significado, não só por nome.", "Подсказка: английские слова (work, time, home…) тоже находят значки по смыслу, а не только по названию.", "Tipp: Englische Wörter (work, time, home…) finden passende Symbole auch nach Bedeutung, nicht nur nach Namen.", "تلميح: الكلمات الإنجليزية (work، time، home…) تُظهر أيضًا أيقونات مرتبطة بالمعنى، لا بالاسم فقط."],
+    },
+    Entry {
+        key: "iconPickerNoResults",
+        values: &["No icons found.", "No se han encontrado iconos.", "未找到图标。", "アイコンが見つかりません。", "Nenhum ícone encontrado.", "Значки не найдены.", "Keine Symbole gefunden.", "لم يتم العثور على أيقونات."],
+    },
+    Entry {
+        key: "iconPickerSearch",
+        values: &["Search icons…", "Buscar iconos…", "搜索图标…", "アイコンを検索…", "Buscar ícones…", "Поиск значков…", "Symbole suchen…", "البحث عن أيقونات…"],
     },
     Entry {
         key: "iconSizeRow",

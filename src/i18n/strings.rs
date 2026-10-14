@@ -24,19 +24,19 @@ pub const WHEEL: &[Entry] = &[
     Entry {
         key: "menu.back",
         //        en      es        zh      ja  pt        ru        de        ar
-        values: &["Back", "Atrás", "返回", "", "Voltar", "Назад", "Zurück", "رجوع"],
+        values: &["Back", "Atrás", "返回", "戻る", "Voltar", "Назад", "Zurück", "رجوع"],
     },
     Entry {
         key: "menu.cancel",
-        values: &["Cancel", "Cancelar", "取消", "", "Cancelar", "Отмена", "Abbrechen", "إلغاء"],
+        values: &["Cancel", "Cancelar", "取消", "キャンセル", "Cancelar", "Отмена", "Abbrechen", "إلغاء"],
     },
     Entry {
         key: "menu.open",
-        values: &["Open", "Abrir", "打开", "", "Abrir", "Открыть", "Öffnen", "فتح"],
+        values: &["Open", "Abrir", "打开", "開く", "Abrir", "Открыть", "Öffnen", "فتح"],
     },
     Entry {
         key: "menu.workspaces",
-        values: &["Workspaces", "Espacios", "工作区", "", "Espaços", "Пространства", "Arbeitsbereiche", "مساحات العمل"],
+        values: &["Workspaces", "Espacios", "工作区", "ワークスペース", "Espaços", "Пространства", "Arbeitsbereiche", "مساحات العمل"],
     },
     Entry {
         key: "menu.recents_fallback",
@@ -44,7 +44,7 @@ pub const WHEEL: &[Entry] = &[
             "No recent folders",
             "Sin carpetas recientes",
             "没有最近的文件夹",
-            "",
+            "最近使ったフォルダーなし",
             "Sem pastas recentes",
             "Нет недавних папок",
             "Keine zuletzt verwendeten Ordner",
@@ -57,7 +57,7 @@ pub const WHEEL: &[Entry] = &[
             "Nothing here yet \u{2014} open Settings to add a shortcut",
             "Nada aquí todavía \u{2014} abre Ajustes para añadir un acceso directo",
             "这里还没有内容 \u{2014} 打开设置以添加快捷方式",
-            "",
+            "まだ何もありません \u{2014} 設定を開いてショートカットを追加してください",
             "Nada aqui ainda \u{2014} abra as Configurações para adicionar um atalho",
             "Здесь пока ничего нет \u{2014} откройте настройки, чтобы добавить ярлык",
             "Noch nichts hier \u{2014} öffne die Einstellungen, um eine Verknüpfung hinzuzufügen",
@@ -70,7 +70,7 @@ pub const WHEEL: &[Entry] = &[
             "Finding your apps\u{2026}",
             "Buscando tus aplicaciones\u{2026}",
             "正在查找你的应用\u{2026}",
-            "",
+            "アプリを探しています\u{2026}",
             "Procurando seus aplicativos\u{2026}",
             "Поиск приложений\u{2026}",
             "Deine Apps werden gesucht\u{2026}",
@@ -79,11 +79,11 @@ pub const WHEEL: &[Entry] = &[
     },
     Entry {
         key: "menu.match_one",
-        values: &["1 match", "1 coincidencia", "1 个匹配", "", "1 correspondência", "1 совпадение", "1 Treffer", "نتيجة واحدة"],
+        values: &["1 match", "1 coincidencia", "1 个匹配", "1 件", "1 correspondência", "1 совпадение", "1 Treffer", "نتيجة واحدة"],
     },
     Entry {
         key: "menu.match_many",
-        values: &["{n} matches", "{n} coincidencias", "{n} 个匹配", "", "{n} correspondências", "совпадений: {n}", "{n} Treffer", "{n} نتائج"],
+        values: &["{n} matches", "{n} coincidencias", "{n} 个匹配", "{n} 件", "{n} correspondências", "совпадений: {n}", "{n} Treffer", "{n} نتائج"],
     },
     Entry {
         key: "menu.direction_hint",
@@ -91,7 +91,7 @@ pub const WHEEL: &[Entry] = &[
             "Push toward a target",
             "Empuja hacia un objetivo",
             "朝目标推动",
-            "",
+            "対象の方へ動かすと開きます",
             "Empurre em direção a um alvo",
             "Двигайтесь к цели",
             "In Richtung eines Ziels schieben",

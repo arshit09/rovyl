@@ -192,9 +192,9 @@ pub fn draw(p: &Painter, wheel: &Wheel, frame: &Frame) -> Vec<super::docks::Targ
         draw_pill(p, wheel, config);
     }
     if !wheel.filter().is_empty() {
-        draw_filter(p, wheel, items.len());
+        draw_filter(p, wheel, items.len(), &config.language);
     } else if items.is_empty() {
-        draw_empty_notice(p, wheel, frame);
+        draw_empty_notice(p, wheel, frame, &config.language);
     } else if frame.direction_hint {
         // Where the filter pill goes, because it is the same kind of thing: one line about what
         // the wheel is doing, in the one place above it that nothing else uses.
@@ -1463,15 +1463,15 @@ fn draw_pill(p: &Painter, wheel: &Wheel, config: &UiConfig) {
     );
 }
 
-fn draw_filter(p: &Painter, wheel: &Wheel, matches: usize) {
+fn draw_filter(p: &Painter, wheel: &Wheel, matches: usize, language: &str) {
     let s = wheel.scale;
     let l = wheel.layout();
     let opacity = wheel.bloom();
     let query = wheel.filter();
     let count = if matches == 1 {
-        "1 match".to_string()
+        crate::i18n::wheel_text("menu.match_one", language).to_string()
     } else {
-        format!("{matches} matches")
+        crate::i18n::wheel_text("menu.match_many", language).replace("{n}", &matches.to_string())
     };
 
     let query_style = Style::new(Family::Radial, 15.0 * s, 600, Align::Leading).tracking(-0.01);
@@ -1557,15 +1557,14 @@ fn draw_direction_hint(p: &Painter, wheel: &Wheel, language: &str) {
 
 /// An empty wheel is otherwise indistinguishable from one that has lost its shortcuts, and at login
 /// the Start Menu scan is deferred.
-fn draw_empty_notice(p: &Painter, wheel: &Wheel, frame: &Frame) {
+fn draw_empty_notice(p: &Painter, wheel: &Wheel, frame: &Frame, language: &str) {
     let s = wheel.scale;
     let l = wheel.layout();
     let opacity = wheel.bloom();
-    let message = if frame.discovering {
-        "Finding your apps\u{2026}"
-    } else {
-        "Nothing here yet \u{2014} open Settings to add a shortcut"
-    };
+    let message = crate::i18n::wheel_text(
+        if frame.discovering { "menu.discovering" } else { "menu.empty" },
+        language,
+    );
     let style = Style::new(Family::Radial, 12.5 * s, 500, Align::Center);
     let (w, h) = p.measure(message, &style);
     let pad = 18.0 * s;

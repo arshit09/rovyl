@@ -365,7 +365,7 @@ impl Wheel {
     pub fn breadcrumb(&self, config: &UiConfig) -> Vec<String> {
         if self.is_root() {
             let name = if self.root_is_picker(config) {
-                "Workspaces".to_string()
+                crate::i18n::wheel_text("menu.workspaces", &config.language).to_string()
             } else {
                 config
                     .active_workspace()
@@ -1257,7 +1257,7 @@ impl Wheel {
             // do under a dwell.
             recents = vec![AppItem {
                 id: format!("{}__recents-empty-fallback", parent.id),
-                label: "No recent folders".into(),
+                label: crate::i18n::wheel_text("menu.recents_fallback", &config.language).into(),
                 command: parent.command.clone(),
                 command_type: Some(parent.resolved_command_type()),
                 icon_name: if parent.icon_name.is_empty() {
@@ -1338,17 +1338,19 @@ impl Wheel {
 
     /// What the hub says it does, for the pill's chip.
     pub fn center_label(&self, config: &UiConfig) -> &'static str {
-        if !self.stack.is_empty() {
-            return "Back";
-        }
-        match config.center_button.kind {
-            CenterKind::App | CenterKind::Command
-                if !config.center_button.target.trim().is_empty() =>
-            {
-                "Open"
+        let key = if !self.stack.is_empty() {
+            "menu.back"
+        } else {
+            match config.center_button.kind {
+                CenterKind::App | CenterKind::Command
+                    if !config.center_button.target.trim().is_empty() =>
+                {
+                    "menu.open"
+                }
+                _ => "menu.cancel",
             }
-            _ => "Cancel",
-        }
+        };
+        crate::i18n::wheel_text(key, &config.language)
     }
 
     pub fn switch_workspace(&mut self, config: &mut UiConfig, index: usize) -> Action {
@@ -1619,7 +1621,7 @@ fn build_root(config: &UiConfig) -> Level {
         };
     }
     Level {
-        label: "Workspaces".into(),
+        label: crate::i18n::wheel_text("menu.workspaces", &config.language).into(),
         items: workspace_picker_items(config),
         parent: None,
     }
