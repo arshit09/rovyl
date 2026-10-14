@@ -69,7 +69,7 @@ pub struct Feed {
 /// Call from a WORKER. It is somebody else's TLS handshake.
 pub fn latest() -> Option<Feed> {
     let url = format!("https://github.com/{OWNER}/{REPO}/releases/latest/download/latest.yml");
-    let body = super::web::fetch(&url)?;
+    let body = super::web::fetch_file(&url)?;
     parse_feed(std::str::from_utf8(&body).ok()?)
 }
 

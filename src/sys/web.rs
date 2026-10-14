@@ -98,10 +98,22 @@ pub fn with_scheme(url: &str) -> String {
 /// the caller's next move is the same for all of them: try the next candidate, or give up and
 /// leave the glyph alone.
 pub fn fetch(url: &str) -> Option<Vec<u8>> {
-    let response = get(
+    read_all(get(
         url,
         "Accept: image/avif,image/webp,image/png,image/*,text/html;q=0.9,*/*;q=0.8\r\n",
-    )?;
+    )?)
+}
+
+/// GET a small file — a feed, not a page — and return it, up to `MAX_BYTES`.
+///
+/// Asked for as a file, not with `fetch`'s browser-like `Accept`. GitHub answers a request that
+/// looks like a browser's from a page cache, and for several minutes after a release that cache
+/// still redirects `releases/latest/download/latest.yml` to the PREVIOUS release's feed.
+pub fn fetch_file(url: &str) -> Option<Vec<u8>> {
+    read_all(get(url, "Accept: application/octet-stream, */*\r\n")?)
+}
+
+fn read_all(response: Response) -> Option<Vec<u8>> {
     let mut body: Vec<u8> = Vec::with_capacity(16 * 1024);
     let mut chunk = [0u8; 16 * 1024];
     loop {
