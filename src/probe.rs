@@ -857,24 +857,34 @@ pub fn run_settings(args: &[String]) {
         let theme = crate::gfx::palette::surface(config.theme());
         let bounds = Rect::new(0.0, 0.0, width as f32, height as f32);
 
-        // The panel draws bitmaps in exactly one place -- the icon picker's library grid -- and
-        // they arrive on a worker. A probe is not paced by anything, so it waits: a picture of a
-        // grid of placeholders is a picture of the probe.
+        // The panel's bitmaps -- the icon picker's library grid, and every shortcut's own icon on
+        // the workspace cards and in the editor -- arrive on a worker. A probe is not paced by
+        // anything, so it waits: a picture of a grid of placeholders is a picture of the probe.
         let icons = IconCache::new();
+        let mut references: Vec<String> = config
+            .workspaces
+            .iter()
+            .flat_map(|workspace| workspace.apps.iter())
+            .filter_map(|app| app.custom_icon_url.clone())
+            .collect();
         if let Some((path, total)) = state.icon_library.clone() {
             let wanted = (total as usize).min(120);
-            let references: Vec<String> = (0..wanted as u32)
-                .map(|index| crate::icons::store::lib_ref(&path, index))
-                .collect();
+            references.extend((0..wanted as u32).map(|index| crate::icons::store::lib_ref(&path, index)));
+        }
+        references.sort();
+        references.dedup();
+        if !references.is_empty() {
             icons.warm(references.iter().map(String::as_str));
+            // Until nothing is pending rather than until everything arrived: a reference whose
+            // file is gone comes back as missing, and counting arrivals would wait for it forever.
             for _ in 0..600 {
                 icons.pump(&gpu);
-                if icons.len() >= wanted {
+                if !references.iter().any(|reference| render::IconSource2::pending(&icons, reference)) {
                     break;
                 }
                 std::thread::sleep(std::time::Duration::from_millis(10));
             }
-            println!("library thumbnails {}/{}", icons.len(), wanted);
+            println!("icons {}/{}", icons.len(), references.len());
         }
 
         // The click, as three frames: the hover that an immediate-mode widget needs in order to

@@ -1255,7 +1255,7 @@ fn icon_picker_body(
             match f.icons.and_then(|icons| icons.bitmap(&reference)) {
                 Some(bitmap) => {
                     let art = box_at.inflate(-f.px(5.0));
-                    f.p.bitmap_rounded(art, &bitmap, 1.0, f.px(3.0));
+                    f.p.bitmap_rounded_fine(art, &bitmap, 1.0, f.px(3.0));
                 }
                 // Nothing yet. A box rather than a spinner: forty of them pulsing at once is a
                 // waiting room, and they arrive within a frame or two anyway.
@@ -1907,7 +1907,7 @@ fn shortcut_list(f: &mut Frame, state: &mut super::settings::SettingsUi, items: 
             .as_deref()
             .and_then(|reference| f.icons.and_then(|icons| icons.bitmap(reference)));
         match art {
-            Some(bitmap) => f.p.bitmap_rounded(chip.inflate(-f.px(4.0)), &bitmap, 1.0, f.px(3.0)),
+            Some(bitmap) => f.p.bitmap_rounded_fine(chip.inflate(-f.px(4.0)), &bitmap, 1.0, f.px(3.0)),
             None => {
                 let glyph = if item.icon_name.is_empty() {
                     crate::gfx::lucide::FALLBACK
@@ -2244,7 +2244,7 @@ fn icon_field(f: &mut Frame, state: &mut super::settings::SettingsUi, item: &App
         .as_deref()
         .and_then(|reference| f.icons.and_then(|icons| icons.bitmap(reference)));
     match art {
-        Some(bitmap) => f.p.bitmap_rounded(chip.inflate(-f.px(3.0)), &bitmap, 1.0, f.px(3.0)),
+        Some(bitmap) => f.p.bitmap_rounded_fine(chip.inflate(-f.px(3.0)), &bitmap, 1.0, f.px(3.0)),
         None => {
             let glyph = if item.icon_name.is_empty() {
                 crate::gfx::lucide::FALLBACK

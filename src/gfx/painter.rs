@@ -29,6 +29,7 @@ use windows::Win32::Graphics::Direct2D::{
     D2D1_BUFFER_PRECISION_8BPC_UNORM, D2D1_CAP_STYLE_ROUND,
     D2D1_COLOR_INTERPOLATION_MODE_PREMULTIPLIED, D2D1_COLOR_SPACE_SRGB, D2D1_DASH_STYLE_CUSTOM,
     D2D1_DRAW_TEXT_OPTIONS_NONE, D2D1_ELLIPSE, D2D1_EXTEND_MODE_CLAMP,
+    D2D1_INTERPOLATION_MODE, D2D1_INTERPOLATION_MODE_HIGH_QUALITY_CUBIC,
     D2D1_INTERPOLATION_MODE_LINEAR, D2D1_LAYER_OPTIONS1_NONE, D2D1_LAYER_PARAMETERS1,
     D2D1_LINE_JOIN_ROUND, D2D1_ROUNDED_RECT, D2D1_STROKE_STYLE_PROPERTIES1,
     D2D1_SWEEP_DIRECTION_CLOCKWISE, D2D1_SWEEP_DIRECTION_COUNTER_CLOCKWISE,
@@ -487,19 +488,14 @@ impl<'a> Painter<'a> {
     // ── Bitmaps ─────────────────────────────────────────────────────────────
 
     pub fn bitmap(&self, rect: Rect, bitmap: &ID2D1Bitmap1, opacity: f32) {
+        self.bitmap_with(rect, bitmap, opacity, D2D1_INTERPOLATION_MODE_LINEAR);
+    }
+
+    fn bitmap_with(&self, rect: Rect, bitmap: &ID2D1Bitmap1, opacity: f32, mode: D2D1_INTERPOLATION_MODE) {
         if opacity <= 0.002 {
             return;
         }
-        unsafe {
-            self.ctx().DrawBitmap(
-                bitmap,
-                Some(&rect.raw()),
-                opacity,
-                D2D1_INTERPOLATION_MODE_LINEAR,
-                None,
-                None,
-            )
-        };
+        unsafe { self.ctx().DrawBitmap(bitmap, Some(&rect.raw()), opacity, mode, None, None) };
     }
 
     /// A bitmap clipped to a rounded rectangle.
@@ -507,15 +503,37 @@ impl<'a> Painter<'a> {
     /// Used for extracted app icons, which are square and may be opaque to their own edges. Without
     /// the clip, an icon drawn to fill a rounded tile has four square corners sticking out of it.
     pub fn bitmap_rounded(&self, rect: Rect, bitmap: &ID2D1Bitmap1, opacity: f32, radius: f32) {
+        self.bitmap_rounded_with(rect, bitmap, opacity, radius, D2D1_INTERPOLATION_MODE_LINEAR);
+    }
+
+    /// `bitmap_rounded` for a picture drawn at a small fraction of its own size.
+    ///
+    /// Icons are stored at 256px. Linear filtering blends the four texels nearest each output
+    /// pixel and skips the rest, so at the 16px of a settings thumbnail it reads one texel in
+    /// sixteen and the icon comes out as scattered pixels. High-quality cubic averages the whole
+    /// footprint first. It costs an extra pass per draw, which is nothing for a panel that redraws
+    /// on input and is why the wheel, which redraws its tiles every animation frame, keeps linear.
+    pub fn bitmap_rounded_fine(&self, rect: Rect, bitmap: &ID2D1Bitmap1, opacity: f32, radius: f32) {
+        self.bitmap_rounded_with(rect, bitmap, opacity, radius, D2D1_INTERPOLATION_MODE_HIGH_QUALITY_CUBIC);
+    }
+
+    fn bitmap_rounded_with(
+        &self,
+        rect: Rect,
+        bitmap: &ID2D1Bitmap1,
+        opacity: f32,
+        radius: f32,
+        mode: D2D1_INTERPOLATION_MODE,
+    ) {
         if opacity <= 0.002 {
             return;
         }
         let Some(clip) = self.rounded_geometry(rect, radius) else {
-            self.bitmap(rect, bitmap, opacity);
+            self.bitmap_with(rect, bitmap, opacity, mode);
             return;
         };
         let Ok(mask) = clip.cast::<windows::Win32::Graphics::Direct2D::ID2D1Geometry>() else {
-            self.bitmap(rect, bitmap, opacity);
+            self.bitmap_with(rect, bitmap, opacity, mode);
             return;
         };
         unsafe {
@@ -532,7 +550,7 @@ impl<'a> Painter<'a> {
                 },
                 None,
             );
-            self.bitmap(rect, bitmap, opacity);
+            self.bitmap_with(rect, bitmap, opacity, mode);
             ctx.PopLayer();
         }
     }

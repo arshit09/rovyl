@@ -2588,9 +2588,15 @@ fn active_after_delete(active: usize, removed: usize, remaining: usize) -> usize
 /// costs a dozen calls to produce grey mud. What survives at this size is the ARRANGEMENT, and
 /// that is all this draws.
 fn workspace_thumb(f: &mut Frame, workspace: &Workspace, stage: Rect) {
-    // The whole thumbnail sits at .4, as the original's does. It is a diagram of the workspace,
-    // not a second thing on the card competing with its name.
-    const DIM: f32 = 0.4;
+    // A paused workspace's thumbnail sits at .4, as the original's does; a live one shows its
+    // icons at full strength, so they look like the apps they open. The orbit and the hub stay at
+    // .4 either way: they are the diagram, and at full strength the hub is the loudest thing on
+    // the card when the icons are what tell one workspace from another.
+    let opacity = if workspace.enabled { 1.0 } else { 0.4 };
+    const DIAGRAM: f32 = 0.4;
+    // SCALES the colour's own alpha. `w::alpha` replaces it, which turned the theme's 7% line into
+    // a 40% one and boxed every icon in grey.
+    let dim = |colour: D2D1_COLOR_F| w::alpha(colour, colour.a * opacity);
     let tint = config::parse_hex_rgb(workspace.color.as_deref()).unwrap_or(0x3B_82_F6);
     let (cx, cy) = stage.center();
     let ring = f.px(34.0);
@@ -2603,12 +2609,12 @@ fn workspace_thumb(f: &mut Frame, workspace: &Workspace, stage: Rect) {
         f.p.line(
             (cx + a0.cos() * ring, cy + a0.sin() * ring),
             (cx + a1.cos() * ring, cy + a1.sin() * ring),
-            pal::rgba(tint, 0.267 * DIM),
+            pal::rgba(tint, 0.267 * DIAGRAM * opacity),
             f.px(1.0),
         );
     }
 
-    f.p.fill_circle((cx, cy), f.px(8.0), pal::rgba(tint, DIM));
+    f.p.fill_circle((cx, cy), f.px(8.0), pal::rgba(tint, DIAGRAM * opacity));
 
     let items = workspace.apps.len();
     if items == 0 {
@@ -2618,7 +2624,7 @@ fn workspace_thumb(f: &mut Frame, workspace: &Workspace, stage: Rect) {
             "empty",
             Rect::new(stage.left, stage.bottom - f.px(4.0) - th, stage.right, stage.bottom),
             &style,
-            w::alpha(f.theme.text_2, DIM),
+            w::alpha(f.theme.text_2, f.theme.text_2.a * DIAGRAM * opacity),
         );
         return;
     }
@@ -2629,8 +2635,8 @@ fn workspace_thumb(f: &mut Frame, workspace: &Workspace, stage: Rect) {
         let angle = at as f32 / items as f32 * std::f32::consts::TAU - std::f32::consts::FRAC_PI_2;
         let (sx, sy) = (cx + angle.cos() * ring, cy + angle.sin() * ring);
         let box_at = Rect::centred(sx, sy, slot, slot);
-        f.p.fill_round_rect(box_at, f.px(5.0), w::alpha(f.theme.surface, DIM));
-        f.p.stroke_round_rect(box_at.inflate(-0.5), f.px(5.0), w::alpha(f.theme.line, DIM), 1.0);
+        f.p.fill_round_rect(box_at, f.px(5.0), dim(f.theme.surface));
+        f.p.stroke_round_rect(box_at.inflate(-0.5), f.px(5.0), dim(f.theme.line), 1.0);
         // The shortcut's own picture where there is one, as the wheel would draw it. Six cards
         // of identical grey glyphs say nothing about which workspace is which, which is the only
         // question this thumbnail exists to answer.
@@ -2639,10 +2645,10 @@ fn workspace_thumb(f: &mut Frame, workspace: &Workspace, stage: Rect) {
             .as_deref()
             .and_then(|reference| f.icons.and_then(|icons| icons.bitmap(reference)));
         match art {
-            Some(bitmap) => f.p.bitmap_rounded(
+            Some(bitmap) => f.p.bitmap_rounded_fine(
                 Rect::centred(sx, sy, slot * 0.88, slot * 0.88),
                 &bitmap,
-                DIM,
+                opacity,
                 f.px(4.0),
             ),
             None => {
@@ -2651,7 +2657,7 @@ fn workspace_thumb(f: &mut Frame, workspace: &Workspace, stage: Rect) {
                 } else {
                     app.icon_name.as_str()
                 };
-                f.p.glyph(glyph, (sx, sy), f.px(10.0), w::alpha(f.theme.text_2, DIM), 1.6);
+                f.p.glyph(glyph, (sx, sy), f.px(10.0), dim(f.theme.text_2), 1.6);
             }
         }
     }
