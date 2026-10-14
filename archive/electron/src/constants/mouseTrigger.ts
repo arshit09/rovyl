@@ -212,11 +212,28 @@ export function mouseTriggerChips(value: unknown): string[] {
 }
 
 /** The same binding inside a sentence: "hold the back side-button", "hold Ctrl and the left button". */
-export function mouseTriggerPhrase(value: unknown): string {
+/**
+ * The words the phrase is built from, injected rather than reached for.
+ *
+ * This module is shared with `backend/mouse-trigger.cjs`'s grammar and has no business importing
+ * the renderer's tables; the one caller that shows the phrase to a person hands in its own.
+ */
+export interface MouseTriggerPhraseStrings {
+  names: Record<MouseTriggerButton, string>;
+  /** Joins the held modifiers to the button: `Ctrl+Shift and the mouse wheel button`. */
+  and: string;
+}
+
+const DEFAULT_PHRASE_STRINGS: MouseTriggerPhraseStrings = { names: MOUSE_BUTTON_NAMES, and: 'and' };
+
+export function mouseTriggerPhrase(
+  value: unknown,
+  strings: MouseTriggerPhraseStrings = DEFAULT_PHRASE_STRINGS,
+): string {
   const trigger = parseMouseTrigger(value) ?? parseMouseTrigger(DEFAULT_MOUSE_TRIGGER)!;
-  const name = MOUSE_BUTTON_NAMES[trigger.button];
+  const name = strings.names[trigger.button];
   const chips = mouseTriggerChips(value);
   /** The last chip is the button, whose long name is already in `name`. */
   const modifiers = chips.slice(0, -1);
-  return modifiers.length ? `${modifiers.join('+')} and ${name}` : name;
+  return modifiers.length ? `${modifiers.join('+')} ${strings.and} ${name}` : name;
 }

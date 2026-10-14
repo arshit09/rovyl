@@ -1,11 +1,15 @@
 /**
- * The wheel's own string packs — the ones the radial window paints from.
+ * The two string packs that are not the settings tables: the wheel's, and the fault card's.
  *
- * `scripts/i18n-smoke.mjs` covers the settings tables and cannot cover these: they are a separate
- * system, on purpose (see `src/i18n/wheel/types.ts`), and the property that matters most about them
- * is one `tsc` cannot express. The packs carry slots — `{shown}`, `{total}`, and the `%s` that the
- * direction hint swaps for a `<kbd>Esc</kbd>` element. A translation that drops one still compiles,
- * still passes every parity check, and renders a sentence with the key missing from it.
+ * `scripts/i18n-smoke.mjs` covers the tables and cannot cover these — they are separate systems on
+ * purpose (`src/i18n/wheel/types.ts`, `src/i18n/faults/types.ts`), each with an English default
+ * that ships statically and seven siblings fetched on demand.
+ *
+ * The property that matters most about both is one `tsc` cannot express. The strings carry slots:
+ * `{shown}` and `{total}` in the wheel's counter, `{subject}` and `{scheme}` in the fault
+ * sentences, and the `%s` the direction hint swaps for a `<kbd>Esc</kbd>` element. A translation
+ * that drops one still compiles, still passes every parity check, and renders a sentence with the
+ * key name, the count or the app's name simply missing from it.
  *
  * Where the packs LIVE — English in the critical path, every other language in a chunk of its own —
  * is not checked here. That is `scripts/verify-renderer-budget.mjs`, which can see the build output.
@@ -19,7 +23,8 @@ import { build } from "vite";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const wheelOut = mkdtempSync(join(tmpdir(), "rovyl-wheel-i18n-"));
-const langOut = mkdtempSync(join(tmpdir(), "rovyl-wheel-langs-"));
+const faultsOut = mkdtempSync(join(tmpdir(), "rovyl-faults-i18n-"));
+const langOut = mkdtempSync(join(tmpdir(), "rovyl-pack-langs-"));
 
 const bundle = async (entry, outDir) => {
   await build({
@@ -40,8 +45,10 @@ const bundle = async (entry, outDir) => {
 
 try {
   const wheel = await bundle("src/i18n/wheel/index.ts", wheelOut);
+  const faults = await bundle("src/i18n/faults/index.ts", faultsOut);
   const { LANGUAGES } = await bundle("src/i18n/languages.ts", langOut);
   const { DEFAULT_WHEEL_STRINGS, loadWheelStrings, formatWheelString } = wheel;
+  const { DEFAULT_FAULT_STRINGS, loadFaultStrings } = faults;
 
   let n = 0;
   const check = (fn) => { fn(); n += 1; };
@@ -142,8 +149,56 @@ try {
     assert.equal(formatWheelString("{shown} of {total}", { shown: 3 }), "3 of {total}");
   });
 
-  console.log(`wheel-i18n-smoke: OK (${n} assertions, ${codes.length} packs x ${englishKeys.length} keys)`);
+  /* ── the fault card's pack, held to exactly the same rules ─────────────── */
+
+  const faultPacks = Object.fromEntries(
+    await Promise.all(codes.map(async (code) => [code, await loadFaultStrings(code)])),
+  );
+  const faultKeys = Object.keys(DEFAULT_FAULT_STRINGS);
+
+  check(() => {
+    assert.ok(faultKeys.length > 30, `the English fault pack looks truncated: ${faultKeys.length} keys`);
+    assert.equal(faultPacks.en, DEFAULT_FAULT_STRINGS, "English must resolve to the static default itself");
+  });
+
+  for (const code of codes) {
+    check(() => {
+      assert.deepEqual(
+        Object.keys(faultPacks[code]).sort(),
+        [...faultKeys].sort(),
+        `the ${code} fault pack is not at key parity with English`,
+      );
+      const empty = faultKeys.filter((key) => !String(faultPacks[code][key]).trim());
+      assert.deepEqual(empty, [], `${code} fault pack has empty strings: ${empty.join(", ")}`);
+      const leaked = faultKeys.filter((key) => faultPacks[code][key] === key);
+      assert.deepEqual(leaked, [], `${code} fault pack renders raw keys as text: ${leaked.join(", ")}`);
+    });
+  }
+
+  for (const code of codes.filter((value) => value !== "en")) {
+    check(() => {
+      for (const key of faultKeys) {
+        const expected = markersOf(DEFAULT_FAULT_STRINGS[key]);
+        if (!expected.length) continue;
+        assert.deepEqual(
+          markersOf(faultPacks[code][key]),
+          expected,
+          `${code}.${key} does not carry the same slots as English (${expected.join(" ")})`,
+        );
+      }
+      const shared = faultKeys.filter((key) => faultPacks[code][key] === DEFAULT_FAULT_STRINGS[key]);
+      assert.ok(
+        shared.length / faultKeys.length < 0.2,
+        `${code} fault pack matches English on ${shared.length}/${faultKeys.length} keys — looks like an untranslated copy`,
+      );
+    });
+  }
+
+  console.log(
+    `i18n-packs-smoke: OK (${n} assertions, ${codes.length} languages x ${englishKeys.length} wheel + ${faultKeys.length} fault keys)`,
+  );
 } finally {
   rmSync(wheelOut, { recursive: true, force: true });
+  rmSync(faultsOut, { recursive: true, force: true });
   rmSync(langOut, { recursive: true, force: true });
 }

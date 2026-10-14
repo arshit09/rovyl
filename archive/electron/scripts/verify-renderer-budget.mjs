@@ -155,6 +155,23 @@ const WHEEL_PACKS_THAT_MUST_STAY_LAZY = {
  */
 const WHEEL_DEFAULT_PROBE = "Push toward a target to open it";
 
+/**
+ * The fault card's packs (`src/i18n/faults/`), one `faultNothingToLaunch` each.
+ *
+ * These never touch the wheel — the card is lazy, in the settings window's graph — so only one half
+ * of the rule applies: they have to SHIP. Dropping a pack is a one-line change that fails no test
+ * and shows up only as a launch failure explained in English to someone reading Japanese.
+ */
+const FAULT_PACKS_THAT_MUST_SHIP = {
+  Spanish: "No hay nada que abrir",
+  Chinese: "没有可启动的内容",
+  Japanese: "起動するものがありません",
+  Portuguese: "Não há nada para abrir",
+  Russian: "Нечего запускать",
+  German: "Nichts zu starten",
+  Arabic: "لا شيء لتشغيله",
+};
+
 const problems = [];
 
 /** The wheel's document — what the gesture waits on. */
@@ -296,6 +313,15 @@ if (missingWheelPacks.length) {
   );
 }
 
+const missingFaultPacks = Object.entries(FAULT_PACKS_THAT_MUST_SHIP)
+  .filter(([, probe]) => !bundleSources.some((source) => source.includes(probe)))
+  .map(([language]) => language);
+if (missingFaultPacks.length) {
+  problems.push(
+    `fault card packs were not emitted at all (${missingFaultPacks.join(", ")}) — src/i18n/faults lost a pack, or a probe string in this file no longer matches it`,
+  );
+}
+
 if (!criticalSources.some((source) => source.includes(WHEEL_DEFAULT_PROBE))) {
   problems.push(
     "the English wheel pack is no longer in the critical path — the wheel's first frame has no text to paint until a chunk arrives; src/i18n/wheel/en.ts must stay a static import",
@@ -411,5 +437,5 @@ if (problems.length) {
 }
 
 console.log(
-  `verify-renderer-budget: OK (radial.html ${(totalBytes / 1024).toFixed(1)} kB critical JS in ${uniqueScripts.length} chunks, ${totalIcons} Lucide glyphs, ${(fontBytes / 1024).toFixed(1)} kB fonts in ${fontFiles.length} files, ${Object.keys(LOCALES_THAT_MUST_STAY_LAZY).length + 1} locales all lazy, ${Object.keys(WHEEL_PACKS_THAT_MUST_STAY_LAZY).length} wheel packs lazy over an English default)`,
+  `verify-renderer-budget: OK (radial.html ${(totalBytes / 1024).toFixed(1)} kB critical JS in ${uniqueScripts.length} chunks, ${totalIcons} Lucide glyphs, ${(fontBytes / 1024).toFixed(1)} kB fonts in ${fontFiles.length} files, ${Object.keys(LOCALES_THAT_MUST_STAY_LAZY).length + 1} locales all lazy, ${Object.keys(WHEEL_PACKS_THAT_MUST_STAY_LAZY).length} wheel packs lazy over an English default, ${Object.keys(FAULT_PACKS_THAT_MUST_SHIP).length} fault packs shipped)`,
 );
