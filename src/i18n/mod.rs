@@ -119,6 +119,11 @@ pub fn wheel_text(key: &str, language: &str) -> &'static str {
     strings::text(strings::WHEEL, key, language)
 }
 
+/// One of the tray's strings, in `language`.
+pub fn tray_text(key: &str, language: &str) -> &'static str {
+    strings::text(strings::TRAY, key, language)
+}
+
 #[cfg(test)]
 mod generated_tests {
     #[test]

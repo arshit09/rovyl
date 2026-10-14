@@ -74,6 +74,16 @@ fn wide(text: &str) -> Vec<u16> {
     text.encode_utf16().chain(std::iter::once(0)).collect()
 }
 
+/// `text` as a menu label, kept in `alive` for as long as the menu that reads it.
+///
+/// Moving the `Vec` into `alive` does not move its buffer, so the pointer stays good.
+fn keep(alive: &mut Vec<Vec<u16>>, text: &str) -> PCWSTR {
+    let encoded = wide(text);
+    let pointer = PCWSTR(encoded.as_ptr());
+    alive.push(encoded);
+    pointer
+}
+
 /// What the app tells the menu about itself.
 ///
 /// A struct rather than five arguments: the menu has grown from four fixed items to one that
@@ -81,6 +91,9 @@ fn wide(text: &str) -> Vec<u16> {
 /// how the wrong one gets passed.
 pub struct MenuState<'a> {
     pub version: &'a str,
+    /// The configured language. The menu is built on every open, so a change in the panel is in
+    /// the next right-click without anything having to tell the tray.
+    pub language: &'a str,
     /// The workspaces offered, as `(index in the configuration, name, is the current one)`.
     ///
     /// The index travels with the name because the list is FILTERED — a disabled workspace is not
@@ -108,16 +121,17 @@ pub enum UpdateLine {
 }
 
 impl UpdateLine {
-    pub fn label(&self) -> String {
-        match self {
-            UpdateLine::Idle => "Check for updates".into(),
-            UpdateLine::Checking => "Checking for updates\u{2026}".into(),
-            UpdateLine::UpToDate => "You are on the latest version".into(),
-            UpdateLine::Downloading(version) => format!("Downloading {version}\u{2026}"),
-            UpdateLine::Ready(version) => format!("Restart to update to {version}"),
-            UpdateLine::Unreachable => "Could not check for updates".into(),
-            UpdateLine::Failed => "Could not download the update".into(),
-        }
+    pub fn label(&self, language: &str) -> String {
+        let (key, version) = match self {
+            UpdateLine::Idle => ("tray.update_check", ""),
+            UpdateLine::Checking => ("tray.update_checking", ""),
+            UpdateLine::UpToDate => ("tray.update_current", ""),
+            UpdateLine::Downloading(version) => ("tray.update_downloading", version.as_str()),
+            UpdateLine::Ready(version) => ("tray.update_ready", version.as_str()),
+            UpdateLine::Unreachable => ("tray.update_unreachable", ""),
+            UpdateLine::Failed => ("tray.update_failed", ""),
+        };
+        crate::i18n::tray_text(key, language).replace("{version}", version)
     }
 
     /// Whether pressing it does anything. Work already under way is the one state with no action
@@ -146,12 +160,15 @@ pub fn workspaces_for_menu(
 
 /// What the pause submenu is called, which is also where a timed pause reports its clock.
 fn pause_title(state: &MenuState) -> String {
+    let text = |key| crate::i18n::tray_text(key, state.language);
     match (state.paused, state.minutes_left) {
-        (false, _) => "Pause triggers".into(),
+        (false, _) => text("tray.pause").into(),
         // Rounded up by the caller, so a pause with forty seconds left says "1 min left" rather
         // than "0" — the one number this label must never show.
-        (true, Some(minutes)) => format!("Paused \u{2014} {} min left", minutes.max(1)),
-        (true, None) => "Paused".into(),
+        (true, Some(minutes)) => {
+            text("tray.paused_left").replace("{minutes}", &minutes.max(1).to_string())
+        }
+        (true, None) => text("tray.paused").into(),
     }
 }
 
@@ -257,6 +274,7 @@ impl Tray {
             // place in the allocator.
             let mut alive: Vec<Vec<u16>> = Vec::new();
             let mut submenus: Vec<HMENU> = Vec::new();
+            let text = |key| crate::i18n::tray_text(key, state.language);
 
             // The version, as a heading rather than a command. Disabled, because there is nothing
             // to press — it is there so "which build is this" is answerable without opening a
@@ -266,7 +284,7 @@ impl Tray {
             alive.push(header);
             let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());
 
-            let _ = AppendMenuW(menu, MF_STRING, CMD_OPEN_WHEEL as usize, w!("Open wheel"));
+            let _ = AppendMenuW(menu, MF_STRING, CMD_OPEN_WHEEL as usize, keep(&mut alive, text("tray.open_wheel")));
 
             // The workspaces, with the current one ticked. A radio mark rather than a check: they
             // are one choice, and a column of check marks would say several could be on at once.
@@ -283,11 +301,12 @@ impl Tray {
                     );
                     alive.push(label);
                 }
-                let _ = AppendMenuW(menu, MF_POPUP, sub.0 as usize, w!("Workspace"));
+                let label = keep(&mut alive, text("tray.workspace"));
+                let _ = AppendMenuW(menu, MF_POPUP, sub.0 as usize, label);
                 submenus.push(sub);
             }
 
-            let _ = AppendMenuW(menu, MF_STRING, CMD_SETTINGS as usize, w!("Settings"));
+            let _ = AppendMenuW(menu, MF_STRING, CMD_SETTINGS as usize, keep(&mut alive, text("tray.settings")));
             let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());
 
             // Pause, as a submenu rather than a switch.
@@ -298,10 +317,11 @@ impl Tray {
             // they want and should not have to guess at a number of minutes.
             let sub = CreatePopupMenu().ok()?;
             if state.paused {
-                let _ = AppendMenuW(sub, MF_STRING, CMD_RESUME as usize, w!("Resume now"));
+                let label = keep(&mut alive, text("tray.resume"));
+                let _ = AppendMenuW(sub, MF_STRING, CMD_RESUME as usize, label);
                 let _ = AppendMenuW(sub, MF_SEPARATOR, 0, PCWSTR::null());
                 for (index, minutes) in PAUSE_CHOICES.iter().enumerate() {
-                    let label = wide(&format!("Restart for {minutes} minutes"));
+                    let label = wide(&text("tray.pause_restart").replace("{minutes}", &minutes.to_string()));
                     let _ = AppendMenuW(
                         sub,
                         MF_STRING,
@@ -312,7 +332,7 @@ impl Tray {
                 }
             } else {
                 for (index, minutes) in PAUSE_CHOICES.iter().enumerate() {
-                    let label = wide(&format!("For {minutes} minutes"));
+                    let label = wide(&text("tray.pause_for").replace("{minutes}", &minutes.to_string()));
                     let _ = AppendMenuW(
                         sub,
                         MF_STRING,
@@ -322,7 +342,8 @@ impl Tray {
                     alive.push(label);
                 }
                 let _ = AppendMenuW(sub, MF_SEPARATOR, 0, PCWSTR::null());
-                let _ = AppendMenuW(sub, MF_STRING, CMD_PAUSE as usize, w!("Until I resume"));
+                let label = keep(&mut alive, text("tray.pause_until"));
+                let _ = AppendMenuW(sub, MF_STRING, CMD_PAUSE as usize, label);
             }
             let pause_label = wide(&pause_title(state));
             let _ = AppendMenuW(menu, MF_POPUP, sub.0 as usize, PCWSTR(pause_label.as_ptr()));
@@ -330,7 +351,7 @@ impl Tray {
             submenus.push(sub);
 
             let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());
-            let updates = wide(&state.update.label());
+            let updates = wide(&state.update.label(state.language));
             let _ = AppendMenuW(
                 menu,
                 MF_STRING | if state.update.pressable() { MF_STRING } else { MF_GRAYED },
@@ -340,7 +361,7 @@ impl Tray {
             alive.push(updates);
 
             let _ = AppendMenuW(menu, MF_SEPARATOR, 0, PCWSTR::null());
-            let _ = AppendMenuW(menu, MF_STRING, CMD_QUIT as usize, w!("Quit Rovyl"));
+            let _ = AppendMenuW(menu, MF_STRING, CMD_QUIT as usize, keep(&mut alive, text("tray.quit")));
 
             // The documented dance: the owner window must be foreground before the menu is shown,
             // or the menu does not dismiss when the user clicks away from it.
@@ -619,6 +640,7 @@ mod tests {
         // pause that had already ended.
         let state = |paused, minutes| MenuState {
             version: "1.19.0",
+            language: "en",
             workspaces: Vec::new(),
             paused,
             minutes_left: minutes,
@@ -640,11 +662,27 @@ mod tests {
             UpdateLine::Failed,
         ] {
             assert!(line.pressable(), "{line:?}");
-            assert!(!line.label().is_empty());
+            assert!(!line.label("en").is_empty());
         }
         assert!(!UpdateLine::Checking.pressable());
         assert!(!UpdateLine::Downloading("2.3.0".into()).pressable());
-        assert_eq!(UpdateLine::Ready("2.3.0".into()).label(), "Restart to update to 2.3.0");
+        assert_eq!(UpdateLine::Ready("2.3.0".into()).label("en"), "Restart to update to 2.3.0");
+    }
+
+    #[test]
+    fn the_menu_follows_the_configured_language() {
+        let state = MenuState {
+            version: "2.3.0",
+            language: "ja",
+            workspaces: Vec::new(),
+            paused: true,
+            minutes_left: Some(12),
+            update: UpdateLine::Idle,
+        };
+        assert_eq!(pause_title(&state), "一時停止中 — 残り 12 分");
+        assert_eq!(UpdateLine::Ready("2.3.0".into()).label("ja"), "再起動して 2.3.0 に更新");
+        // A language the table does not know reads as English, not as blanks.
+        assert_eq!(UpdateLine::Idle.label("xx"), "Check for updates");
     }
 
     #[test]

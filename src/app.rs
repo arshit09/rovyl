@@ -814,6 +814,7 @@ impl App {
         use crate::ui::settings::UpdateState;
         tray::MenuState {
             version: env!("CARGO_PKG_VERSION"),
+            language: crate::i18n::normalize(&self.config.language),
             workspaces: tray::workspaces_for_menu(
                 self.config
                     .workspaces
@@ -854,9 +855,10 @@ impl App {
                     .minutes_left
                     .unwrap_or(1)
                     .max(1);
-                format!("Rovyl \u{2014} paused, {minutes} min left")
+                crate::i18n::tray_text("tray.tip_paused_left", &self.config.language)
+                    .replace("{minutes}", &minutes.to_string())
             }
-            None => "Rovyl \u{2014} triggers paused".into(),
+            None => crate::i18n::tray_text("tray.tip_paused", &self.config.language).into(),
         }
     }
 
