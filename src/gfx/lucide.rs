@@ -194,6 +194,34 @@ fn keyword_answers(keyword: &str, token: &str) -> bool {
     }
 }
 
+/// What a typed word means in the keyword table's language.
+///
+/// The table is English by construction, and 仕事 is not a prefix of `work`. So a word in kana or
+/// kanji becomes the English keywords it stands for, and the table does what it always did — by
+/// substring, longest word first, because Japanese is written without spaces and 音楽アプリ
+/// arrives as one token that still means music. One kanji is enough: 時, 家 and 音 each carry as
+/// much as an English word, so the one-character rule is about script, not length. Anything else
+/// is already in the table's language and passes through.
+fn english_for(token: &str) -> Vec<&str> {
+    let japanese = token.chars().any(|c| {
+        matches!(c, '\u{3040}'..='\u{30ff}' | '\u{3400}'..='\u{4dbf}' | '\u{4e00}'..='\u{9fff}')
+    });
+    if !japanese {
+        return vec![token];
+    }
+    let mut out: Vec<&str> = Vec::new();
+    for (word, english) in super::icon_keywords::JAPANESE {
+        if token.contains(word) {
+            for e in *english {
+                if !out.contains(e) {
+                    out.push(e);
+                }
+            }
+        }
+    }
+    out
+}
+
 /// The glyphs to offer for what has been typed, best first.
 ///
 /// Two passes, in this order and not merged, because the order IS the answer: a name that contains
@@ -206,6 +234,9 @@ fn keyword_answers(keyword: &str, token: &str) -> bool {
 ///
 /// Repeats are dropped, keeping the earlier position. A name that already matched does not come
 /// back lower down because a keyword also names it.
+///
+/// A Japanese word is searched as the English it stands for (`english_for`), through both passes:
+/// 電池 is `battery`, which no keyword answers to but `Battery` is a name.
 pub fn search(term: &str, limit: usize) -> Vec<&'static str> {
     let term = term.trim().to_lowercase();
     if term.is_empty() {
@@ -219,8 +250,15 @@ pub fn search(term: &str, limit: usize) -> Vec<&'static str> {
         }
     };
 
+    // Every word that was typed, so "video call" reaches both — the original's `tokens` argument,
+    // which it always filled from a split on whitespace.
+    let typed: Vec<&str> = term.split_whitespace().collect();
+    let tokens: Vec<&str> = typed.iter().flat_map(|token| english_for(token)).collect();
+
     for name in names() {
-        if name.to_lowercase().contains(&term) {
+        let lower = name.to_lowercase();
+        let translated = || tokens.iter().any(|t| !typed.contains(t) && lower.contains(t));
+        if lower.contains(&term) || translated() {
             push(name, &mut out);
         }
     }
@@ -228,9 +266,7 @@ pub fn search(term: &str, limit: usize) -> Vec<&'static str> {
         return out;
     }
 
-    // Every word that was typed, so "video call" reaches both — the original's `tokens` argument,
-    // which it always filled from a split on whitespace.
-    for token in term.split_whitespace() {
+    for token in &tokens {
         for (keyword, icons) in super::icon_keywords::KEYWORDS {
             if !keyword_answers(keyword, token) {
                 continue;
@@ -303,6 +339,27 @@ mod search_tests {
         // `work` is reachable by keyword and no glyph is called `a`-something that it offers.
         assert!(!keyword_answers("work", "a"));
         assert!(!keyword_answers("alarm", "a"));
+    }
+
+    #[test]
+    fn japanese_finds_what_its_english_would() {
+        assert!(found("仕事").contains(&"Briefcase"), "{:?}", found("仕事"));
+        assert!(found("音楽").contains(&"Music"), "{:?}", found("音楽"));
+        // One kanji is a whole word, unlike one Latin letter.
+        assert!(found("時").contains(&"Clock"), "{:?}", found("時"));
+        // Written without spaces, and still music.
+        assert!(found("音楽アプリ").contains(&"Music"), "{:?}", found("音楽アプリ"));
+        // No keyword says `battery`, but a name does.
+        assert!(found("電池").contains(&"Battery"), "{:?}", found("電池"));
+        // A word the table does not know finds nothing, rather than everything.
+        assert!(found("寿司").is_empty(), "{:?}", found("寿司"));
+    }
+
+    #[test]
+    fn english_is_not_translated() {
+        assert_eq!(english_for("music"), vec!["music"]);
+        // 音楽 before 音 inside it: the longer word speaks first.
+        assert_eq!(english_for("音楽"), vec!["music", "sound"]);
     }
 
     #[test]

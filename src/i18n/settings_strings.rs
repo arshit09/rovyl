@@ -9,7 +9,7 @@
 //! are not. Translating more here than the original translates would make the two panels say
 //! different things to the same user.
 //!
-//! 8 languages, 293 keys.
+//! 8 languages, 380 keys.
 
 use super::strings::Entry;
 
@@ -70,6 +70,10 @@ pub const SETTINGS: &[Entry] = &[
         values: &["Angle (direction)", "Ángulo (dirección)", "角度（方向）", "角度（向き）", "Ângulo (direção)", "Угол (направление)", "Winkel (Richtung)", "الزاوية (الاتجاه)"],
     },
     Entry {
+        key: "appIcon",
+        values: &["App icon", "Icono de la aplicación", "应用图标", "アプリのアイコン", "Ícone do aplicativo", "Значок приложения", "App-Symbol", "أيقونة التطبيق"],
+    },
+    Entry {
         key: "appearance",
         values: &["Appearance", "Apariencia", "外观", "外観", "Aparência", "Внешний вид", "Darstellung", "المظهر والسمة"],
     },
@@ -84,6 +88,14 @@ pub const SETTINGS: &[Entry] = &[
     Entry {
         key: "appsCount",
         values: &["applications", "aplicaciones", "个应用", "件のアプリケーション", "aplicativos", "приложений", "Anwendungen", "تطبيقات"],
+    },
+    Entry {
+        key: "automatedCommands",
+        values: &["Automated commands", "Comandos automatizados", "自动执行的命令", "自動実行するコマンド", "Comandos automatizados", "Автоматические команды", "Automatische Befehle", "الأوامر التلقائية"],
+    },
+    Entry {
+        key: "automatedCommandsDesc",
+        values: &["Executed in the selected recent project folder.", "Se ejecutan en la carpeta del proyecto reciente seleccionado.", "在所选的最近项目文件夹中执行。", "選んだ最近のプロジェクトのフォルダーで実行されます。", "Executados na pasta do projeto recente selecionado.", "Выполняются в папке выбранного недавнего проекта.", "Werden im Ordner des gewählten letzten Projekts ausgeführt.", "تُنفَّذ في مجلد المشروع الحديث المختار."],
     },
     Entry {
         key: "available",
@@ -158,12 +170,24 @@ pub const SETTINGS: &[Entry] = &[
         values: &["Change", "Cambiar", "更改", "変更", "Alterar", "Изменить", "Ändern", "تغيير"],
     },
     Entry {
+        key: "changeIcon",
+        values: &["Change icon", "Cambiar el icono", "更改图标", "アイコンを変更", "Alterar o ícone", "Изменить значок", "Symbol ändern", "تغيير الأيقونة"],
+    },
+    Entry {
+        key: "changeWorkspaceIcon",
+        values: &["Change workspace icon", "Cambiar el icono del espacio", "更改工作区图标", "ワークスペースのアイコンを変更", "Alterar o ícone do espaço", "Изменить значок пространства", "Symbol des Arbeitsbereichs ändern", "تغيير أيقونة مساحة العمل"],
+    },
+    Entry {
         key: "chooseApps",
         values: &["Choose apps", "Elegir apps", "选择应用", "アプリを選ぶ", "Escolher apps", "Выбрать приложения", "Apps wählen", "اختيار التطبيقات"],
     },
     Entry {
         key: "chooseFile",
         values: &["Choose file", "Elegir archivo", "选择文件", "ファイルを選ぶ", "Escolher arquivo", "Выбрать файл", "Datei auswählen", "اختيار ملف يدوي"],
+    },
+    Entry {
+        key: "clearSearch",
+        values: &["Clear search", "Borrar la búsqueda", "清除搜索", "検索をクリア", "Limpar a busca", "Очистить поиск", "Suche leeren", "مسح البحث"],
     },
     Entry {
         key: "clearSelection",
@@ -176,6 +200,14 @@ pub const SETTINGS: &[Entry] = &[
     Entry {
         key: "close",
         values: &["Close", "Cerrar", "关闭", "閉じる", "Fechar", "Закрыть", "Schließen", "إغلاق"],
+    },
+    Entry {
+        key: "closeIconPicker",
+        values: &["Close icon picker", "Cerrar el selector de iconos", "关闭图标选择器", "アイコン選択を閉じる", "Fechar o seletor de ícones", "Закрыть выбор значка", "Symbolauswahl schließen", "إغلاق مُحدِّد الأيقونات"],
+    },
+    Entry {
+        key: "commandIcon",
+        values: &["Command icon", "Icono del comando", "命令图标", "コマンドのアイコン", "Ícone do comando", "Значок команды", "Befehlssymbol", "أيقونة الأمر"],
     },
     Entry {
         key: "confirmReset",
@@ -196,6 +228,10 @@ pub const SETTINGS: &[Entry] = &[
     Entry {
         key: "cornerTopRight",
         values: &["Top right", "Arriba a la derecha", "右上", "右上", "Canto superior direito", "Сверху справа", "Oben rechts", "أعلى اليمين"],
+    },
+    Entry {
+        key: "couldNotListApps",
+        values: &["Could not list applications.", "No se han podido listar las aplicaciones.", "无法列出应用。", "アプリの一覧を取得できませんでした。", "Não foi possível listar os aplicativos.", "Не удалось получить список приложений.", "Anwendungen konnten nicht aufgelistet werden.", "تعذّر سرد التطبيقات."],
     },
     Entry {
         key: "create",
@@ -326,6 +362,18 @@ pub const SETTINGS: &[Entry] = &[
         values: &["Edit list", "Editar lista", "编辑列表", "一覧を編集", "Editar lista", "Изменить список", "Liste bearbeiten", "تحرير القائمة"],
     },
     Entry {
+        key: "editorEditAs",
+        values: &["Edit as", "Editar como", "编辑方式", "編集の方法", "Editar como", "Способ правки", "Bearbeiten als", "التحرير بصيغة"],
+    },
+    Entry {
+        key: "editorEditAsFile",
+        values: &["Edit as a file", "Editar como archivo", "以文件方式编辑", "ファイルとして編集", "Editar como arquivo", "Править как файл", "Als Datei bearbeiten", "التحرير كملف"],
+    },
+    Entry {
+        key: "editorEditVisually",
+        values: &["Edit visually", "Editar visualmente", "可视化编辑", "画面で編集", "Editar visualmente", "Править визуально", "Visuell bearbeiten", "تحرير مرئي"],
+    },
+    Entry {
         key: "enableKeyboardTrigger",
         values: &["Enable keyboard trigger", "Activar el atajo de teclado", "启用键盘触发", "キーボードでの呼び出しを有効にする", "Ativar o atalho de teclado", "Включить вызов с клавиатуры", "Tastatur-Auslöser aktivieren", "تفعيل الاستدعاء بلوحة المفاتيح"],
     },
@@ -354,8 +402,144 @@ pub const SETTINGS: &[Entry] = &[
         values: &["Save a portable copy of your configuration.", "Guarda una copia portátil de tu configuración.", "保存一份可携带的配置副本。", "設定の持ち運べる控えを保存します。", "Salva uma cópia portátil da sua configuração.", "Сохраняет переносимую копию вашей конфигурации.", "Speichert eine portable Kopie Ihrer Konfiguration.", "يحفظ نسخة محمولة من إعداداتك."],
     },
     Entry {
+        key: "faultCopied",
+        values: &["Copied", "Copiado", "已复制", "コピーしました", "Copiado", "Скопировано", "Kopiert", "تم النسخ"],
+    },
+    Entry {
+        key: "faultCopy",
+        values: &["Copy", "Copiar", "复制", "コピー", "Copiar", "Копировать", "Kopieren", "نسخ"],
+    },
+    Entry {
+        key: "faultDetails",
+        values: &["Details", "Detalles", "详情", "詳細", "Detalhes", "Подробности", "Details", "التفاصيل"],
+    },
+    Entry {
+        key: "faultDismiss",
+        values: &["Dismiss", "Descartar", "关闭", "閉じる", "Dispensar", "Закрыть", "Schließen", "تجاهل"],
+    },
+    Entry {
+        key: "faultFixShortcut",
+        values: &["Fix shortcut", "Arreglar el acceso", "修复快捷方式", "ショートカットを直す", "Corrigir o atalho", "Исправить ярлык", "Verknüpfung reparieren", "إصلاح الاختصار"],
+    },
+    Entry {
+        key: "faultHideDetails",
+        values: &["Hide details", "Ocultar los detalles", "隐藏详情", "詳細を隠す", "Ocultar os detalhes", "Скрыть подробности", "Details ausblenden", "إخفاء التفاصيل"],
+    },
+    Entry {
+        key: "fileIcon",
+        values: &["File icon", "Icono del archivo", "文件图标", "ファイルのアイコン", "Ícone do arquivo", "Значок файла", "Dateisymbol", "أيقونة الملف"],
+    },
+    Entry {
+        key: "filePath",
+        values: &["File path", "Ruta del archivo", "文件路径", "ファイルのパス", "Caminho do arquivo", "Путь к файлу", "Dateipfad", "مسار الملف"],
+    },
+    Entry {
+        key: "filledAutomatically",
+        values: &["Filled automatically", "Se rellena automáticamente", "自动填写", "自動で入ります", "Preenchido automaticamente", "Заполняется автоматически", "Wird automatisch ausgefüllt", "يُملأ تلقائيًا"],
+    },
+    Entry {
+        key: "fillingWorkspaceDesc",
+        values: &["Rovyl fills this workspace by itself. You can add more above at any time.", "Rovyl rellena este espacio por su cuenta. Puedes añadir más arriba en cualquier momento.", "Rovyl 会自动填充这个工作区。你随时可以在上方添加更多。", "このワークスペースは Rovyl が自動で埋めます。上からいつでも追加できます。", "O Rovyl preenche este espaço sozinho. Você pode adicionar mais acima a qualquer momento.", "Rovyl заполняет это пространство сам. Вы можете добавить ещё сверху в любой момент.", "Rovyl füllt diesen Arbeitsbereich von selbst. Oben können Sie jederzeit mehr hinzufügen.", "يملأ Rovyl مساحة العمل هذه بنفسه. ويمكنك الإضافة من الأعلى في أي وقت."],
+    },
+    Entry {
+        key: "findingApplications",
+        values: &["Finding your applications", "Buscando tus aplicaciones", "正在寻找你的应用", "アプリを探しています", "Procurando seus aplicativos", "Ищем ваши приложения", "Ihre Anwendungen werden gesucht", "جارٍ العثور على تطبيقاتك"],
+    },
+    Entry {
+        key: "firstRunAimCursor",
+        values: &["Move onto the icon you want and click it. Release away from every icon to cancel.", "Muévete hasta el icono que quieras y haz clic. Suelta lejos de todos los iconos para cancelar.", "移到你想要的图标上点击。在所有图标之外松开即可取消。", "目的のアイコンまで動かしてクリックします。どのアイコンからも離れた場所で離すと取り消しです。", "Vá até o ícone que quiser e clique. Solte longe de todos os ícones para cancelar.", "Наведитесь на нужный значок и щёлкните. Отпустите в стороне от всех значков, чтобы отменить.", "Zum gewünschten Symbol bewegen und klicken. Abseits aller Symbole loslassen bricht ab.", "انتقل إلى الأيقونة التي تريدها وانقرها. وأفلِت بعيدًا عن كل الأيقونات للإلغاء."],
+    },
+    Entry {
+        key: "firstRunAimDirection",
+        values: &["Every target owns a whole wedge of the screen, so a flick in its direction is enough — you never have to land on the icon.", "Cada objetivo posee un sector entero de la pantalla, así que basta un gesto en su dirección: nunca tienes que caer sobre el icono.", "每个目标都独占屏幕上的一整块扇区，因此朝它的方向一甩就够了——你不必正好落在图标上。", "どの対象も画面の扇形をまるごと持っているので、その向きへさっと動かすだけで足ります。アイコンの上にぴたりと止める必要はありません。", "Cada alvo possui uma fatia inteira da tela, então um movimento na direção dele basta — você nunca precisa acertar o ícone.", "Каждая цель владеет целым сектором экрана, поэтому достаточно движения в её сторону — попадать в значок не нужно.", "Jedes Ziel besitzt ein ganzes Segment des Bildschirms, eine Bewegung in seine Richtung genügt also — Sie müssen nie auf dem Symbol landen.", "يملك كل هدف قطاعًا كاملًا من الشاشة، فتكفي حركة سريعة في اتجاهه — ولا يلزم أن تستقر على الأيقونة."],
+    },
+    Entry {
+        key: "firstRunAimSuffix",
+        values: &["Start typing to narrow a crowded wheel down to what you meant.", "Empieza a escribir para reducir una rueda llena a lo que querías.", "开始输入，就能把拥挤的轮盘收窄到你想要的那一个。", "入力を始めると、混み合ったホイールが目当てのものまで絞り込まれます。", "Comece a digitar para reduzir uma roda cheia ao que você queria.", "Начните печатать, чтобы сузить переполненное колесо до нужного.", "Tippen Sie los, um ein volles Rad auf das Gemeinte einzugrenzen.", "ابدأ الكتابة لتضييق عجلة مزدحمة إلى ما تقصده."],
+    },
+    Entry {
+        key: "firstRunAimTitle",
+        values: &["Aim, do not hunt", "Apunta, no busques", "瞄准，而不是寻找", "探さずに、狙う", "Mire, não procure", "Целься, а не ищи", "Zielen statt suchen", "صوّب، ولا تبحث"],
+    },
+    Entry {
+        key: "firstRunBtnAnd",
+        values: &["and", "y", "加", "と", "e", "и", "und", "و"],
+    },
+    Entry {
+        key: "firstRunBtnLeft",
+        values: &["the left button", "el botón izquierdo", "左键", "左ボタン", "o botão esquerdo", "левую кнопку", "die linke Taste", "الزر الأيسر"],
+    },
+    Entry {
+        key: "firstRunBtnMiddle",
+        values: &["the mouse wheel button", "el botón de la rueda del ratón", "鼠标滚轮键", "マウスのホイールボタン", "o botão da roda do mouse", "колёсико мыши", "die Mausradtaste", "زر عجلة الفأرة"],
+    },
+    Entry {
+        key: "firstRunBtnRight",
+        values: &["the right button", "el botón derecho", "右键", "右ボタン", "o botão direito", "правую кнопку", "die rechte Taste", "الزر الأيمن"],
+    },
+    Entry {
+        key: "firstRunBtnX1",
+        values: &["the back side-button", "el botón lateral de retroceso", "侧面的「后退」键", "サイドの「戻る」ボタン", "o botão lateral de voltar", "боковую кнопку «Назад»", "die seitliche Zurück-Taste", "الزر الجانبي للرجوع"],
+    },
+    Entry {
+        key: "firstRunBtnX2",
+        values: &["the forward side-button", "el botón lateral de avance", "侧面的「前进」键", "サイドの「進む」ボタン", "o botão lateral de avançar", "боковую кнопку «Вперёд»", "die seitliche Vorwärts-Taste", "الزر الجانبي للتقدّم"],
+    },
+    Entry {
+        key: "firstRunFooter",
+        values: &["Everything above is in Settings, and can be changed there.", "Todo lo anterior está en Ajustes y se puede cambiar ahí.", "以上内容都在「设置」中，可以在那里更改。", "ここに書かれたことはすべて設定にあり、そこで変更できます。", "Tudo o que está acima fica em Ajustes e pode ser alterado lá.", "Всё перечисленное есть в настройках, и там это можно изменить.", "Alles oben steht in den Einstellungen und kann dort geändert werden.", "كل ما سبق موجود في الإعدادات ويمكن تغييره هناك."],
+    },
+    Entry {
+        key: "firstRunGotIt",
+        values: &["Got it", "Entendido", "明白了", "わかりました", "Entendi", "Понятно", "Verstanden", "فهمت"],
+    },
+    Entry {
+        key: "firstRunMouseClick",
+        values: &["Click {button} to open the wheel. It stays open until you pick something.", "Haz clic en {button} para abrir la rueda. Se queda abierta hasta que elijas algo.", "点击{button}打开轮盘。在你做出选择之前，它会一直保持打开。", "{button}をクリックするとホイールが開きます。何かを選ぶまで開いたままです。", "Clique em {button} para abrir a roda. Ela fica aberta até você escolher algo.", "Нажмите {button}, чтобы открыть колесо. Оно останется открытым, пока вы что-нибудь не выберете.", "Klicken Sie {button}, um das Rad zu öffnen. Es bleibt offen, bis Sie etwas auswählen.", "انقر {button} لفتح العجلة. تبقى مفتوحة حتى تختار شيئًا."],
+    },
+    Entry {
+        key: "firstRunMouseHold",
+        values: &["Hold {button} to open the wheel, and let go on a target to run it.", "Mantén pulsado {button} para abrir la rueda y suelta sobre un objetivo para abrirlo.", "按住{button}打开轮盘，在目标上松开即可运行它。", "{button}を長押しするとホイールが開き、目的の項目の上で離すと実行されます。", "Segure {button} para abrir a roda e solte sobre um alvo para executá-lo.", "Удерживайте {button}, чтобы открыть колесо, и отпустите на цели, чтобы запустить её.", "Halten Sie {button}, um das Rad zu öffnen, und lassen Sie auf einem Ziel los, um es zu starten.", "اضغط مطوّلًا على {button} لفتح العجلة، وأفلِت فوق هدف لتشغيله."],
+    },
+    Entry {
+        key: "firstRunOpenWheel",
+        values: &["Open the wheel", "Abrir la rueda", "打开轮盘", "ホイールを開く", "Abrir a roda", "Открыть колесо", "Das Rad öffnen", "افتح العجلة"],
+    },
+    Entry {
+        key: "firstRunOrMouse",
+        values: &["Or use the mouse", "O usa el ratón", "或者用鼠标", "マウスでも開けます", "Ou use o mouse", "Или мышью", "Oder mit der Maus", "أو استخدم الفأرة"],
+    },
+    Entry {
+        key: "firstRunShortcutDesc",
+        values: &["Press %s anywhere in Windows — over any application, without leaving it.", "Pulsa %s en cualquier parte de Windows, sobre cualquier aplicación y sin salir de ella.", "在 Windows 的任何地方按 %s ——在任何应用之上，而不必离开它。", "Windows のどこでも %s を押すだけ。どのアプリの上でも、そこから離れずに開けます。", "Pressione %s em qualquer lugar do Windows — sobre qualquer aplicativo, sem sair dele.", "Нажмите %s в любом месте Windows — поверх любого приложения, не покидая его.", "Drücken Sie %s überall in Windows — über jeder Anwendung, ohne sie zu verlassen.", "اضغط %s في أي مكان في Windows — فوق أي تطبيق، دون مغادرته."],
+    },
+    Entry {
+        key: "firstRunSubtitle",
+        values: &["It stays out of the way in the tray. Here is what to know.", "Se queda apartado en la bandeja. Esto es lo que conviene saber.", "它会安静地待在托盘里。以下是你需要知道的。", "通知領域で静かに待っています。知っておくとよいことは次のとおりです。", "Ele fica fora do caminho, na bandeja. Eis o que vale saber.", "Он не мешает и ждёт в трее. Вот что стоит знать.", "Es hält sich im Infobereich zurück. Das ist gut zu wissen.", "يبقى بعيدًا عن طريقك في صينية النظام. إليك ما يجدر معرفته."],
+    },
+    Entry {
+        key: "firstRunTitle",
+        values: &["Rovyl is running", "Rovyl está en marcha", "Rovyl 正在运行", "Rovyl が動いています", "O Rovyl está em execução", "Rovyl запущен", "Rovyl läuft", "Rovyl قيد التشغيل"],
+    },
+    Entry {
+        key: "firstRunWorkspacesMany",
+        values: &["You have {count} sets of shortcuts — one for work, one for whatever else. Switch between them from the wheel or the tray.", "Tienes {count} conjuntos de accesos: uno para el trabajo y otro para lo demás. Cambia entre ellos desde la rueda o la bandeja.", "你有 {count} 组快捷方式——一组用于工作，一组用于其他。可以从轮盘或托盘切换。", "ショートカットのセットが {count} 組あります。仕事用、それ以外用といった具合です。ホイールか通知領域から切り替えられます。", "Você tem {count} conjuntos de atalhos — um para o trabalho, outro para o resto. Alterne entre eles pela roda ou pela bandeja.", "У вас {count} наборов ярлыков — один для работы, другой для всего остального. Переключайтесь между ними через колесо или трей.", "Sie haben {count} Sätze von Verknüpfungen — einen für die Arbeit, einen für alles andere. Wechseln Sie über das Rad oder den Infobereich.", "لديك {count} مجموعات من الاختصارات — واحدة للعمل وأخرى لما عداه. بدّل بينها من العجلة أو من صينية النظام."],
+    },
+    Entry {
+        key: "firstRunWorkspacesOne",
+        values: &["Keep separate sets of shortcuts — one for work, one for whatever else — and switch between them from the wheel or the tray.", "Ten conjuntos de accesos separados (uno para el trabajo y otro para lo demás) y cambia entre ellos desde la rueda o la bandeja.", "把快捷方式分成几组——一组用于工作，一组用于其他——然后从轮盘或托盘切换。", "ショートカットを用途ごとに分けて持てます。仕事用とそれ以外に分け、ホイールか通知領域から切り替えてください。", "Mantenha conjuntos separados de atalhos — um para o trabalho, outro para o resto — e alterne entre eles pela roda ou pela bandeja.", "Держите отдельные наборы ярлыков — один для работы, другой для всего остального — и переключайтесь между ними через колесо или трей.", "Halten Sie getrennte Sätze von Verknüpfungen — einen für die Arbeit, einen für alles andere — und wechseln Sie über das Rad oder den Infobereich.", "احتفظ بمجموعات منفصلة من الاختصارات — واحدة للعمل وأخرى لما عداه — وبدّل بينها من العجلة أو من صينية النظام."],
+    },
+    Entry {
         key: "folder",
         values: &["Folder", "Carpeta", "文件夹", "フォルダー", "Pasta", "Папка", "Ordner", "مجلد"],
+    },
+    Entry {
+        key: "folderIcon",
+        values: &["Folder icon", "Icono de la carpeta", "文件夹图标", "フォルダーのアイコン", "Ícone da pasta", "Значок папки", "Ordnersymbol", "أيقونة المجلد"],
+    },
+    Entry {
+        key: "folderIconHint",
+        values: &["Shown on the wheel for “{label}”.", "Se muestra en la rueda para «{label}».", "在轮盘上为「{label}」显示。", "ホイール上で「{label}」に使われます。", "Aparece na roda para “{label}”.", "Показывается на колесе для «{label}».", "Wird im Rad für „{label}“ angezeigt.", "يظهر على العجلة لـ «{label}»."],
     },
     Entry {
         key: "folderPath",
@@ -426,6 +610,10 @@ pub const SETTINGS: &[Entry] = &[
         values: &["Hands-free", "Manos libres", "免手动", "ハンズフリー", "Mãos livres", "Без рук", "Freihändig", "بدون يدين"],
     },
     Entry {
+        key: "groupIcon",
+        values: &["Group icon", "Icono del grupo", "分组图标", "グループのアイコン", "Ícone do grupo", "Значок группы", "Gruppensymbol", "أيقونة المجموعة"],
+    },
+    Entry {
         key: "groupKeyboard",
         values: &["Keyboard", "Teclado", "键盘", "キーボード", "Teclado", "Клавиатура", "Tastatur", "لوحة المفاتيح"],
     },
@@ -454,6 +642,10 @@ pub const SETTINGS: &[Entry] = &[
         values: &["Theme", "Tema", "主题", "テーマ", "Tema", "Тема", "Design", "المظهر"],
     },
     Entry {
+        key: "hexColor",
+        values: &["Hex color", "Color hexadecimal", "十六进制颜色", "16進数の色", "Cor hexadecimal", "Цвет в HEX", "Hex-Farbe", "لون سداسي عشري"],
+    },
+    Entry {
         key: "hoverColor",
         values: &["Hover color", "Color al pasar por encima", "悬停颜色", "ホバー時の色", "Cor ao passar o cursor", "Цвет при наведении", "Hover-Farbe", "لون التمرير"],
     },
@@ -470,8 +662,12 @@ pub const SETTINGS: &[Entry] = &[
         values: &["How long a target must stay aimed before it opens. Drag to zero and the direction opens the moment it commits.", "Cuánto tiempo debe mantenerse apuntado un objetivo antes de abrirse. Llévalo a cero y la dirección abre en cuanto se confirma.", "目标需要被瞄准多久才会打开。拖到零，方向一旦确定就立即打开。", "対象を狙ったまま何秒待つと開くか。ゼロまで下げると、向きが決まった瞬間に開きます。", "Quanto tempo um alvo precisa ficar mirado antes de abrir. Leve a zero e a direção abre assim que é confirmada.", "Сколько цель должна оставаться под прицелом до открытия. Сдвиньте к нулю — направление откроется сразу после подтверждения.", "Wie lange ein Ziel anvisiert bleiben muss, bis es öffnet. Auf null gezogen öffnet die Richtung im Moment der Festlegung.", "كم يجب أن يبقى الهدف مُصوَّبًا قبل أن يُفتح. اسحبه إلى الصفر ليُفتح الاتجاه لحظة تثبيته."],
     },
     Entry {
+        key: "iconLabel",
+        values: &["Icon", "Icono", "图标", "アイコン", "Ícone", "Значок", "Symbol", "أيقونة"],
+    },
+    Entry {
         key: "iconPickerKeywordsHint",
-        values: &["Tip: English words (work, time, home…) also surface related icons by meaning, not only by name.", "Consejo: las palabras en inglés (work, time, home…) también muestran iconos relacionados por significado, no solo por nombre.", "提示：英文词（work、time、home…）也能按含义找出相关图标，而不只是按名称匹配。", "ヒント：英単語（work、time、home…）でも、名前だけでなく意味の近いアイコンが出てきます。", "Dica: palavras em inglês (work, time, home…) também trazem ícones relacionados por significado, não só por nome.", "Подсказка: английские слова (work, time, home…) тоже находят значки по смыслу, а не только по названию.", "Tipp: Englische Wörter (work, time, home…) finden passende Symbole auch nach Bedeutung, nicht nur nach Namen.", "تلميح: الكلمات الإنجليزية (work، time، home…) تُظهر أيضًا أيقونات مرتبطة بالمعنى، لا بالاسم فقط."],
+        values: &["Tip: English words (work, time, home…) also surface related icons by meaning, not only by name.", "Consejo: las palabras en inglés (work, time, home…) también muestran iconos relacionados por significado, no solo por nombre.", "提示：英文词（work、time、home…）也能按含义找出相关图标，而不只是按名称匹配。", "ヒント：日本語（仕事、時計、家…）でも英単語でも、名前だけでなく意味の近いアイコンが出てきます。", "Dica: palavras em inglês (work, time, home…) também trazem ícones relacionados por significado, não só por nome.", "Подсказка: английские слова (work, time, home…) тоже находят значки по смыслу, а не только по названию.", "Tipp: Englische Wörter (work, time, home…) finden passende Symbole auch nach Bedeutung, nicht nur nach Namen.", "تلميح: الكلمات الإنجليزية (work، time، home…) تُظهر أيضًا أيقونات مرتبطة بالمعنى، لا بالاسم فقط."],
     },
     Entry {
         key: "iconPickerNoResults",
@@ -490,6 +686,14 @@ pub const SETTINGS: &[Entry] = &[
         values: &["Visual weight of each target.", "Peso visual de cada objetivo.", "每个目标的视觉分量。", "一つひとつの対象の見た目の重さ。", "Peso visual de cada alvo.", "Визуальный вес каждой цели.", "Visuelles Gewicht jedes Ziels.", "الوزن البصري لكل هدف."],
     },
     Entry {
+        key: "ideIntegration",
+        values: &["IDE integration", "Integración con el IDE", "IDE 集成", "IDE との連携", "Integração com a IDE", "Интеграция с IDE", "IDE-Integration", "تكامل بيئة التطوير"],
+    },
+    Entry {
+        key: "ideIntegrationDesc",
+        values: &["Recent projects and automated terminal commands.", "Proyectos recientes y comandos de terminal automatizados.", "最近的项目与自动执行的终端命令。", "最近のプロジェクトと、自動実行するターミナルコマンド。", "Projetos recentes e comandos de terminal automatizados.", "Недавние проекты и автоматические команды терминала.", "Zuletzt geöffnete Projekte und automatische Terminalbefehle.", "المشاريع الحديثة وأوامر الطرفية التلقائية."],
+    },
+    Entry {
         key: "importAction",
         values: &["Import", "Importar", "导入", "読み込む", "Importar", "Импорт", "Importieren", "استيراد"],
     },
@@ -504,6 +708,10 @@ pub const SETTINGS: &[Entry] = &[
     Entry {
         key: "instantValue",
         values: &["Instant", "Inmediato", "立即", "即時", "Imediato", "Мгновенно", "Sofort", "فوري"],
+    },
+    Entry {
+        key: "isCurrentWorkspace",
+        values: &["This is the current workspace", "Este es el espacio actual", "这是当前工作区", "これが現在のワークスペースです", "Este é o espaço atual", "Это текущее рабочее пространство", "Dies ist der aktuelle Arbeitsbereich", "هذه هي مساحة العمل الحالية"],
     },
     Entry {
         key: "keepApps",
@@ -578,6 +786,10 @@ pub const SETTINGS: &[Entry] = &[
         values: &["Make current workspace", "Usar como espacio actual", "设为当前工作区", "現在のワークスペースにする", "Definir como espaço atual", "Сделать текущим", "Als aktuellen Arbeitsbereich festlegen", "تعيين كمساحة عمل حالية"],
     },
     Entry {
+        key: "makeThisCurrent",
+        values: &["Make this the current workspace", "Convertir este en el espacio actual", "将其设为当前工作区", "これを現在のワークスペースにする", "Tornar este o espaço atual", "Сделать это пространство текущим", "Diesen zum aktuellen Arbeitsbereich machen", "اجعل هذه مساحة العمل الحالية"],
+    },
+    Entry {
         key: "monitorDescCursor",
         values: &["The wheel opens on the screen the pointer is already on, so what you launch lands where you are working.", "La rueda se abre en la pantalla donde ya está el puntero, así que lo que abras aparece donde estás trabajando.", "轮盘在指针所在的屏幕上打开，你启动的东西就落在你正在工作的地方。", "ポインターのある画面にホイールが開くので、起動したものも作業中の画面に出ます。", "A roda abre na tela onde o ponteiro já está, então o que você abrir aparece onde está trabalhando.", "Колесо открывается на том экране, где уже находится указатель, поэтому запущенное появляется там, где вы работаете.", "Das Rad öffnet sich auf dem Bildschirm, auf dem der Zeiger bereits ist — Gestartetes landet dort, wo Sie arbeiten.", "تُفتح العجلة على الشاشة التي عليها المؤشر، فيظهر ما تشغّله حيث تعمل."],
     },
@@ -642,6 +854,10 @@ pub const SETTINGS: &[Entry] = &[
         values: &["Name", "Nombre", "名称", "名前", "Nome", "Название", "Name", "الاسم"],
     },
     Entry {
+        key: "nameOnWheel",
+        values: &["Name shown on the wheel", "Nombre que se muestra en la rueda", "显示在轮盘上的名称", "ホイールに表示する名前", "Nome exibido na roda", "Имя, показываемое на колесе", "Im Rad angezeigter Name", "الاسم الظاهر على العجلة"],
+    },
+    Entry {
         key: "newWorkspace",
         values: &["New workspace", "Nuevo espacio de trabajo", "新建工作区", "新しいワークスペース", "Novo espaço de trabalho", "Новое рабочее пространство", "Neuer Arbeitsbereich", "مساحة عمل جديدة"],
     },
@@ -654,6 +870,18 @@ pub const SETTINGS: &[Entry] = &[
         values: &["No applications found.", "No se encontraron aplicaciones.", "未找到应用程序。", "アプリケーションが見つかりません。", "Nenhum aplicativo encontrado.", "Приложения не найдены.", "Keine Anwendungen gefunden.", "لم يتم العثور على تطبيقات."],
     },
     Entry {
+        key: "noAutomatedCommands",
+        values: &["No automated commands configured.", "No hay comandos automatizados configurados.", "尚未配置自动执行的命令。", "自動実行するコマンドは設定されていません。", "Nenhum comando automatizado configurado.", "Автоматические команды не настроены.", "Keine automatischen Befehle eingerichtet.", "لا توجد أوامر تلقائية مُعدّة."],
+    },
+    Entry {
+        key: "noSettingsFound",
+        values: &["No settings found.", "No se han encontrado ajustes.", "未找到设置。", "設定が見つかりません。", "Nenhum ajuste encontrado.", "Настройки не найдены.", "Keine Einstellungen gefunden.", "لم يتم العثور على إعدادات."],
+    },
+    Entry {
+        key: "noneValue",
+        values: &["None", "Ninguna", "无", "なし", "Nenhuma", "Нет", "Keine", "بلا"],
+    },
+    Entry {
         key: "offValue",
         values: &["Off", "Desactivado", "关闭", "なし", "Desativado", "Выкл.", "Aus", "معطّل"],
     },
@@ -664,6 +892,18 @@ pub const SETTINGS: &[Entry] = &[
     Entry {
         key: "openAtLoginDesc",
         values: &["Start Rovyl automatically when Windows boots up.", "Abre Rovyl automáticamente al arrancar Windows.", "Windows 启动时自动运行 Rovyl。", "Windows にサインインした時点で Rovyl を使えるようにします。", "Abre o Rovyl automaticamente quando o Windows é iniciado.", "Запускать Rovyl автоматически при загрузке Windows.", "Rovyl automatisch beim Start von Windows ausführen.", "بدء تشغيل التطبيق في الخلفية تلقائياً فور إقلاع النظام."],
+    },
+    Entry {
+        key: "openColorPalette",
+        values: &["Open color palette", "Abrir la paleta de colores", "打开调色板", "カラーパレットを開く", "Abrir a paleta de cores", "Открыть палитру", "Farbpalette öffnen", "فتح لوحة الألوان"],
+    },
+    Entry {
+        key: "openTerminalRecents",
+        values: &["Open terminal for recent folders", "Abrir una terminal para las carpetas recientes", "为最近的文件夹打开终端", "最近のフォルダーでターミナルを開く", "Abrir terminal para as pastas recentes", "Открывать терминал для недавних папок", "Terminal für zuletzt genutzte Ordner öffnen", "فتح طرفية للمجلدات الحديثة"],
+    },
+    Entry {
+        key: "openTerminalRecentsDesc",
+        values: &["Starts a terminal in the selected project directory.", "Inicia una terminal en el directorio del proyecto seleccionado.", "在所选项目目录中启动一个终端。", "選んだプロジェクトのディレクトリでターミナルを起動します。", "Inicia uma terminal no diretório do projeto selecionado.", "Запускает терминал в каталоге выбранного проекта.", "Startet ein Terminal im Verzeichnis des gewählten Projekts.", "يشغّل طرفية في دليل المشروع المختار."],
     },
     Entry {
         key: "orbitalRadius",
@@ -714,6 +954,10 @@ pub const SETTINGS: &[Entry] = &[
         values: &["Choose installed applications visually. No executable names required.", "Elige aplicaciones instaladas de forma visual. No hacen falta nombres de ejecutables.", "以可视方式选择已安装的应用，无需填写可执行文件名。", "インストール済みのアプリを見ながら選べます。実行ファイル名を入力する必要はありません。", "Escolha aplicativos instalados visualmente. Sem precisar de nomes de executáveis.", "Выбирайте установленные приложения визуально. Имена исполняемых файлов не нужны.", "Installierte Anwendungen visuell auswählen. Keine Namen von ausführbaren Dateien nötig.", "اختر التطبيقات المثبّتة بصريًا. لا حاجة لأسماء الملفات التنفيذية."],
     },
     Entry {
+        key: "protectedInFullscreen",
+        values: &["Protected in fullscreen", "Protegida a pantalla completa", "全屏时受保护", "全画面時は保護", "Protegido em tela cheia", "Защищено в полноэкранном режиме", "Im Vollbild geschützt", "محميّ في ملء الشاشة"],
+    },
+    Entry {
         key: "protectionScope",
         values: &["Scope", "Alcance", "范围", "適用範囲", "Alcance", "Охват", "Geltungsbereich", "النطاق"],
     },
@@ -750,12 +994,28 @@ pub const SETTINGS: &[Entry] = &[
         values: &["This version of Windows builds its taskbar in a way no other app can take apart, so only the background can be changed here.", "Esta versión de Windows construye su barra de tareas de un modo que ninguna otra app puede desmontar, así que aquí solo se puede cambiar el fondo.", "这个版本的 Windows 构建任务栏的方式让任何其他应用都无法拆解，因此这里只能改变背景。", "このバージョンの Windows は、他のアプリが分解できない方法でタスクバーを作っているため、ここで変えられるのは背景だけです。", "Esta versão do Windows monta a barra de tarefas de um jeito que nenhum outro app consegue desmontar, então aqui só o fundo pode ser alterado.", "Эта версия Windows строит панель задач так, что её не может разобрать ни одно стороннее приложение, поэтому здесь меняется только фон.", "Diese Windows-Version baut ihre Taskleiste so, dass keine andere App sie zerlegen kann — hier lässt sich nur der Hintergrund ändern.", "يبني هذا الإصدار من Windows شريط المهام بطريقة لا يستطيع أي تطبيق آخر تفكيكها، لذا لا يمكن تغيير سوى الخلفية هنا."],
     },
     Entry {
+        key: "readingPageTitle",
+        values: &["Reading the page title…", "Leyendo el título de la página…", "正在读取页面标题…", "ページタイトルを取得中…", "Lendo o título da página…", "Читаем заголовок страницы…", "Seitentitel wird gelesen…", "جارٍ قراءة عنوان الصفحة…"],
+    },
+    Entry {
+        key: "recordNewKey",
+        values: &["Record new key", "Grabar una tecla nueva", "录制新按键", "キーを記録", "Gravar uma nova tecla", "Записать новую клавишу", "Neue Taste aufnehmen", "تسجيل مفتاح جديد"],
+    },
+    Entry {
+        key: "recordNewShortcut",
+        values: &["Record new shortcut", "Grabar un atajo nuevo", "录制新快捷键", "ショートカットを記録", "Gravar um novo atalho", "Записать новое сочетание", "Neues Kürzel aufnehmen", "تسجيل اختصار جديد"],
+    },
+    Entry {
         key: "recordShortcut",
         values: &["Record shortcut", "Grabar atajo", "录制快捷键", "ショートカットを記録", "Gravar atalho", "Записать сочетание", "Kürzel aufzeichnen", "تسجيل اختصار"],
     },
     Entry {
         key: "recording",
         values: &["Press keys or mouse button…", "Pulsa teclas o un botón del ratón…", "请按下按键或鼠标按钮…", "キーかマウスボタンを押してください…", "Pressione teclas ou um botão do mouse…", "Нажмите клавиши или кнопку мыши…", "Tasten oder Maustaste drücken…", "اضغط مفتاحاً أو زر فأرة…"],
+    },
+    Entry {
+        key: "recordingKey",
+        values: &["Press any key… (Escape to stop)", "Pulsa cualquier tecla… (Escape para parar)", "按任意键…（按 Escape 停止）", "任意のキーを押してください…（Escape で中止）", "Pressione qualquer tecla… (Escape para parar)", "Нажмите любую клавишу… (Escape — отмена)", "Beliebige Taste drücken… (Escape bricht ab)", "اضغط أي مفتاح… (Escape للإيقاف)"],
     },
     Entry {
         key: "reload",
@@ -776,6 +1036,10 @@ pub const SETTINGS: &[Entry] = &[
     Entry {
         key: "resetDesc",
         values: &["Restore all configurations to their default values.", "Devuelve toda la configuración a sus valores predeterminados.", "将所有配置恢复为默认值。", "すべての設定を初期値に戻します。", "Restaura todas as configurações para os valores padrão.", "Вернуть все параметры к значениям по умолчанию.", "Setzt alle Einstellungen auf die Standardwerte zurück.", "استعادة جميع الإعدادات إلى القيم الافتراضية الأصلية."],
+    },
+    Entry {
+        key: "resetToDefault",
+        values: &["Reset to default", "Restablecer el valor por defecto", "恢复默认值", "初期値に戻す", "Restaurar o padrão", "Вернуть значение по умолчанию", "Auf Standard zurücksetzen", "إعادة التعيين إلى الافتراضي"],
     },
     Entry {
         key: "restoreAction",
@@ -810,6 +1074,10 @@ pub const SETTINGS: &[Entry] = &[
         values: &["Save", "Guardar", "保存", "保存", "Salvar", "Сохранить", "Speichern", "حفظ"],
     },
     Entry {
+        key: "scanningStartMenu",
+        values: &["Looking through your Start menu…", "Revisando tu menú Inicio…", "正在查看你的开始菜单…", "スタートメニューを調べています…", "Vasculhando seu menu Iniciar…", "Просматриваем меню «Пуск»…", "Ihr Startmenü wird durchgesehen…", "جارٍ تصفّح قائمة ابدأ…"],
+    },
+    Entry {
         key: "scopeAll",
         values: &["All", "Todas", "全部", "すべて", "Todos", "Все", "Alle", "الكل"],
     },
@@ -828,6 +1096,10 @@ pub const SETTINGS: &[Entry] = &[
     Entry {
         key: "selectAll",
         values: &["Select all", "Seleccionar todo", "全选", "すべて選択", "Selecionar tudo", "Выбрать все", "Alle auswählen", "تحديد الكل"],
+    },
+    Entry {
+        key: "selectedApplications",
+        values: &["Selected applications", "Aplicaciones seleccionadas", "已选应用", "選択したアプリ", "Aplicativos selecionados", "Выбранные приложения", "Ausgewählte Anwendungen", "التطبيقات المختارة"],
     },
     Entry {
         key: "selectedCount",
@@ -870,6 +1142,14 @@ pub const SETTINGS: &[Entry] = &[
         values: &["Settings button on the wheel", "Botón de ajustes en la rueda", "轮盘上的设置按钮", "ホイール上の設定ボタン", "Botão de ajustes na roda", "Кнопка настроек на колесе", "Einstellungen-Schaltfläche im Rad", "زر الإعدادات على العجلة"],
     },
     Entry {
+        key: "settingsSections",
+        values: &["Settings sections", "Secciones de ajustes", "设置分区", "設定のセクション", "Seções de ajustes", "Разделы настроек", "Einstellungsbereiche", "أقسام الإعدادات"],
+    },
+    Entry {
+        key: "settingsWindowLabel",
+        values: &["Rovyl Settings", "Ajustes de Rovyl", "Rovyl 设置", "Rovyl の設定", "Ajustes do Rovyl", "Настройки Rovyl", "Rovyl-Einstellungen", "إعدادات Rovyl"],
+    },
+    Entry {
         key: "shortcutBehavior",
         values: &["Shortcut behavior", "Comportamiento del atajo", "快捷键行为", "ショートカットの挙動", "Comportamento do atalho", "Поведение сочетания клавиш", "Verhalten des Tastenkürzels", "سلوك اختصار الكيبورد"],
     },
@@ -908,6 +1188,18 @@ pub const SETTINGS: &[Entry] = &[
     Entry {
         key: "showNumbersDesc",
         values: &["Draws each position’s digit on its icon. Turn it off once the wheel is in your hands — the keys go on working.", "Dibuja el dígito de cada posición sobre su icono. Desactívalo cuando ya domines la rueda: las teclas siguen funcionando.", "在每个图标上绘制其位置的数字。等你熟悉轮盘后可以关掉——按键依然有效。", "各位置の数字をアイコンの上に描きます。ホイールに慣れたら切って構いません。キーはそのまま使えます。", "Desenha o dígito de cada posição sobre o ícone. Desligue quando a roda já estiver na mão — as teclas continuam funcionando.", "Рисует цифру позиции на её значке. Отключите, когда привыкнете к колесу, — клавиши продолжат работать.", "Zeichnet die Ziffer jeder Position auf ihr Symbol. Schalten Sie es aus, sobald das Rad sitzt — die Tasten funktionieren weiter.", "يرسم رقم كل موضع على أيقونته. أوقفه بعد أن تعتاد العجلة — تبقى المفاتيح تعمل."],
+    },
+    Entry {
+        key: "showRecentFolders",
+        values: &["Show recent folders", "Mostrar las carpetas recientes", "显示最近的文件夹", "最近のフォルダーを表示", "Mostrar as pastas recentes", "Показывать недавние папки", "Zuletzt genutzte Ordner zeigen", "إظهار المجلدات الحديثة"],
+    },
+    Entry {
+        key: "showRecentFoldersDesc",
+        values: &["Open the IDE as a submenu containing its recent projects.", "Abre el IDE como un submenú con sus proyectos recientes.", "将 IDE 作为包含其最近项目的子菜单打开。", "IDE を、最近のプロジェクトを並べたサブメニューとして開きます。", "Abre a IDE como um submenu com seus projetos recentes.", "Открывает IDE как подменю с её недавними проектами.", "Öffnet die IDE als Untermenü mit ihren letzten Projekten.", "يفتح بيئة التطوير كقائمة فرعية تضم مشاريعها الحديثة."],
+    },
+    Entry {
+        key: "shownOnWheel",
+        values: &["Shown on the wheel", "Se muestra en la rueda", "显示在轮盘上", "ホイールに表示されます", "Exibido na roda", "Показывается на колесе", "Wird im Rad angezeigt", "يظهر على العجلة"],
     },
     Entry {
         key: "singleSelect",
@@ -1018,6 +1310,34 @@ pub const SETTINGS: &[Entry] = &[
         values: &["White", "Blanco", "白色", "ホワイト", "Branco", "Белая", "Weiß", "أبيض"],
     },
     Entry {
+        key: "thisFolder",
+        values: &["this folder", "esta carpeta", "这个文件夹", "このフォルダー", "esta pasta", "эта папка", "diesen Ordner", "هذا المجلد"],
+    },
+    Entry {
+        key: "thisShortcut",
+        values: &["this shortcut", "este acceso directo", "此快捷方式", "このショートカット", "este atalho", "этот ярлык", "diese Verknüpfung", "هذا الاختصار"],
+    },
+    Entry {
+        key: "toastDeleted",
+        values: &["Deleted “{name}”", "Se ha eliminado «{name}»", "已删除「{name}」", "「{name}」を削除しました", "“{name}” foi excluído", "«{name}» удалено", "„{name}“ gelöscht", "تم حذف «{name}»"],
+    },
+    Entry {
+        key: "toastDeletedWithMany",
+        values: &["Deleted “{name}” and {count} shortcuts", "Se ha eliminado «{name}» y {count} accesos", "已删除「{name}」及其 {count} 个快捷方式", "「{name}」とショートカット {count} 件を削除しました", "“{name}” e {count} atalhos foram excluídos", "Удалено «{name}» и ярлыков: {count}", "„{name}“ und {count} Verknüpfungen gelöscht", "تم حذف «{name}» و{count} اختصارات"],
+    },
+    Entry {
+        key: "toastDeletedWithOne",
+        values: &["Deleted “{name}” and {count} shortcut", "Se ha eliminado «{name}» y {count} acceso", "已删除「{name}」及其 {count} 个快捷方式", "「{name}」とショートカット {count} 件を削除しました", "“{name}” e {count} atalho foram excluídos", "Удалено «{name}» и {count} ярлык", "„{name}“ und {count} Verknüpfung gelöscht", "تم حذف «{name}» و{count} اختصار"],
+    },
+    Entry {
+        key: "toastKeepOneWorkspace",
+        values: &["Keep at least one workspace", "Conserva al menos un espacio", "至少保留一个工作区", "ワークスペースは1つ以上必要です", "Mantenha pelo menos um espaço", "Оставьте хотя бы одно пространство", "Mindestens ein Arbeitsbereich muss bleiben", "أبقِ مساحة عمل واحدة على الأقل"],
+    },
+    Entry {
+        key: "toastWorkspaceCreated",
+        values: &["Workspace created", "Espacio creado", "工作区已创建", "ワークスペースを作成しました", "Espaço criado", "Рабочее пространство создано", "Arbeitsbereich erstellt", "تم إنشاء مساحة العمل"],
+    },
+    Entry {
         key: "trigger",
         values: &["Activation", "Activación", "激活方式", "呼び出し", "Ativação", "Активация", "Aktivierung", "التفعيل والتشغيل"],
     },
@@ -1036,6 +1356,10 @@ pub const SETTINGS: &[Entry] = &[
     Entry {
         key: "tryAgain",
         values: &["Try again", "Reintentar", "重试", "もう一度試す", "Tentar novamente", "Повторить", "Erneut versuchen", "حاول مجدداً"],
+    },
+    Entry {
+        key: "undo",
+        values: &["Undo", "Deshacer", "撤销", "元に戻す", "Desfazer", "Отменить", "Rückgängig", "تراجع"],
     },
     Entry {
         key: "updateCheck",
@@ -1126,6 +1450,10 @@ pub const SETTINGS: &[Entry] = &[
         values: &["Weather", "Tiempo", "天气", "天気", "Clima", "Погода", "Wetter", "الطقس"],
     },
     Entry {
+        key: "websiteIcon",
+        values: &["Website icon", "Icono del sitio", "网站图标", "サイトのアイコン", "Ícone do site", "Значок сайта", "Website-Symbol", "أيقونة الموقع"],
+    },
+    Entry {
         key: "wheel",
         values: &["Wheel", "Rueda", "轮盘", "ホイール", "Roda", "Колесо", "Rad", "العجلة"],
     },
@@ -1150,8 +1478,24 @@ pub const SETTINGS: &[Entry] = &[
         values: &["Where the gear sits. It steps inboard if the battery or weather pill is already there.", "Dónde se sitúa el engranaje. Se desplaza hacia dentro si la píldora de batería o de clima ya está ahí.", "齿轮所在的位置。如果电池或天气胶囊已经在那里，它会向内让开。", "歯車を置く位置。バッテリーや天気の表示が先にある場合は内側にずれます。", "Onde a engrenagem fica. Ela se desloca para dentro se a pílula de bateria ou clima já estiver ali.", "Где находится шестерёнка. Она сдвигается внутрь, если там уже стоит индикатор батареи или погоды.", "Wo das Zahnrad sitzt. Es rückt nach innen, wenn dort schon die Akku- oder Wetteranzeige ist.", "موضع التُرس. ينزاح إلى الداخل إذا كانت كبسولة البطارية أو الطقس هناك بالفعل."],
     },
     Entry {
+        key: "workspaceEmpty",
+        values: &["This workspace is empty", "Este espacio está vacío", "这个工作区是空的", "このワークスペースは空です", "Este espaço está vazio", "Это пространство пусто", "Dieser Arbeitsbereich ist leer", "مساحة العمل هذه فارغة"],
+    },
+    Entry {
+        key: "workspaceEmptyDesc",
+        values: &["Add an application, URL, folder, file, or command above — or drag one in from anywhere in Windows.", "Añade arriba una aplicación, una URL, una carpeta, un archivo o un comando — o arrastra uno desde cualquier lugar de Windows.", "在上方添加应用程序、网址、文件夹、文件或命令——也可以从 Windows 的任何位置拖入。", "上からアプリケーション・URL・フォルダー・ファイル・コマンドを追加するか、Windows のどこからでもドラッグして入れてください。", "Adicione acima um aplicativo, URL, pasta, arquivo ou comando — ou arraste um de qualquer lugar do Windows.", "Добавьте выше приложение, URL, папку, файл или команду — или перетащите что-нибудь откуда угодно в Windows.", "Fügen Sie oben eine Anwendung, URL, einen Ordner, eine Datei oder einen Befehl hinzu — oder ziehen Sie etwas von überall aus Windows herein.", "أضف من الأعلى تطبيقًا أو رابطًا أو مجلدًا أو ملفًا أو أمرًا — أو اسحب أيًّا منها من أي مكان في Windows."],
+    },
+    Entry {
         key: "workspaceHotkeyDesc",
         values: &["Key {key}", "Tecla {key}", "按键 {key}", "{key} キー", "Tecla {key}", "Клавиша {key}", "Taste {key}", "المفتاح {key}"],
+    },
+    Entry {
+        key: "workspaceIcon",
+        values: &["Workspace icon", "Icono del espacio", "工作区图标", "ワークスペースのアイコン", "Ícone do espaço", "Значок рабочего пространства", "Arbeitsbereich-Symbol", "أيقونة مساحة العمل"],
+    },
+    Entry {
+        key: "workspaceIconHint",
+        values: &["Shown in the wheel picker, and on the workspace card.", "Se muestra en el selector de la rueda y en la tarjeta del espacio.", "显示在轮盘选择器和工作区卡片上。", "ホイールの選択画面と、ワークスペースのカードに表示されます。", "Aparece no seletor da roda e no cartão do espaço.", "Показывается в выборе на колесе и на карточке пространства.", "Erscheint in der Auswahl im Rad und auf der Arbeitsbereichskarte.", "يظهر في مُحدِّد العجلة وعلى بطاقة مساحة العمل."],
     },
     Entry {
         key: "workspaceName",
@@ -1160,6 +1504,10 @@ pub const SETTINGS: &[Entry] = &[
     Entry {
         key: "workspacePickerDesc",
         values: &["Picker / mouse wheel", "Selector / rueda del ratón", "选择器 / 鼠标滚轮", "選択画面 / マウスホイール", "Seletor / roda do mouse", "Выбор / колесо мыши", "Auswahl / Mausrad", "المُحدِّد / عجلة الفأرة"],
+    },
+    Entry {
+        key: "workspacePreviewEmpty",
+        values: &["empty", "vacío", "空", "空", "vazio", "пусто", "leer", "فارغ"],
     },
     Entry {
         key: "workspaceSwitchKeys",
