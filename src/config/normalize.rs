@@ -271,9 +271,9 @@ pub fn clamp_dwell_ms(value: Option<&Value>) -> f32 {
     }
 }
 
-/// The languages that have a table. `fr`, `it`, `ja` and `ko` are named in old configs and have
-/// none, so a config carrying one still lands on English.
-const SUPPORTED_LANGUAGES: &[&str] = &["en", "es", "zh", "pt", "ru", "de", "ar"];
+/// The languages that have a table. `fr`, `it` and `ko` are named in old configs and have none,
+/// so a config carrying one still lands on English.
+const SUPPORTED_LANGUAGES: &[&str] = &["en", "es", "zh", "ja", "pt", "ru", "de", "ar"];
 
 pub fn normalize_language(value: &str) -> String {
     if SUPPORTED_LANGUAGES.contains(&value) {

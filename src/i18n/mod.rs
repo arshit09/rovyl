@@ -25,6 +25,7 @@ pub const LANGUAGES: &[Language] = &[
     Language { code: "en", endonym: "English", english: "English", rtl: false },
     Language { code: "es", endonym: "Español", english: "Spanish", rtl: false },
     Language { code: "zh", endonym: "简体中文", english: "Chinese (Simplified)", rtl: false },
+    Language { code: "ja", endonym: "日本語", english: "Japanese", rtl: false },
     Language { code: "pt", endonym: "Português", english: "Portuguese", rtl: false },
     Language { code: "ru", endonym: "Русский", english: "Russian", rtl: false },
     Language { code: "de", endonym: "Deutsch", english: "German", rtl: false },
@@ -38,7 +39,7 @@ pub fn is_supported(code: &str) -> bool {
 }
 
 /// A stored `config.language` is whatever some earlier build wrote there — and older configs name
-/// four locales that have no table (`fr`, `it`, `ja`, `ko`), so every read goes through here.
+/// three locales that have no table (`fr`, `it`, `ko`), so every read goes through here.
 pub fn normalize(code: &str) -> &'static str {
     LANGUAGES
         .iter()
@@ -76,11 +77,12 @@ mod tests {
 
     #[test]
     fn retired_locales_fall_back() {
-        // `fr`, `it`, `ja` and `ko` are named by old configs and have no table.
-        for code in ["fr", "it", "ja", "ko", "", "nonsense"] {
+        // `fr`, `it` and `ko` are named by old configs and have no table.
+        for code in ["fr", "it", "ko", "", "nonsense"] {
             assert_eq!(normalize(code), "en", "{code}");
         }
         assert_eq!(normalize("ru"), "ru");
+        assert_eq!(normalize("ja"), "ja");
     }
 
     #[test]
