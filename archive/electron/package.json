@@ -52,6 +52,7 @@
     "test:mouse-trigger": "node scripts/mouse-trigger-smoke.mjs",
     "test:workspace-key": "node scripts/workspace-key-smoke.mjs",
     "test:i18n": "node scripts/i18n-smoke.mjs",
+    "test:wheel-i18n": "node scripts/wheel-i18n-smoke.mjs",
     "test:select-menu": "node scripts/select-menu-smoke.mjs",
     "test:window-split": "node scripts/window-split-smoke.mjs",
     "test:trigger-gesture": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/trigger-gesture-smoke.ps1",

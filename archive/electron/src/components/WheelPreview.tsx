@@ -20,7 +20,7 @@ import {
 import { radialScrimGradient } from '../utils/radialScrim';
 import { getIcon } from '../iconMap';
 import { SmartIcon } from './SmartIcon';
-import { uiString } from '../strings';
+import { useTranslation } from '../i18n/useTranslation';
 import type { AppItem, UIConfig } from '../types';
 
 /**
@@ -80,6 +80,7 @@ export const PLACEHOLDERS: AppItem[] = Array.from({ length: 6 }, (_, index) => (
 }));
 
 export const WheelPreview: React.FC<{ config: UIConfig; apps: AppItem[] }> = ({ config, apps }) => {
+  const { t } = useTranslation(config.language);
   const isPlaceholder = apps.length === 0;
   const items = isPlaceholder ? PLACEHOLDERS : apps;
 
@@ -91,7 +92,7 @@ export const WheelPreview: React.FC<{ config: UIConfig; apps: AppItem[] }> = ({ 
   const showPill = config.showWorkspacePill !== false;
   /** The workspace whose shortcuts are drawn, so the pill names the wheel on screen. */
   const pillName = config.workspaces[config.activeWorkspaceIndex]?.name || 'Rovyl';
-  const pillHint = config.centerButton?.label || uiString('menu.center');
+  const pillHint = config.centerButton?.label || t('center');
 
   const { actualMenuRadius, actualIconSize } = useMemo(
     () =>

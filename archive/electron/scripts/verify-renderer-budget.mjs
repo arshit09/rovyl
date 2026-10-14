@@ -24,8 +24,10 @@
  * leaves the specifier verbatim and exits 0, shipping a stylesheet that 404s. So the fonts are
  * checked from both ends: nothing extra, and nothing missing.
  *
- * Lastly it guards where the locale tables live — not whether they exist. They are allowed to ship
- * now that there is a picker; they are not allowed in front of first paint.
+ * Lastly it guards where translated text lives — not whether it exists. The settings tables are
+ * allowed to ship now that there is a picker; they are not allowed in front of first paint. The
+ * wheel's own packs are guarded from both sides, because there the English one MUST be in front of
+ * first paint: it is what the first frame draws with while the configured language is fetched.
  *
  * Raise the budgets deliberately when a real feature needs the room — never to make a build pass.
  */
@@ -127,6 +129,31 @@ const LOCALES_THAT_MUST_STAY_LAZY = {
   German: "Einstellungen durchsuchen",
   Arabic: "البحث في الإعدادات",
 };
+
+/**
+ * The wheel's own packs (`src/i18n/wheel/`), which follow the same rule from the other direction.
+ *
+ * `menuNoMatches` in each language, chosen because none of these phrases appears anywhere else in
+ * `src/` — the settings tables say "no results" differently, so a hit here means the PACK shipped,
+ * not that a translator happened to reuse a word.
+ */
+const WHEEL_PACKS_THAT_MUST_STAY_LAZY = {
+  Spanish: "sin coincidencias",
+  Chinese: "没有匹配项",
+  Japanese: "該当なし",
+  Portuguese: "sem resultados",
+  Russian: "нет совпадений",
+  German: "keine Treffer",
+  Arabic: "لا نتائج",
+};
+
+/**
+ * And the half that is the opposite of everything else in this file: the ENGLISH pack has to BE in
+ * the critical path. It is the synchronous default the wheel's first frame paints from, so a build
+ * where it went lazy would open an unlabelled wheel and fill the words in afterwards — which is the
+ * behaviour the whole split exists to prevent.
+ */
+const WHEEL_DEFAULT_PROBE = "Push toward a target to open it";
 
 const problems = [];
 
@@ -251,6 +278,30 @@ if (missingLocales.length) {
   );
 }
 
+const wheelPacksInCriticalPath = Object.entries(WHEEL_PACKS_THAT_MUST_STAY_LAZY)
+  .filter(([, probe]) => criticalSources.some((source) => source.includes(probe)))
+  .map(([language]) => language);
+if (wheelPacksInCriticalPath.length) {
+  problems.push(
+    `wheel string packs are in the critical path (${wheelPacksInCriticalPath.join(", ")}) — something statically imports src/i18n/wheel/<code>.ts, most likely a template specifier like import(\`./\${lang}\`) in src/i18n/wheel/index.ts, which makes rollup emit every pack as a sibling of the entry`,
+  );
+}
+
+const missingWheelPacks = Object.entries(WHEEL_PACKS_THAT_MUST_STAY_LAZY)
+  .filter(([, probe]) => !bundleSources.some((source) => source.includes(probe)))
+  .map(([language]) => language);
+if (missingWheelPacks.length) {
+  problems.push(
+    `wheel string packs were not emitted at all (${missingWheelPacks.join(", ")}) — src/i18n/wheel lost a pack, or a probe string in this file no longer matches it`,
+  );
+}
+
+if (!criticalSources.some((source) => source.includes(WHEEL_DEFAULT_PROBE))) {
+  problems.push(
+    "the English wheel pack is no longer in the critical path — the wheel's first frame has no text to paint until a chunk arrives; src/i18n/wheel/en.ts must stay a static import",
+  );
+}
+
 if (totalIcons > MAX_CRITICAL_ICONS) {
   problems.push(
     `${totalIcons} Lucide glyphs are in the critical path (${iconsByChunk.join(", ")}), over the ${MAX_CRITICAL_ICONS} allowed — keep the barrel out of the static graph and add wheel glyphs to CURATED_ICON_MAP one at a time`,
@@ -360,5 +411,5 @@ if (problems.length) {
 }
 
 console.log(
-  `verify-renderer-budget: OK (radial.html ${(totalBytes / 1024).toFixed(1)} kB critical JS in ${uniqueScripts.length} chunks, ${totalIcons} Lucide glyphs, ${(fontBytes / 1024).toFixed(1)} kB fonts in ${fontFiles.length} files, ${Object.keys(LOCALES_THAT_MUST_STAY_LAZY).length + 1} locales all lazy)`,
+  `verify-renderer-budget: OK (radial.html ${(totalBytes / 1024).toFixed(1)} kB critical JS in ${uniqueScripts.length} chunks, ${totalIcons} Lucide glyphs, ${(fontBytes / 1024).toFixed(1)} kB fonts in ${fontFiles.length} files, ${Object.keys(LOCALES_THAT_MUST_STAY_LAZY).length + 1} locales all lazy, ${Object.keys(WHEEL_PACKS_THAT_MUST_STAY_LAZY).length} wheel packs lazy over an English default)`,
 );

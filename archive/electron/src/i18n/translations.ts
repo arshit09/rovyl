@@ -345,6 +345,10 @@ export const translations = {
     visibleWedgesDesc: 'Draws the seams between the shares and fills the one you are aiming at with the hover color. Off, the aim is identical and only the icon lights up.',
     soundVolumeRow: 'Volume',
     soundVolumeDesc: 'How loud both sounds play. Windows volume still applies on top.',
+    // Icon picker
+    iconPickerSearch: 'Search icons…',
+    iconPickerKeywordsHint: 'Tip: English words (work, time, home…) also surface related icons by meaning, not only by name.',
+    iconPickerNoResults: 'No icons found.',
   },
 
   es: {
@@ -663,6 +667,10 @@ export const translations = {
     visibleWedgesDesc: 'Dibuja las costuras entre las porciones y rellena aquella a la que apuntas con el color de resalte. Desactivado, la puntería es idéntica y solo se ilumina el icono.',
     soundVolumeRow: 'Volumen',
     soundVolumeDesc: 'El volumen de ambos sonidos. El volumen de Windows se aplica además de este.',
+    // Icon picker
+    iconPickerSearch: 'Buscar iconos…',
+    iconPickerKeywordsHint: 'Consejo: las palabras en inglés (work, time, home…) también muestran iconos relacionados por significado, no solo por nombre.',
+    iconPickerNoResults: 'No se han encontrado iconos.',
   },
 
   zh: {
@@ -981,6 +989,10 @@ export const translations = {
     visibleWedgesDesc: '画出各份之间的接缝，并用悬停色填充你所指向的那一份。关闭时瞄准方式完全相同，只有图标会亮起。',
     soundVolumeRow: '音量',
     soundVolumeDesc: '两种提示音的音量。Windows 的音量仍会叠加在其之上。',
+    // Icon picker
+    iconPickerSearch: '搜索图标…',
+    iconPickerKeywordsHint: '提示：英文词（work、time、home…）也能按含义找出相关图标，而不只是按名称匹配。',
+    iconPickerNoResults: '未找到图标。',
   },
 
   ja: {
@@ -1300,6 +1312,10 @@ export const translations = {
     visibleWedgesDesc: '取り分の境目を描き、狙っている扇形をホバー色で塗ります。オフでも狙いは変わらず、アイコンだけが光ります。',
     soundVolumeRow: '音量',
     soundVolumeDesc: '2つの音の大きさ。この上に Windows 側の音量もかかります。',
+    // Icon picker
+    iconPickerSearch: 'アイコンを検索…',
+    iconPickerKeywordsHint: 'ヒント：英単語（work、time、home…）でも、名前だけでなく意味の近いアイコンが出てきます。',
+    iconPickerNoResults: 'アイコンが見つかりません。',
   },
 
   pt: {
@@ -1618,6 +1634,10 @@ export const translations = {
     visibleWedgesDesc: 'Desenha as junções entre as fatias e preenche aquela para a qual você aponta com a cor de destaque. Desligado, a mira é idêntica e só o ícone acende.',
     soundVolumeRow: 'Volume',
     soundVolumeDesc: 'O volume dos dois sons. O volume do Windows ainda se aplica por cima.',
+    // Icon picker
+    iconPickerSearch: 'Buscar ícones…',
+    iconPickerKeywordsHint: 'Dica: palavras em inglês (work, time, home…) também trazem ícones relacionados por significado, não só por nome.',
+    iconPickerNoResults: 'Nenhum ícone encontrado.',
   },
 
   ru: {
@@ -1936,6 +1956,10 @@ export const translations = {
     visibleWedgesDesc: 'Рисует швы между долями и заливает ту, на которую вы наводите, цветом подсветки. Выключено — прицеливание то же, светится только значок.',
     soundVolumeRow: 'Громкость',
     soundVolumeDesc: 'Громкость обоих звуков. Громкость Windows применяется поверх неё.',
+    // Icon picker
+    iconPickerSearch: 'Поиск значков…',
+    iconPickerKeywordsHint: 'Подсказка: английские слова (work, time, home…) тоже находят значки по смыслу, а не только по названию.',
+    iconPickerNoResults: 'Значки не найдены.',
   },
 
   de: {
@@ -2254,6 +2278,10 @@ export const translations = {
     visibleWedgesDesc: 'Zeichnet die Nähte zwischen den Anteilen und füllt den anvisierten mit der Hover-Farbe. Aus bleibt das Zielen identisch, und nur das Symbol leuchtet auf.',
     soundVolumeRow: 'Lautstärke',
     soundVolumeDesc: 'Wie laut beide Töne spielen. Die Windows-Lautstärke wirkt zusätzlich darauf.',
+    // Icon picker
+    iconPickerSearch: 'Symbole suchen…',
+    iconPickerKeywordsHint: 'Tipp: Englische Wörter (work, time, home…) finden passende Symbole auch nach Bedeutung, nicht nur nach Namen.',
+    iconPickerNoResults: 'Keine Symbole gefunden.',
   },
 
   ar: {
@@ -2571,6 +2599,10 @@ export const translations = {
     visibleWedgesDesc: 'يرسم الحدود بين الحصص ويملأ الحصة التي تصوّب إليها بلون التحويم. عند الإيقاف يبقى التصويب كما هو، ويضيء الرمز وحده.',
     soundVolumeRow: 'مستوى الصوت',
     soundVolumeDesc: 'مدى ارتفاع الصوتين. ويظل مستوى صوت Windows ساريًا فوق ذلك.',
+    // Icon picker
+    iconPickerSearch: 'البحث عن أيقونات…',
+    iconPickerKeywordsHint: 'تلميح: الكلمات الإنجليزية (work، time، home…) تُظهر أيضًا أيقونات مرتبطة بالمعنى، لا بالاسم فقط.',
+    iconPickerNoResults: 'لم يتم العثور على أيقونات.',
   },
 } as const;
 

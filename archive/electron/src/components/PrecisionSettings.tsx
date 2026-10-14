@@ -3835,6 +3835,7 @@ function IconPickerModal({
   titleId,
   title,
   hint,
+  language,
   selectedIcon,
   picture,
   canReset,
@@ -3846,6 +3847,7 @@ function IconPickerModal({
   titleId: string;
   title: string;
   hint: string;
+  language?: string;
   /** The glyph name in force — never empty; with a picture in force it is only the fallback. */
   selectedIcon: string;
   picture: PictureInForce | null;
@@ -3933,7 +3935,7 @@ function IconPickerModal({
         <div className="zs-icon-modal-body" role="tabpanel">
           {tab === 'glyph' ? (
             /** No cell lit while a picture is drawn: the glyph is not what the wheel shows. */
-            <IconPicker selectedIcon={picture ? '' : selectedIcon} onSelect={onSelect} />
+            <IconPicker selectedIcon={picture ? '' : selectedIcon} language={language} onSelect={onSelect} />
           ) : (
             <CustomIconPanel current={picture?.custom ? picture : null} onPick={onPicture} />
           )}
@@ -5001,6 +5003,7 @@ function WorkspaceManager({
           <IconPickerModal
             key="workspace-icon"
             titleId="ws-icon-modal-title"
+            language={language}
             title="Workspace icon"
             hint="Shown in the wheel picker, and on the workspace card."
             selectedIcon={workspace.pickerIconName?.trim() || 'Layers'}
@@ -5032,6 +5035,7 @@ function WorkspaceManager({
           <IconPickerModal
             key="item-icon"
             titleId="item-icon-modal-title"
+            language={language}
             title={itemIconModalTitle(iconEditItem)}
             hint={`Shown on the wheel for “${iconEditItem.label || 'this shortcut'}”.`}
             selectedIcon={itemFallbackIcon(iconEditItem)}
