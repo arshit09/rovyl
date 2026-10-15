@@ -58,6 +58,15 @@ pub struct Frame<'a> {
 /// mouse hook, so a cache miss returns `None` and the glyph is drawn until the real icon arrives.
 pub trait IconSource2 {
     fn bitmap(&self, reference: &str) -> Option<ID2D1Bitmap1>;
+    /// The copy best suited to being drawn `pixels` device pixels wide.
+    ///
+    /// The wheel draws with linear filtering, which reads only the four texels nearest each output
+    /// pixel: a 256px icon squeezed into a 60px tile skips most of its picture and comes out
+    /// pixelated. A source that keeps smaller copies hands back the one that is only just larger
+    /// than the tile, where linear has nothing left to skip.
+    fn bitmap_sized(&self, reference: &str, _pixels: f32) -> Option<ID2D1Bitmap1> {
+        self.bitmap(reference)
+    }
     /// Whether this reference is being fetched, so a tile can show a wait rather than a wrong icon.
     fn pending(&self, reference: &str) -> bool;
 }
@@ -643,11 +652,10 @@ fn draw_item_art(
     // A bitmap icon fills most of the tile; a glyph is drawn much smaller, because a stroked
     // outline at the same size as a full-colour app icon reads as oversized.
     if let Some(reference) = item.custom_icon_url.as_deref() {
-        if let Some(bitmap) = frame.icons.bitmap(reference) {
-            // 0.88 of the tile, which is the reference scale the original's `SmartIcon` uses: an
-            // extracted icon usually has its own margin, and filling the plate edge to edge makes
-            // the ones that do not look cropped.
-            let art = size * 0.88;
+        // 0.76 of the tile: an extracted icon usually has its own margin, and filling the plate
+        // edge to edge makes the ones that do not look cropped and the whole ring look crowded.
+        let art = size * 0.76;
+        if let Some(bitmap) = frame.icons.bitmap_sized(reference, art * p.pixels_per_dip()) {
             p.bitmap_rounded(
                 Rect::centred(center.0, center.1, art, art),
                 &bitmap,

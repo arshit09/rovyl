@@ -483,7 +483,7 @@ fn draw_shortcuts(
         let drawn = item
             .custom_icon_url
             .as_deref()
-            .and_then(|reference| frame.icons.bitmap(reference));
+            .and_then(|reference| frame.icons.bitmap_sized(reference, icon * p.pixels_per_dip()));
         match drawn {
             Some(bitmap) => p.bitmap_rounded(art, &bitmap, opacity, 6.0 * s),
             None => p.glyph(

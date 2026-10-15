@@ -176,6 +176,13 @@ impl<'a> Painter<'a> {
         &self.gpu.d2d
     }
 
+    /// How many device pixels one DIP covers on the current target.
+    pub fn pixels_per_dip(&self) -> f32 {
+        let (mut x, mut y) = (96.0, 96.0);
+        unsafe { self.ctx().GetDpi(&mut x, &mut y) };
+        (x / 96.0).max(0.25)
+    }
+
     fn brush(&self, color: D2D1_COLOR_F) -> &ID2D1SolidColorBrush {
         unsafe { self.solid.SetColor(&color) };
         &self.solid
