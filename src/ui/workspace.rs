@@ -499,6 +499,8 @@ fn dialog_open(
     f.modal = true;
     let screen = f.window;
     f.p.fill_rect(screen, f.theme.scrim);
+    // The panel itself is placed below the titlebar — see `Frame::stage`.
+    let stage = f.stage();
 
     // The header's height comes from the type in it, so a translation that wraps the subtitle is
     // not a subtitle drawn over the first row of the body.
@@ -515,8 +517,8 @@ fn dialog_open(
     // what is in the body is only known once it has been drawn. It settles on the frame after the
     // dialog opens, and `dialog_close` asks for that frame.
     let margin = f.px(DIALOG_MARGIN);
-    let width = f.px(DIALOG_W).min(screen.width() - margin * 2.0);
-    let ceiling = f.px(DIALOG_H).min(screen.height() - margin * 2.0);
+    let width = f.px(DIALOG_W).min(stage.width() - margin * 2.0);
+    let ceiling = f.px(DIALOG_H).min(stage.height() - margin * 2.0);
     let wanted = if state.editor_height > 0.0 { state.editor_height } else { opening };
     // A filled body takes the ceiling outright. Measuring it would be measuring an editor, whose
     // height is the height of the file in it — so the panel would grow by a line every time a line
@@ -526,7 +528,7 @@ fn dialog_open(
     } else {
         (chrome + wanted).clamp(chrome.min(ceiling), ceiling)
     };
-    let panel = Rect::centred(screen.center().0, screen.center().1, width, height);
+    let panel = Rect::centred(stage.center().0, stage.center().1, width, height);
     w::shadow_panel(f, panel);
 
     let pad = f.px(DIALOG_PAD);
@@ -609,8 +611,7 @@ fn dialog_open(
     // A press on the scrim closes it, as it does in the original. The titlebar is carved out: it
     // is where the window is dragged from and where its three buttons are, and losing an open
     // editor because the window was moved is not what anybody meant by clicking outside.
-    let scrim_top = screen.top + f.px(crate::win::settings::TITLEBAR_H);
-    let on_scrim = f.input.pointer.1 >= scrim_top
+    let on_scrim = f.input.pointer.1 >= stage.top
         && screen.contains(f.input.pointer.0, f.input.pointer.1)
         && !panel.contains(f.input.pointer.0, f.input.pointer.1);
     if f.input.pressed && state.icon_picker.is_none() && on_scrim {
@@ -1096,17 +1097,13 @@ fn icon_picker_body(
 
     // Over the whole window, not over the column: a modal that leaves the nav clickable is a
     // modal that can be navigated out from underneath.
-    let screen = f.window;
-    f.p.fill_rect(screen, f.theme.scrim);
+    f.p.fill_rect(f.window, f.theme.scrim);
 
-    let width = f.px(520.0).min(screen.width() - f.px(48.0));
-    let height = f.px(440.0).min(screen.height() - f.px(48.0));
-    let panel = Rect::new(
-        screen.center().0 - width / 2.0,
-        screen.center().1 - height / 2.0,
-        screen.center().0 + width / 2.0,
-        screen.center().1 + height / 2.0,
-    );
+    // Placed below the titlebar, for the reason the dialog is — see `Frame::stage`.
+    let stage = f.stage();
+    let width = f.px(520.0).min(stage.width() - f.px(48.0));
+    let height = f.px(440.0).min(stage.height() - f.px(48.0));
+    let panel = Rect::centred(stage.center().0, stage.center().1, width, height);
     w::shadow_panel(f, panel);
 
     let (title, hint) = match &target {

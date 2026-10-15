@@ -572,6 +572,16 @@ impl<'a, 'p> Frame<'a, 'p> {
         dips * self.scale
     }
 
+    /// The window below the settings titlebar: where a modal's panel is placed and measured.
+    ///
+    /// The scrim still covers the whole `window`, but the panel stays out of the bar. The window
+    /// buttons are drawn after everything else, so a panel tall enough to reach up into the bar
+    /// has the maximise and close buttons painted over its corner.
+    pub fn stage(&self) -> Rect {
+        let bar = self.px(crate::win::settings::TITLEBAR_H).min(self.window.height());
+        Rect::new(self.window.left, self.window.top + bar, self.window.right, self.window.bottom)
+    }
+
     /// Take `height` DIPs of the column.
     pub fn row(&mut self, height: f32) -> Rect {
         let h = self.px(height);

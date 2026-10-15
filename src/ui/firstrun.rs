@@ -86,8 +86,9 @@ fn points(config: &UiConfig) -> Vec<Point> {
 
 /// Draw the card. Returns true when it was dismissed.
 pub fn draw(f: &mut Frame, config: &UiConfig) -> bool {
-    let screen = f.window;
-    f.p.fill_rect(screen, f.theme.scrim);
+    f.p.fill_rect(f.window, f.theme.scrim);
+    // Placed below the titlebar, as the workspace dialog is — see `Frame::stage`.
+    let screen = f.stage();
 
     let points = points(config);
     let pad = f.px(24.0);
