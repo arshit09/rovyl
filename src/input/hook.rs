@@ -207,6 +207,10 @@ struct State {
     /// move: a 1000 Hz mouse would otherwise cost a thousand messages a second to tell the wheel
     /// something it can only act on once per refresh.
     cursor: AtomicI64,
+    /// Mouse moves seen since the performance trace last asked: the mouse's polling rate, while it
+    /// is moving. Counted unconditionally — one uncontended atomic add is noise beside the cost of
+    /// the system marshalling the event to this thread at all.
+    moves: AtomicU32,
 
     /// Where and when the trigger went down, for the click/hold decision.
     down_point: AtomicI64,
@@ -230,6 +234,7 @@ fn state() -> &'static State {
         block_rect: [AtomicI64::new(0), AtomicI64::new(0)],
         recording: AtomicBool::new(false),
         cursor: AtomicI64::new(0),
+        moves: AtomicU32::new(0),
         down_point: AtomicI64::new(0),
         down_at: AtomicU32::new(0),
         click_armed: AtomicBool::new(false),
@@ -366,6 +371,11 @@ pub fn cursor() -> POINT {
     POINT { x, y }
 }
 
+/// How many mouse moves the hook has seen since the last call. For the performance trace.
+pub fn take_moves() -> u32 {
+    state().moves.swap(0, Ordering::Relaxed)
+}
+
 /// Ask to be told when no mouse button is held any more.
 ///
 /// Polled by the tick rather than hooked, because the asker is the tray menu and the hook may not
@@ -413,12 +423,13 @@ unsafe extern "system" fn mouse_proc(code: i32, w: WPARAM, l: LPARAM) -> LRESULT
 
     // Every mouse event in the system passes through here, serialised. `WM_MOUSEMOVE` is the
     // overwhelming majority of them — a 1000 Hz gaming mouse makes a thousand a second — so it
-    // takes the shortest possible path: record the point and leave. No allocation, no branch on
-    // the trigger, no posted message.
+    // takes the shortest possible path: record the point, count it, and leave. No allocation, no
+    // branch on the trigger, no posted message.
     if message == WM_MOUSEMOVE {
         let data = &*(l.0 as *const MSLLHOOKSTRUCT);
         s.cursor
             .store(pack_i64(data.pt.x, data.pt.y), Ordering::Relaxed);
+        s.moves.fetch_add(1, Ordering::Relaxed);
         return chain();
     }
 

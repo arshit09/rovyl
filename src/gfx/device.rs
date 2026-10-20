@@ -18,9 +18,17 @@
 //! settings panel's live preview. One device also means one device-lost recovery path instead of
 //! two that can disagree about whether the GPU has come back.
 
-use std::cell::RefCell;
-use windows::core::{Interface, Result};
-use windows::Win32::Foundation::HWND;
+use std::cell::{Cell, RefCell};
+use std::time::{Duration, Instant};
+use windows::core::{Interface, Result, PCWSTR};
+use windows::Win32::Foundation::{CloseHandle, HANDLE, HWND, WAIT_OBJECT_0};
+use windows::Win32::System::Threading::{
+    CreateWaitableTimerExW, SetWaitableTimer, WaitForSingleObject,
+    CREATE_WAITABLE_TIMER_HIGH_RESOLUTION, INFINITE, TIMER_ALL_ACCESS,
+};
+use windows::Win32::UI::WindowsAndMessaging::{
+    MsgWaitForMultipleObjectsEx, WaitMessage, MWMO_INPUTAVAILABLE, QS_ALLINPUT,
+};
 use windows::Win32::Graphics::Direct2D::Common::{
     D2D1_ALPHA_MODE_PREMULTIPLIED, D2D1_PIXEL_FORMAT,
 };
@@ -59,6 +67,13 @@ use windows::Win32::Graphics::Dxgi::{
 /// aim. Latency is the whole product here and throughput is irrelevant — nothing in this program
 /// renders two frames' worth of work.
 const FRAME_LATENCY: u32 = 1;
+
+/// How long a window waits for the compositor to take its last frame before drawing anyway.
+///
+/// A window the compositor is not showing — hidden, minimised, on a locked desktop — never has a
+/// frame taken, and it must still be able to draw. Long enough that a compositor which is merely
+/// slow is waited for; short enough that one which is not coming back costs a tenth of a second.
+const STALLED: Duration = Duration::from_millis(100);
 
 /// The process-wide GPU objects.
 pub struct Gpu {
@@ -173,12 +188,22 @@ fn create_d3d_device() -> Result<ID3D11Device> {
 /// hand moves and a committed composition animation cannot.
 pub struct Surface {
     pub swapchain: IDXGISwapChain2,
-    /// Signalled when the compositor is ready for the next frame. Waited on alongside the message
-    /// queue, which is what paces rendering to the display without blocking input.
-    pub frame_latency_waitable: windows::Win32::Foundation::HANDLE,
+    /// Signalled when the compositor has taken a frame — received it, not shown it. One of the two
+    /// things a frame waits for; see [`Surface::frame_ready`].
+    pub frame_latency_waitable: HANDLE,
     _target: IDCompositionTarget,
     _visual: IDCompositionVisual2,
     size: RefCell<(u32, u32)>,
+    /// A count taken from the frame-latency object and not yet spent on a present.
+    slot: Cell<bool>,
+    /// When the last frame was handed to the compositor.
+    presented_at: Cell<Option<Instant>>,
+    /// The shortest time between two frames. See [`Surface::set_refresh`].
+    interval: Cell<Duration>,
+    /// The clock allowed a frame and the compositor was still holding the last one.
+    late: Cell<bool>,
+    /// How long it held it, once it let go — for the performance trace.
+    late_by: Cell<Option<f32>>,
 }
 
 impl Surface {
@@ -230,7 +255,114 @@ impl Surface {
             _target: target,
             _visual: visual,
             size: RefCell::new((width, height)),
+            slot: Cell::new(false),
+            presented_at: Cell::new(None),
+            interval: Cell::new(refresh_interval(60)),
+            late: Cell::new(false),
+            late_by: Cell::new(None),
         })
+    }
+
+    /// Pace this surface to a display that refreshes `hz` times a second.
+    pub fn set_refresh(&self, hz: u32) {
+        self.interval.set(refresh_interval(hz));
+    }
+
+    /// Whether a frame may be drawn now. Call it immediately before drawing one; a `true` is spent
+    /// by the next [`present`](Self::present).
+    ///
+    /// **The bug this exists for.** Frames used to be drawn whenever the loop woke, and the loop
+    /// woke for every message — including every `WM_MOUSEMOVE` over a window, which a gaming mouse
+    /// sends a thousand times a second. The wait on the frame-latency object that was meant to
+    /// pace them could not: it returned early for any message, and on a composition swapchain the
+    /// object is signalled when the compositor RECEIVES a frame, a few milliseconds after the
+    /// present, not when the display shows it. Measured on a 60 Hz monitor, the wheel drew 180
+    /// frames a second and the settings window 160, with the extra two thirds piling up on the
+    /// GPU. On a busy machine the screen ran half a second behind the hand, and the GPU work
+    /// starved every other window.
+    ///
+    /// So a frame now needs two things. The CLOCK: a refresh has passed since the last one, which
+    /// is the most the display can show. And the SLOT: the compositor has taken the last frame,
+    /// which keeps a slow compositor from being handed a queue. A wake-up that has neither leaves
+    /// the frame wanted, and [`pace`](Self::pace) says what to sleep on until it can be drawn.
+    ///
+    /// After [`STALLED`] without a present the answer is yes regardless, and the latency object is
+    /// re-counted: whatever it accumulated while nobody waited on it is drained, so the frame that
+    /// follows is the only one in flight and the slot count is true again.
+    pub fn frame_ready(&self) -> bool {
+        let Some(at) = self.presented_at.get() else {
+            self.recount();
+            return true;
+        };
+        let since = at.elapsed();
+        if since < self.interval.get() {
+            return false;
+        }
+        if since >= STALLED {
+            // Idle, if the compositor took the last frame and so left a count to drain; stalled,
+            // if it did not and a frame has been waiting on it.
+            if self.recount() == 0 && self.late.get() {
+                self.late_by.set(Some(since.as_secs_f32() * 1000.0));
+            }
+            self.late.set(false);
+            return true;
+        }
+        if self.slot.get() {
+            return true;
+        }
+        if unsafe { WaitForSingleObject(self.frame_latency_waitable, 0) } == WAIT_OBJECT_0 {
+            self.took_slot();
+            return true;
+        }
+        self.late.set(true);
+        false
+    }
+
+    /// The frame-latency object was signalled inside a wait that included it, which took its count
+    /// the same way [`WaitForSingleObject`] would have.
+    pub fn took_slot(&self) {
+        self.slot.set(true);
+        if self.late.replace(false) {
+            if let Some(at) = self.presented_at.get() {
+                self.late_by.set(Some(at.elapsed().as_secs_f32() * 1000.0));
+            }
+        }
+    }
+
+    /// What to sleep on until this surface may draw again: the frame-latency object while the
+    /// compositor still holds the last frame, and the moment to draw regardless.
+    pub fn pace(&self) -> (Option<HANDLE>, Instant) {
+        let now = Instant::now();
+        let Some(at) = self.presented_at.get() else {
+            return (None, now);
+        };
+        let clock = at + self.interval.get();
+        if now < clock {
+            (None, clock)
+        } else if self.slot.get() {
+            (None, now)
+        } else {
+            (Some(self.frame_latency_waitable), at + STALLED)
+        }
+    }
+
+    /// How long the compositor took to take the last frame, if that was longer than the clock
+    /// allowed. For the performance trace; reading it clears it.
+    pub fn take_late(&self) -> Option<f32> {
+        self.late_by.take()
+    }
+
+    /// Drain the frame-latency object and take a slot without it. Returns how many counts there
+    /// were.
+    fn recount(&self) -> u32 {
+        let mut drained = 0;
+        while drained < 64
+            && unsafe { WaitForSingleObject(self.frame_latency_waitable, 0) } == WAIT_OBJECT_0
+        {
+            drained += 1;
+        }
+        self.slot.set(true);
+        drained
     }
 
     pub fn size(&self) -> (u32, u32) {
@@ -300,8 +432,124 @@ impl Surface {
             // frame loop.
             let _ = self.swapchain.Present(if vsync { 1 } else { 0 }, flags);
         }
+        self.slot.set(false);
+        self.presented_at.set(Some(Instant::now()));
         Ok(())
     }
+}
+
+/// The shortest time between two frames on a display refreshing `hz` times a second.
+///
+/// A little under one refresh, so that the clock's own lateness never costs one: a frame drawn a
+/// hair early is replaced before it is seen, while one drawn a hair late is a refresh that shows
+/// the previous frame twice.
+fn refresh_interval(hz: u32) -> Duration {
+    Duration::from_secs_f64(0.95 / hz.max(1) as f64)
+}
+
+/// Sleeps a message loop until there is something to do: a message, a compositor taking a frame,
+/// or the moment a window may draw again.
+///
+/// The moment is kept by a high-resolution waitable timer, because a wait's own timeout cannot
+/// pace frames: Windows rounds it up to the 15.6 ms scheduler tick, so "wait 16 ms" wakes after
+/// 16 or 31, unevenly. Where that timer does not exist (before Windows 10 1803) the timeout stands
+/// in for it, and frames are paced coarsely rather than not at all.
+pub struct FrameClock {
+    timer: Option<HANDLE>,
+}
+
+impl FrameClock {
+    pub fn new() -> Self {
+        let timer = unsafe {
+            CreateWaitableTimerExW(
+                None,
+                PCWSTR::null(),
+                CREATE_WAITABLE_TIMER_HIGH_RESOLUTION,
+                TIMER_ALL_ACCESS.0,
+            )
+        }
+        .ok();
+        Self { timer }
+    }
+
+    /// Sleep until a message arrives, one of `signals` is signalled, or `until` passes. With no
+    /// signals and no deadline, until a message arrives.
+    ///
+    /// Returns the index of the signal that ended the sleep, if one did. Those are frame-latency
+    /// objects, and the wait has taken the count — the caller owes that surface
+    /// [`Surface::took_slot`].
+    pub fn sleep(&self, signals: &[HANDLE], until: Option<Instant>) -> Option<usize> {
+        use crate::sys::perf::{self, Wake};
+        let mut handles = [HANDLE::default(); 4];
+        let signals = &signals[..signals.len().min(3)];
+        handles[..signals.len()].copy_from_slice(signals);
+        let mut count = signals.len();
+        let timeout = match until {
+            None => INFINITE,
+            Some(until) => {
+                let left = until.saturating_duration_since(Instant::now());
+                if left.is_zero() {
+                    return None;
+                }
+                match self.timer {
+                    Some(timer) if arm(timer, left) => {
+                        handles[count] = timer;
+                        count += 1;
+                        INFINITE
+                    }
+                    _ => left.as_micros().div_ceil(1000) as u32,
+                }
+            }
+        };
+        if count == 0 && timeout == INFINITE {
+            // Nothing is moving: block. Zero wake-ups and zero CPU for the hours between
+            // gestures, which is most of what a launcher's resident cost is.
+            unsafe {
+                let _ = WaitMessage();
+            }
+            perf::woke(Wake::Input);
+            return None;
+        }
+        let result = unsafe {
+            MsgWaitForMultipleObjectsEx(
+                Some(&handles[..count]),
+                timeout,
+                QS_ALLINPUT,
+                MWMO_INPUTAVAILABLE,
+            )
+        };
+        let index = result.0.wrapping_sub(WAIT_OBJECT_0.0) as usize;
+        if index < signals.len() {
+            perf::woke(Wake::Frame);
+            Some(index)
+        } else if index < count {
+            perf::woke(Wake::Clock);
+            None
+        } else if index == count {
+            perf::woke(Wake::Input);
+            None
+        } else {
+            perf::woke(Wake::Timeout);
+            None
+        }
+    }
+}
+
+impl Drop for FrameClock {
+    fn drop(&mut self) {
+        if let Some(timer) = self.timer.take() {
+            unsafe {
+                let _ = CloseHandle(timer);
+            }
+        }
+    }
+}
+
+/// Set the timer to fire once, `after` from now.
+fn arm(timer: HANDLE, after: Duration) -> bool {
+    // Negative is relative, in 100 ns units.
+    let due = -((after.as_nanos() / 100).max(1) as i64);
+    unsafe { SetWaitableTimer(timer, &due, 0, None, None, false).is_ok() }
 }
 
 /// Binds the device context's target for one frame and releases it on drop.

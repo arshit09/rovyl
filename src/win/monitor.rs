@@ -21,10 +21,12 @@
 //! physical pixels, with the scale factor carried alongside for the one thing that actually needs
 //! it — turning the user's DIP-denominated settings into pixels at paint time.
 
+use std::cell::RefCell;
 use windows::Win32::Foundation::{BOOL, LPARAM, POINT, RECT};
 use windows::Win32::Graphics::Gdi::{
-    EnumDisplayMonitors, GetMonitorInfoW, MonitorFromPoint, MonitorFromWindow, HDC, HMONITOR,
-    MONITORINFO, MONITORINFOEXW, MONITOR_DEFAULTTONEAREST, MONITOR_DEFAULTTOPRIMARY,
+    EnumDisplayMonitors, EnumDisplaySettingsW, GetMonitorInfoW, MonitorFromPoint,
+    MonitorFromWindow, DEVMODEW, ENUM_CURRENT_SETTINGS, HDC, HMONITOR, MONITORINFO,
+    MONITORINFOEXW, MONITOR_DEFAULTTONEAREST, MONITOR_DEFAULTTOPRIMARY,
 };
 use windows::Win32::UI::HiDpi::{
     GetDpiForMonitor, SetProcessDpiAwarenessContext, DPI_AWARENESS_CONTEXT,
@@ -204,6 +206,60 @@ pub fn from_point(point: POINT) -> Display {
 
 pub fn from_window(hwnd: windows::Win32::Foundation::HWND) -> Display {
     unsafe { info_for(MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST)) }.unwrap_or_else(primary)
+}
+
+thread_local! {
+    static REFRESH_RATES: RefCell<Vec<(isize, u32)>> = const { RefCell::new(Vec::new()) };
+}
+
+/// How many times a second a display refreshes — the most frames a window on it can show.
+///
+/// Asked of the driver once per monitor and remembered until [`forget_refresh_rates`]: the
+/// question reaches the display driver, and the settings window asks it before every frame. Sixty
+/// when the driver will not say, or answers 0 or 1, which is the documented "hardware default" and
+/// not a rate — pacing frames to it would stop them altogether.
+pub fn refresh_hz(handle: isize) -> u32 {
+    let known = REFRESH_RATES.with(|rates| {
+        rates.borrow().iter().find(|(h, _)| *h == handle).map(|(_, hz)| *hz)
+    });
+    if let Some(hz) = known {
+        return hz;
+    }
+    let hz = query_refresh_hz(handle).filter(|hz| *hz >= 24).unwrap_or(60);
+    REFRESH_RATES.with(|rates| rates.borrow_mut().push((handle, hz)));
+    hz
+}
+
+/// Drop every remembered refresh rate. On `WM_DISPLAYCHANGE`: a mode change can change the rate,
+/// and a monitor handle can come back naming a different display.
+pub fn forget_refresh_rates() {
+    REFRESH_RATES.with(|rates| rates.borrow_mut().clear());
+}
+
+fn query_refresh_hz(handle: isize) -> Option<u32> {
+    unsafe {
+        let mut info = MONITORINFOEXW {
+            monitorInfo: MONITORINFO {
+                cbSize: std::mem::size_of::<MONITORINFOEXW>() as u32,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        if !GetMonitorInfoW(HMONITOR(handle as _), &mut info as *mut _ as *mut MONITORINFO).as_bool() {
+            return None;
+        }
+        let mut mode = DEVMODEW {
+            dmSize: std::mem::size_of::<DEVMODEW>() as u16,
+            ..Default::default()
+        };
+        EnumDisplaySettingsW(
+            windows::core::PCWSTR(info.szDevice.as_ptr()),
+            ENUM_CURRENT_SETTINGS,
+            &mut mode,
+        )
+        .as_bool()
+        .then_some(mode.dmDisplayFrequency)
+    }
 }
 
 /// Which monitor the wheel opens on — the single answer, which every geometry caller uses.

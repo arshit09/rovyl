@@ -18,7 +18,7 @@
 //! extraction, the Start Menu scan, reading an IDE's recent-projects list — belongs on a worker.
 
 use crate::config::{self, UiConfig};
-use crate::gfx::device::Gpu;
+use crate::gfx::device::{FrameClock, Gpu};
 use crate::gfx::lucide::GlyphCache;
 use crate::gfx::painter::{Painter, ShadowCache};
 use crate::gfx::text::TextCache;
@@ -26,6 +26,7 @@ use crate::icons::cache::IconCache;
 use crate::icons::extract::Extractor;
 use crate::input::{hook, hotkey, trigger};
 use crate::launch;
+use crate::sys::perf;
 use crate::sys::sound::{self, Highlight};
 use crate::wheel::render::{self, Frame};
 use crate::wheel::state::{Action, TriggerSource, Wheel};
@@ -34,10 +35,10 @@ use crate::ui::Ui;
 use crate::win::{instance, monitor, overlay, settings, tray};
 use std::time::Instant;
 use windows::core::{w, PCWSTR, Result};
-use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, WPARAM};
+use windows::Win32::Foundation::{HANDLE, HWND, LPARAM, LRESULT, POINT, WPARAM};
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DispatchMessageW, InSendMessage, PeekMessageW, PostMessageW,
-    PostQuitMessage, RegisterClassExW, TranslateMessage, WaitMessage, MSG, PM_REMOVE, WM_APP,
+    PostQuitMessage, RegisterClassExW, TranslateMessage, MSG, PM_REMOVE, WM_APP,
     WM_CLOSE, WM_DESTROY, WM_DISPLAYCHANGE, WM_HOTKEY, WM_MOUSEMOVE, WM_QUIT, WNDCLASSEXW,
     WS_EX_TOOLWINDOW, WS_POPUP,
 };
@@ -67,6 +68,8 @@ const HOLD_OPEN_DELAY_MS: u32 = 200;
 pub struct App {
     hwnd: HWND,
     gpu: Gpu,
+    /// What the loop sleeps on between frames. See [`FrameClock`].
+    clock: FrameClock,
     overlay: overlay::Overlay,
     glyphs: GlyphCache,
     text: TextCache,
@@ -188,6 +191,7 @@ const MAX_WORKSPACE_KEYS: usize = 64;
 
 impl App {
     pub fn new() -> Result<Self> {
+        let started = Instant::now();
         monitor::declare_dpi_awareness();
 
         let loaded = config::store::load();
@@ -222,6 +226,7 @@ impl App {
         let mut app = Self {
             hwnd,
             gpu,
+            clock: FrameClock::new(),
             overlay: overlay_window,
             glyphs: GlyphCache::new(),
             text,
@@ -301,6 +306,7 @@ impl App {
         }
         app.arm_triggers();
         app.tray = Some(tray::Tray::new(hwnd));
+        perf::begin(&app.gpu, &app.config, started.elapsed().as_secs_f32() * 1000.0);
         Ok(app)
     }
 
@@ -446,6 +452,9 @@ impl App {
     fn open_wheel(&mut self, source: TriggerSource) {
         let display = monitor::target_display(self.config.monitor_choice(), self.config.placement());
         let cursor = hook::cursor();
+        let refresh = monitor::refresh_hz(display.handle);
+        self.overlay.surface.set_refresh(refresh);
+        perf::note(&format!("wheel opens on a {refresh} Hz display"));
 
         // The reach has to be known before the window is sized, and it depends on the item count —
         // which depends on the level, which is what `open` sets up. So the wheel is opened once
@@ -665,6 +674,8 @@ impl App {
             hook::MSG_KEY_DOWN => self.on_key(w.0 as u16, l.0 as u32),
             WM_HOTKEY => self.on_hotkey(w.0 as i32),
             WM_DISPLAYCHANGE => {
+                // A mode change can change a refresh rate, and frames are paced to them.
+                monitor::forget_refresh_rates();
                 // The monitor list has changed under the parked overlay. Re-park it rather than
                 // waiting for the next open to notice, because the next open may be on a display
                 // that no longer exists.
@@ -1231,9 +1242,20 @@ impl App {
             }
             return false;
         }
-        if !std::mem::take(&mut window.state.needs_frame) {
+        if !window.state.needs_frame {
             return false;
         }
+        // Every pointer move asks for a frame, and a gaming mouse moves a thousand times a second.
+        // The frame is drawn when the display can show it, and stays asked for until then — see
+        // `Surface::frame_ready`.
+        window
+            .surface
+            .set_refresh(monitor::refresh_hz(monitor::from_window(window.hwnd).handle));
+        if !window.surface.frame_ready() {
+            perf::deferred(perf::Surface::Settings);
+            return true;
+        }
+        window.state.needs_frame = false;
         if let Err(error) = window.sync_surface() {
             if trace { config::store::log_line(&format!("settings: sync_surface {error}")); }
             return false;
@@ -1257,6 +1279,7 @@ impl App {
         let bounds = crate::gfx::painter::Rect::new(0.0, 0.0, width, height);
         let maximized = window.state.maximized;
 
+        let draw_started = Instant::now();
         let painter = match crate::gfx::painter::Painter::new(&self.gpu, &self.glyphs, &self.text) {
             Ok(painter) => painter,
             Err(error) => {
@@ -1324,7 +1347,13 @@ impl App {
         let cursor = outcome.cursor;
         drop(_target);
 
+        let late = window.surface.take_late();
         let _ = window.surface.present(true);
+        perf::drew(
+            perf::Surface::Settings,
+            draw_started.elapsed().as_secs_f32() * 1000.0,
+            late,
+        );
         window.state.caption_buttons =
             crate::ui::settings::caption_buttons(bar, scale).map(|r| windows::Win32::Foundation::RECT {
                 left: r.left as i32,
@@ -1376,7 +1405,11 @@ impl App {
         if self.dirty {
             self.save();
         }
-        wants_more
+        // Whether the window still wants a frame — for an animation, or because something above
+        // asked for one — so the loop knows to wake for it.
+        self.settings
+            .as_ref()
+            .is_some_and(|window| window.visible() && window.state.needs_frame)
     }
 
     fn apply_settings_request(&mut self, request: crate::ui::settings::Request) {
@@ -1881,10 +1914,19 @@ impl App {
             return false;
         }
 
-        if !std::mem::take(&mut card.state.needs_frame) {
+        if !card.state.needs_frame {
             // Still wanted, because the linger clock has to be able to expire with no input.
             return true;
         }
+        // Paced like every other window: see `Surface::frame_ready`.
+        card.surface
+            .set_refresh(monitor::refresh_hz(monitor::from_window(card.hwnd).handle));
+        if !card.surface.frame_ready() {
+            perf::deferred(perf::Surface::Card);
+            return true;
+        }
+        card.state.needs_frame = false;
+        let draw_started = Instant::now();
         if trace { config::store::log_line("card: drawing"); }
         if let Err(error) = card.sync_surface(&self.gpu) {
             // Said out loud. A card that cannot size its surface draws nothing, every frame, for
@@ -1920,9 +1962,14 @@ impl App {
                 crate::ui::Frame::new(&painter, &mut self.ui, &input, theme, scale, bounds);
             let action = crate::ui::fault::draw(&mut frame, &fault, self.fault_copied);
             drop(frame);
-            let _ = card.surface.present(true);
             action
         };
+        // After the block, where `_target` has ended the draw. Presented inside it, the compositor
+        // was handed a buffer Direct2D had not flushed into yet, and the card showed the frame
+        // before the one just drawn.
+        let late = card.surface.take_late();
+        let _ = card.surface.present(true);
+        perf::drew(perf::Surface::Card, draw_started.elapsed().as_secs_f32() * 1000.0, late);
         // Present, THEN show. A composition window revealed before its swapchain has ever been
         // presented puts a black rectangle on screen -- which is exactly what it did.
         card.reveal();
@@ -2291,12 +2338,11 @@ impl App {
             self.open_wheel(TriggerSource::Shortcut);
         }
 
-        // Whether the last wait was on the settings window's frame-latency object. See below.
-        let mut settings_paced = false;
         while !self.quit {
             if !self.pump() {
                 break;
             }
+            perf::flush();
 
             // Both are cheap when there is nothing to do, and both have to happen off the wheel's
             // critical path — a scan takes 150 ms and an extraction can take tens.
@@ -2322,111 +2368,100 @@ impl App {
             // window and most frames have nothing new in them.
             let settings_wants_more = self.settings_frame();
             let card_wants_more = self.card_frame();
-            let was_paced = std::mem::take(&mut settings_paced);
 
+            // The wheel draws only when the display can show a new frame — not whenever the loop
+            // wakes, which while the pointer is over it is a thousand times a second. See
+            // `Surface::frame_ready`. Everything `tick` advances is measured in time, so a wake-up
+            // that draws nothing loses nothing.
             if self.needs_frames() {
-                let wants_more = self.tick();
-                if wants_more {
-                    self.render();
-                    let _ = self.overlay.present(true);
-                }
-                // Wait on the swapchain's frame-latency object alongside the message queue. This is
-                // what paces rendering to the display without a timer and without polling — and
-                // why an animating wheel costs one wake-up per refresh rather than one per
-                // millisecond.
-                unsafe {
-                    use windows::Win32::UI::WindowsAndMessaging::{
-                        MsgWaitForMultipleObjectsEx, MWMO_INPUTAVAILABLE, QS_ALLINPUT,
-                    };
-                    let handles = [self.overlay.surface.frame_latency_waitable];
-                    let _ = MsgWaitForMultipleObjectsEx(
-                        Some(&handles),
-                        100,
-                        QS_ALLINPUT,
-                        MWMO_INPUTAVAILABLE,
-                    );
-                }
-            } else if settings_wants_more {
-                // Something in the panel is animating — a drag, a toast, a caret, a switch. Paced
-                // to the display, like the wheel: on the window's own frame-latency object, which
-                // is signalled when the frame just presented has gone to the screen.
-                //
-                // A bare 16 ms timeout stood in for it, and that does not mean 16 ms: Windows
-                // rounds a wait up to its 15.6 ms tick, so the panel woke after 16 or 31 ms,
-                // unevenly — about 36 frames a second, a switch's knob stepping across its track
-                // rather than sliding. The timeout is now only the floor for a window the
-                // compositor is not showing, whose frames never come back.
-                let waitable = self.settings.as_ref().map(|w| w.surface.frame_latency_waitable);
-                unsafe {
-                    use windows::Win32::Foundation::WAIT_OBJECT_0;
-                    use windows::Win32::System::Threading::WaitForSingleObject;
-                    use windows::Win32::UI::WindowsAndMessaging::{
-                        MsgWaitForMultipleObjectsEx, MWMO_INPUTAVAILABLE, QS_ALLINPUT,
-                    };
-                    match waitable {
-                        Some(handle) => {
-                            // It is a semaphore, and every frame the panel presented while nothing
-                            // was moving counted it up with nobody waiting. Spent on the way in,
-                            // or each of those lets a frame through unpaced.
-                            if !was_paced {
-                                for _ in 0..16 {
-                                    if WaitForSingleObject(handle, 0) != WAIT_OBJECT_0 {
-                                        break;
-                                    }
-                                }
-                            }
-                            let _ = MsgWaitForMultipleObjectsEx(
-                                Some(&[handle]),
-                                34,
-                                QS_ALLINPUT,
-                                MWMO_INPUTAVAILABLE,
-                            );
-                        }
-                        None => {
-                            let _ = MsgWaitForMultipleObjectsEx(
-                                None,
-                                16,
-                                QS_ALLINPUT,
-                                MWMO_INPUTAVAILABLE,
-                            );
-                        }
+                if self.overlay.surface.frame_ready() {
+                    let at = Instant::now();
+                    if self.tick() {
+                        self.render();
+                        let late = self.overlay.surface.take_late();
+                        let _ = self.overlay.present(true);
+                        perf::drew(perf::Surface::Wheel, at.elapsed().as_secs_f32() * 1000.0, late);
                     }
-                }
-                settings_paced = true;
-            } else if card_wants_more {
-                // A card is up. It has nothing to animate, but its linger clock has to be able to
-                // run out with no input at all -- so this wakes four times a second rather than
-                // sixty, which is as precise as "about twelve seconds" needs to be.
-                unsafe {
-                    use windows::Win32::UI::WindowsAndMessaging::{
-                        MsgWaitForMultipleObjectsEx, MWMO_INPUTAVAILABLE, QS_ALLINPUT,
-                    };
-                    let _ = MsgWaitForMultipleObjectsEx(None, 250, QS_ALLINPUT, MWMO_INPUTAVAILABLE);
-                }
-            } else if self.paused_until.is_some() {
-                // A timed pause has to be able to run out with nothing happening at all, and
-                // `WaitMessage` would sit there until the user next touched something. Once a
-                // second, which is as precise as a label reading "12 min left" needs to be, and
-                // only while a pause is actually counting down.
-                unsafe {
-                    use windows::Win32::UI::WindowsAndMessaging::{
-                        MsgWaitForMultipleObjectsEx, MWMO_INPUTAVAILABLE, QS_ALLINPUT,
-                    };
-                    let _ = MsgWaitForMultipleObjectsEx(None, 1000, QS_ALLINPUT, MWMO_INPUTAVAILABLE);
-                }
-            } else {
-                // Nothing is moving: block. Zero wake-ups and zero CPU for the hours between
-                // gestures, which is most of what a launcher's resident cost is.
-                unsafe {
-                    let _ = WaitMessage();
+                } else {
+                    perf::deferred(perf::Surface::Wheel);
                 }
             }
+
+            self.sleep(settings_wants_more, card_wants_more);
         }
 
         hook::shutdown();
         self.hotkeys.clear_all(self.hwnd);
         if self.dirty {
             self.save();
+        }
+    }
+
+    /// Sleep until a message arrives or a window may draw its next frame.
+    ///
+    /// Each window that still wants a frame says what it is waiting for — the next refresh, or
+    /// the compositor taking its last frame — and the soonest of those wakes the loop. With no
+    /// window wanting anything and no clock running, the loop blocks until a message arrives.
+    fn sleep(&mut self, settings_wants_more: bool, card_wants_more: bool) {
+        let wheel = self.needs_frames().then(|| self.overlay.surface.pace());
+        let settings = settings_wants_more
+            .then(|| self.settings.as_ref().map(|window| window.surface.pace()))
+            .flatten();
+        let card = card_wants_more
+            .then(|| {
+                self.card
+                    .as_ref()
+                    .filter(|card| card.state.needs_frame)
+                    .map(|card| card.surface.pace())
+            })
+            .flatten();
+
+        let mut signals = [HANDLE::default(); 3];
+        let mut owners = [perf::Surface::Wheel; 3];
+        let mut count = 0;
+        let mut until: Option<Instant> = None;
+        let mut sooner = |at: Instant| until = Some(until.map_or(at, |until| until.min(at)));
+        for (pace, owner) in [
+            (wheel, perf::Surface::Wheel),
+            (settings, perf::Surface::Settings),
+            (card, perf::Surface::Card),
+        ] {
+            let Some((signal, at)) = pace else {
+                continue;
+            };
+            if let Some(signal) = signal {
+                signals[count] = signal;
+                owners[count] = owner;
+                count += 1;
+            }
+            sooner(at);
+        }
+        // A card has nothing to animate, but its linger clock has to be able to run out with no
+        // input at all -- four times a second is as precise as "about twelve seconds" needs to be.
+        if card_wants_more {
+            sooner(Instant::now() + std::time::Duration::from_millis(250));
+        }
+        // A timed pause has to be able to run out with nothing happening at all. Once a second,
+        // which is as precise as a label reading "12 min left" needs to be.
+        if self.paused_until.is_some() {
+            sooner(Instant::now() + std::time::Duration::from_secs(1));
+        }
+
+        let Some(index) = self.clock.sleep(&signals[..count], until) else {
+            return;
+        };
+        match owners[index] {
+            perf::Surface::Wheel => self.overlay.surface.took_slot(),
+            perf::Surface::Settings => {
+                if let Some(window) = self.settings.as_ref() {
+                    window.surface.took_slot();
+                }
+            }
+            perf::Surface::Card => {
+                if let Some(card) = self.card.as_ref() {
+                    card.surface.took_slot();
+                }
+            }
         }
     }
 
@@ -2446,6 +2481,15 @@ impl App {
                 drained += 1;
                 if msg.message == WM_QUIT {
                     return false;
+                }
+                if msg.message == WM_MOUSEMOVE && perf::enabled() {
+                    perf::mouse_message(if msg.hwnd == self.overlay.hwnd {
+                        perf::Target::Overlay
+                    } else if self.settings.as_ref().is_some_and(|w| w.hwnd == msg.hwnd) {
+                        perf::Target::Settings
+                    } else {
+                        perf::Target::Other
+                    });
                 }
                 // Messages addressed to this window are handled directly; everything else goes
                 // through the normal path so the overlay and any future window still work.

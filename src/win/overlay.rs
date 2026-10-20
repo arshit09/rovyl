@@ -154,6 +154,10 @@ impl Overlay {
     pub fn present_then_show(&mut self) -> Result<(f32, f32)> {
         // No vsync wait on this one. The user is still holding the button down; waiting up to a
         // refresh interval here is latency added to the one moment the product is judged on.
+        //
+        // Nor is it paced: the opening frame is never deferred. The pacer is still asked, so that
+        // a free slot is taken and the frames after this one are counted from a true state.
+        let _ = self.surface.frame_ready();
         let at = std::time::Instant::now();
         self.surface.present(false)?;
         let presented = at.elapsed().as_secs_f32() * 1000.0;

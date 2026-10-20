@@ -247,6 +247,19 @@ would do with them.
 
 `scripts\shot.ps1 -Class RovylSettings -Out settings.png` captures one of this build's windows.
 
+### When it lags on somebody else's machine
+
+Start the app with `ROVYL_TRACE_PERF=1` and it writes `rovyl-perf.log` beside the configuration:
+the GPU and every display's refresh rate, then one line per busy second with each window's frames
+drawn and deferred, draw times, late frames, why the loop woke, and the mouse's polling rate. A
+healthy second draws no more frames than the display refreshes. [`src/sys/perf.rs`](../src/sys/perf.rs)
+says how to read the rest.
+
+To get one from a user, send them `scripts\collect-diagnostics.bat`. Double-clicked, it restarts
+Rovyl with the trace on, asks them to use it for half a minute, samples per-process CPU and GPU
+meanwhile, and zips the trace, `--diagnose`, the persistence log and a system summary onto their
+Desktop.
+
 ## Typefaces
 
 Three faces are compiled into the executable and handed to DirectWrite as a private collection, so

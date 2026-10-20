@@ -16,7 +16,7 @@
 //! stops answering the mouse while it does that is a window Windows paints over with "not
 //! responding". The thread posts its answer into a slot; a timer wakes the loop to notice.
 
-use crate::gfx::device::{Gpu, Surface};
+use crate::gfx::device::{FrameClock, Gpu, Surface};
 use crate::gfx::lucide::GlyphCache;
 use crate::gfx::painter::{Painter, Rect};
 use crate::gfx::text::TextCache;
@@ -25,7 +25,7 @@ use crate::ui::{Cursor, Input, Ui};
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use windows::core::{w, PCWSTR, Result};
-use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
+use windows::Win32::Foundation::{HANDLE, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows::Win32::Graphics::Dwm::{
     DwmSetWindowAttribute, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND,
 };
@@ -160,14 +160,23 @@ pub fn run() -> Result<bool> {
         let _ = SetForegroundWindow(hwnd);
     }
 
+    surface.set_refresh(crate::win::monitor::refresh_hz(
+        crate::win::monitor::from_window(hwnd).handle,
+    ));
+    let clock = FrameClock::new();
     let mut message = MSG::default();
-    while !state.closed {
+    'run: while !state.closed {
+        // Everything queued, then at most one frame. One frame per MESSAGE drew once for every
+        // mouse move, which a gaming mouse makes a thousand times a second; see
+        // `Surface::frame_ready`.
         unsafe {
-            if GetMessageW(&mut message, None, 0, 0).0 <= 0 {
-                break;
+            while PeekMessageW(&mut message, None, 0, 0, PM_REMOVE).as_bool() {
+                if message.message == WM_QUIT {
+                    break 'run;
+                }
+                let _ = TranslateMessage(&message);
+                DispatchMessageW(&message);
             }
-            let _ = TranslateMessage(&message);
-            DispatchMessageW(&message);
         }
 
         // The worker's answer, if it has one.
@@ -188,47 +197,62 @@ pub fn run() -> Result<bool> {
             state.needs_frame = true;
         }
 
-        if !std::mem::take(&mut state.needs_frame) {
-            continue;
-        }
-        let (action, animating) = frame(
-            &gpu, &glyphs, &text, &mut ui, &mut surface, &mut state, &stage, replacing,
-        );
+        if state.needs_frame && surface.frame_ready() {
+            state.needs_frame = false;
+            let (action, animating) = frame(
+                &gpu, &glyphs, &text, &mut ui, &mut surface, &mut state, &stage, replacing,
+            );
 
-        if action.install && stage != Stage::Working {
-            stage = Stage::Working;
-            state.needs_frame = true;
-            let slot = answer.clone();
-            // Detached on purpose. The loop's only interest in this thread is the slot it fills,
-            // and a join would be the block the worker exists to avoid.
-            std::thread::spawn(move || {
-                let result = crate::sys::install::take_over();
-                if let Ok(mut slot) = slot.lock() {
-                    *slot = Some(result);
+            if action.install && stage != Stage::Working {
+                stage = Stage::Working;
+                state.needs_frame = true;
+                let slot = answer.clone();
+                // Detached on purpose. The loop's only interest in this thread is the slot it
+                // fills, and a join would be the block the worker exists to avoid.
+                std::thread::spawn(move || {
+                    let result = crate::sys::install::take_over();
+                    if let Ok(mut slot) = slot.lock() {
+                        *slot = Some(result);
+                    }
+                });
+            }
+            if action.open {
+                if let Some(path) = installed.as_deref() {
+                    // No arguments: a launch nobody gave a flag to opens Settings, which is the
+                    // confirmation somebody who just installed it is looking for.
+                    let _ = std::process::Command::new(path).spawn();
                 }
-            });
-        }
-        if action.open {
-            if let Some(path) = installed.as_deref() {
-                // No arguments: a launch nobody gave a flag to opens Settings, which is the
-                // confirmation somebody who just installed it is looking for.
-                let _ = std::process::Command::new(path).spawn();
+                state.closed = true;
             }
-            state.closed = true;
+            if action.close {
+                state.closed = true;
+            }
+
+            // Something has to wake a loop that is asleep: the worker's answer arrives on another
+            // thread, and a button's hover fade is a clock rather than an event. The timer runs
+            // only while one of those is outstanding, so an idle window costs nothing.
+            unsafe {
+                if animating || stage == Stage::Working {
+                    SetTimer(hwnd, TICK, 16, None);
+                } else {
+                    let _ = KillTimer(hwnd, TICK);
+                }
+            }
         }
-        if action.close {
-            state.closed = true;
+        if state.closed {
+            break;
         }
 
-        // Something has to wake a loop that is blocked in `GetMessage`: the worker's answer
-        // arrives on another thread, and a button's hover fade is a clock rather than an event.
-        // The timer runs only while one of those is outstanding, so an idle window costs nothing.
-        unsafe {
-            if animating || stage == Stage::Working {
-                SetTimer(hwnd, TICK, 16, None);
-            } else {
-                let _ = KillTimer(hwnd, TICK);
-            }
+        // Asleep until a message arrives, or the frame still wanted can be drawn.
+        let (signal, until) = if state.needs_frame {
+            let (signal, at) = surface.pace();
+            (signal, Some(at))
+        } else {
+            (None, None)
+        };
+        let signals: &[HANDLE] = signal.as_ref().map(std::slice::from_ref).unwrap_or(&[]);
+        if clock.sleep(signals, until).is_some() {
+            surface.took_slot();
         }
     }
 
