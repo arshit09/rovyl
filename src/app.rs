@@ -86,6 +86,14 @@ pub struct App {
     armed_recording: Option<Recording>,
     /// Whether the configured shortcut could not be registered because something else holds it.
     shortcut_taken: bool,
+    /// The workspaces' own shortcuts as they are registered: slot `n` is hotkey id
+    /// `ID_WORKSPACE_SHORTCUT_BASE + n`, and holds the key and the workspace it opens.
+    ///
+    /// Kept so a settings frame can tell whether anything changed without re-registering: the list
+    /// is compared against what the config asks for, and only a difference touches Windows.
+    workspace_shortcuts: Vec<(hotkey::Hotkey, usize)>,
+    /// The ids of workspaces whose shortcut another program holds, for the editor to say so.
+    workspace_shortcuts_taken: Vec<String>,
     /// Recent projects, by `label||command`.
     ///
     /// Kept for the session: an editor's MRU changes when the editor opens a folder, which it
@@ -121,8 +129,13 @@ pub struct App {
     /// The next trigger release is the tail of a press that CLOSED the wheel, and must not reopen
     /// or confirm anything.
     suppress_release: bool,
-    /// The wheel was opened by holding the keyboard shortcut; its release confirms.
-    shortcut_held: bool,
+    /// The wheel was opened by holding a keyboard shortcut — the trigger or a workspace's — and
+    /// this is the key whose release confirms.
+    ///
+    /// The key itself rather than a flag, because it is no longer always the trigger: holding a
+    /// workspace's shortcut and watching the trigger's key for the release would confirm the
+    /// instant the wheel opened, since that key was never down.
+    held_shortcut: Option<hotkey::Hotkey>,
     /// What is waiting on the launch echo to finish.
     pending_launch: Option<Box<config::AppItem>>,
     /// Where a tray menu should open once every mouse button is released.
@@ -237,6 +250,8 @@ impl App {
             hold_timer: false,
             armed_recording: None,
             shortcut_taken: false,
+            workspace_shortcuts: Vec::new(),
+            workspace_shortcuts_taken: Vec::new(),
             card: None,
             fault: None,
             fault_copied: false,
@@ -269,7 +284,7 @@ impl App {
             first_paint: None,
             pending_open: None,
             suppress_release: false,
-            shortcut_held: false,
+            held_shortcut: None,
             pending_launch: None,
             pending_menu_at: None,
             dock_targets: Vec::new(),
@@ -322,6 +337,7 @@ impl App {
             // worth something.
             hook::arm(None, false);
             self.hotkeys.clear(self.hwnd, hotkey::ID_TRIGGER);
+            self.arm_workspace_shortcuts();
             return;
         }
         if self.config.enable_mouse_trigger {
@@ -357,6 +373,64 @@ impl App {
             self.hotkeys.clear(self.hwnd, hotkey::ID_TRIGGER);
             self.shortcut_taken = false;
         }
+        // After the trigger, which outranks them: `workspace_shortcut_bindings` already leaves out
+        // a workspace that asks for the trigger's own combination.
+        self.arm_workspace_shortcuts();
+    }
+
+    /// What the workspaces' shortcuts should be registered as right now. Nothing while paused,
+    /// and nothing while a keyboard shortcut is being recorded — see `apply_settings_request`.
+    fn wanted_workspace_shortcuts(&self) -> Vec<(hotkey::Hotkey, usize)> {
+        let recording_keys = matches!(
+            self.armed_recording,
+            Some(Recording::Shortcut | Recording::WorkspaceShortcut(_))
+        );
+        if self.paused || recording_keys {
+            return Vec::new();
+        }
+        let mut wanted = config::workspace_shortcut_bindings(&self.config);
+        wanted.truncate(hotkey::MAX_WORKSPACE_SHORTCUTS);
+        wanted
+    }
+
+    /// Register every workspace's own shortcut, replacing whatever was registered before.
+    ///
+    /// Unlike the open-wheel keys these are live whenever the triggers are: they are how the wheel
+    /// OPENS, so they cannot wait for it to be up.
+    fn arm_workspace_shortcuts(&mut self) {
+        let first = hotkey::ID_WORKSPACE_SHORTCUT_BASE;
+        self.hotkeys.clear_range(
+            self.hwnd,
+            first..first + hotkey::MAX_WORKSPACE_SHORTCUTS as i32,
+        );
+        self.workspace_shortcuts = self.wanted_workspace_shortcuts();
+        self.workspace_shortcuts_taken.clear();
+        for (slot, (binding, index)) in self.workspace_shortcuts.iter().enumerate() {
+            let probe = self.hotkeys.set(self.hwnd, first + slot as i32, binding);
+            if matches!(probe, hotkey::Probe::Taken) {
+                // The same reason the trigger's outcome is kept: the editor shows the combination
+                // either way, and "I set it and nothing happens" needs an answer.
+                let workspace = &self.config.workspaces[*index];
+                config::store::log_line(&format!(
+                    "workspace shortcut {} for {} is held by another program",
+                    hotkey::format(binding),
+                    workspace.name
+                ));
+                self.workspace_shortcuts_taken.push(workspace.id.clone());
+            }
+        }
+    }
+
+    /// Re-register the workspaces' shortcuts if the config now asks for something else.
+    ///
+    /// Called after every settings frame rather than from the places that change them, because
+    /// those are many — the recorder, the code view, a reorder, a delete, turning a workspace off,
+    /// an import — and every one of them moves which index a slot opens. A compare of a handful of
+    /// keys per frame is cheaper than remembering to call this from each.
+    fn sync_workspace_shortcuts(&mut self) {
+        if self.wanted_workspace_shortcuts() != self.workspace_shortcuts {
+            self.arm_workspace_shortcuts();
+        }
     }
 
     /// Register the workspace keys, which are only live while the wheel is open.
@@ -366,8 +440,10 @@ impl App {
     /// quiet while a workspace whose key was recorded as a letter keeps working. That is said out
     /// loud in the settings row rather than discovered by pressing 2 and watching an app open.
     fn arm_workspace_keys(&mut self, open: bool) {
-        self.hotkeys
-            .clear_range(self.hwnd, hotkey::ID_WORKSPACE_BASE);
+        self.hotkeys.clear_range(
+            self.hwnd,
+            hotkey::ID_WORKSPACE_BASE..hotkey::ID_WORKSPACE_BASE + MAX_WORKSPACE_KEYS as i32,
+        );
         self.workspace_key_slots = [None; MAX_WORKSPACE_KEYS];
         if !open {
             return;
@@ -450,11 +526,28 @@ impl App {
     // ── Opening and closing ─────────────────────────────────────────────────
 
     fn open_wheel(&mut self, source: TriggerSource) {
+        self.open_wheel_on(source, None);
+    }
+
+    /// Open the wheel inside workspace `into` — a workspace's own shortcut — or, for `None`, on
+    /// the level the configuration opens on.
+    fn open_wheel_on(&mut self, source: TriggerSource, into: Option<usize>) {
         let display = monitor::target_display(self.config.monitor_choice(), self.config.placement());
         let cursor = hook::cursor();
         let refresh = monitor::refresh_hz(display.handle);
         self.overlay.surface.set_refresh(refresh);
         perf::note(&format!("wheel opens on a {refresh} Hz display"));
+
+        // Opening inside a workspace is a pick made on the user's behalf, and it is recorded the
+        // same way one made in the picker is: that workspace becomes the active one. The mouse
+        // wheel cycles from there, and the tray and the panel both say which one it is.
+        let into = into.or_else(|| self.config.default_workspace());
+        if let Some(index) = into {
+            if self.config.active_workspace_index != index {
+                self.config.active_workspace_index = index;
+                self.dirty = true;
+            }
+        }
 
         // The reach has to be known before the window is sized, and it depends on the item count —
         // which depends on the level, which is what `open` sets up. So the wheel is opened once
@@ -462,12 +555,13 @@ impl App {
         // wheel is told the real geometry. Both passes are pure arithmetic; neither draws.
         let scale = display.scale();
         self.wheel.scale = scale;
-        self.wheel.open(
+        self.wheel.open_on(
             &self.config,
             source,
             (0.0, 0.0),
             (display.work_width() as f32, display.work_height() as f32),
             scale,
+            into,
         );
         // With the peek on, the room a fan will need is reserved now: this number sizes the
         // window AND clamps the centre away from the screen edges, and both are fixed before
@@ -560,7 +654,7 @@ impl App {
         hook::end_blocking();
         self.arm_workspace_keys(false);
         self.first_paint = None;
-        self.shortcut_held = false;
+        self.held_shortcut = None;
 
         if let Some(item) = self.pending_launch.take() {
             // The command leaves AFTER the echo and AFTER the window is down: the overlay is
@@ -1017,7 +1111,7 @@ impl App {
             // Disjoint field borrows rather than moving the config in and out: it holds every
             // workspace and every shortcut, and a swap per event would be a deep copy on the path
             // between the hand letting go and the app opening.
-            let action = self.wheel.confirm(&mut self.config);
+            let action = self.wheel.release(&mut self.config);
             self.apply(action);
         }
     }
@@ -1176,7 +1270,18 @@ impl App {
                 return;
             }
             self.open_wheel(TriggerSource::Shortcut);
-            self.shortcut_held = hold;
+            self.held_shortcut = if hold {
+                hotkey::parse(&self.config.global_shortcut)
+            } else {
+                None
+            };
+            return;
+        }
+        let first = hotkey::ID_WORKSPACE_SHORTCUT_BASE;
+        if (first..first + hotkey::MAX_WORKSPACE_SHORTCUTS as i32).contains(&id) {
+            if let Some(&(binding, index)) = self.workspace_shortcuts.get((id - first) as usize) {
+                self.on_workspace_shortcut(binding, index);
+            }
             return;
         }
         if id >= hotkey::ID_WORKSPACE_BASE {
@@ -1186,6 +1291,37 @@ impl App {
                 self.apply(action);
             }
         }
+    }
+
+    /// A workspace's own shortcut: open the wheel inside it.
+    ///
+    /// It follows the trigger shortcut's behaviour — toggle or hold — because it is the same kind of
+    /// gesture, and a second setting for it would be one more thing to fall out of step. Pressed
+    /// with the wheel already up in toggle mode, it closes the wheel if that workspace is what is on
+    /// screen and goes to that workspace if it is not, so a row of them can be played like tabs.
+    fn on_workspace_shortcut(&mut self, binding: hotkey::Hotkey, index: usize) {
+        let hold = matches!(
+            self.config.shortcut_trigger_mode,
+            Some(config::ShortcutTriggerMode::Hold)
+        );
+        if self.wheel.open && !self.wheel.exiting() {
+            if hold {
+                return;
+            }
+            let on_picker = self.wheel.is_root() && self.wheel.root_is_picker(&self.config);
+            if self.config.active_workspace_index == index && !on_picker {
+                self.close_wheel();
+            } else {
+                let action = self.wheel.switch_workspace(&mut self.config, index);
+                self.apply(action);
+            }
+            return;
+        }
+        if !self.may_open() {
+            return;
+        }
+        self.open_wheel_on(TriggerSource::Shortcut, Some(index));
+        self.held_shortcut = hold.then_some(binding);
     }
 
     /// Whether the wheel may open at all right now.
@@ -1222,6 +1358,20 @@ impl App {
         }
     }
 
+    /// Stop listening for a shortcut or a button, and put back what listening took down.
+    ///
+    /// For a panel that goes away mid-recording. The recorder lets go of every global shortcut
+    /// while it listens, and only a settings FRAME notices a recording ending — a hidden panel draws
+    /// none, so the trigger and every workspace shortcut stayed dead until it was opened again.
+    fn end_recording(&mut self) {
+        self.settings_ui.recording = None;
+        self.settings_ui.recording_key = None;
+        if self.armed_recording.take().is_some() {
+            hook::set_recording(false);
+            self.arm_triggers();
+        }
+    }
+
     /// Draw one frame of the settings window, and act on what the user did.
     fn settings_frame(&mut self) -> bool {
         let trace = std::env::var_os("ROVYL_TRACE_SETTINGS").is_some();
@@ -1234,6 +1384,7 @@ impl App {
         if window.state.close_requested {
             window.state.close_requested = false;
             window.hide();
+            self.end_recording();
             // Closing hides. The app lives in the tray, and a settings window that quit the
             // process would take the launcher with it — which is not what the X on a settings
             // window means anywhere else in Windows.
@@ -1328,6 +1479,9 @@ impl App {
         // arrive on a worker and upload on this thread like every other bitmap in the program.
         self.icons.pump(&self.gpu);
         self.settings_ui.shortcut_taken = self.shortcut_taken;
+        self.settings_ui
+            .workspace_shortcuts_taken
+            .clone_from(&self.workspace_shortcuts_taken);
         let version = env!("CARGO_PKG_VERSION");
         let request =
             crate::ui::settings::draw(&mut frame, &mut self.settings_ui, &mut self.config, version);
@@ -1378,6 +1532,7 @@ impl App {
             Some(1) => window.toggle_maximize(),
             Some(2) => {
                 window.hide();
+                self.end_recording();
                 if dirty || self.dirty {
                     self.dirty = true;
                 }
@@ -1402,6 +1557,7 @@ impl App {
             self.begin_discovery();
         }
         self.apply_settings_request(request);
+        self.sync_workspace_shortcuts();
         if self.dirty {
             self.save();
         }
@@ -1447,12 +1603,17 @@ impl App {
         // re-registered the global hotkey sixty times a second for as long as the panel was open.
         let wanted = self.settings_ui.recording;
         if wanted != self.armed_recording {
+            // Recorded as acted on BEFORE acting: re-arming at the end of a recording asks this
+            // what to register, and while it still said "recording" the answer was nothing.
+            self.armed_recording = wanted;
             match wanted {
                 Some(Recording::MouseButton) => hook::set_recording(true),
-                Some(Recording::Shortcut) => {
-                    // Release the global binding for the duration. Pressing the shortcut that is
-                    // being replaced would otherwise open the wheel over the panel recording it.
+                Some(Recording::Shortcut | Recording::WorkspaceShortcut(_)) => {
+                    // Release the global bindings for the duration — the workspaces' as well as
+                    // the trigger's. Pressing a shortcut that is being replaced would otherwise
+                    // open the wheel over the panel recording it.
                     self.hotkeys.clear_all(self.hwnd);
+                    self.workspace_shortcuts.clear();
                     hook::set_recording(false);
                     config::store::log_line("recording: listening for a global shortcut");
                 }
@@ -1465,7 +1626,6 @@ impl App {
                     ));
                 }
             }
-            self.armed_recording = wanted;
         }
         if request.reset {
             // The shipped configuration, and the profile written immediately — a reset that only
@@ -2103,13 +2263,11 @@ impl App {
 
         // The keyboard shortcut's hold mode: the release confirms, and a registered hotkey reports
         // only the press, so the release is observed here.
-        if self.shortcut_held {
-            if let Some(parsed) = hotkey::parse(&self.config.global_shortcut) {
-                if !hotkey::key_is_held(&parsed) {
-                    self.shortcut_held = false;
-                    let action = self.wheel.confirm(&mut self.config);
-                    self.apply(action);
-                }
+        if let Some(held) = self.held_shortcut {
+            if !hotkey::key_is_held(&held) {
+                self.held_shortcut = None;
+                let action = self.wheel.release(&mut self.config);
+                self.apply(action);
             }
         }
 

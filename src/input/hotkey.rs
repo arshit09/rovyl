@@ -31,7 +31,13 @@ pub struct Hotkey {
 /// The wheel's trigger is one; the workspace keys registered while the wheel is OPEN take the rest,
 /// starting past it so the two sets can never collide. The original hardcoded 1–9 against the
 /// workspace position, which stopped being true the moment a key could be recorded.
+///
+/// The workspaces' own global shortcuts sit in a band of their own BETWEEN the two. They are live
+/// whenever the trigger is, and the open-wheel keys come and go with every open and close, so the
+/// two bands have to be clearable without touching each other.
 pub const ID_TRIGGER: i32 = 1;
+pub const ID_WORKSPACE_SHORTCUT_BASE: i32 = 10;
+pub const MAX_WORKSPACE_SHORTCUTS: usize = 64;
 pub const ID_WORKSPACE_BASE: i32 = 100;
 
 /// Parse an Electron-style accelerator.
@@ -281,8 +287,8 @@ impl Registry {
         }
     }
 
-    pub fn clear_range(&mut self, hwnd: HWND, from: i32) {
-        let doomed: Vec<i32> = self.held.iter().copied().filter(|id| *id >= from).collect();
+    pub fn clear_range(&mut self, hwnd: HWND, ids: std::ops::Range<i32>) {
+        let doomed: Vec<i32> = self.held.iter().copied().filter(|id| ids.contains(id)).collect();
         for id in doomed {
             self.clear(hwnd, id);
         }
@@ -422,6 +428,15 @@ mod tests {
         for index in 0..64 {
             assert_ne!(ID_WORKSPACE_BASE + index, ID_TRIGGER);
         }
+    }
+
+    #[test]
+    fn the_workspace_shortcut_band_sits_between_the_trigger_and_the_open_wheel_keys() {
+        // Clearing one band must never take the other with it: the open-wheel keys are dropped on
+        // every close, and the shortcuts have to survive that.
+        let band = ID_WORKSPACE_SHORTCUT_BASE..ID_WORKSPACE_SHORTCUT_BASE + MAX_WORKSPACE_SHORTCUTS as i32;
+        assert!(!band.contains(&ID_TRIGGER));
+        assert!(band.end <= ID_WORKSPACE_BASE);
     }
 
     #[test]

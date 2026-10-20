@@ -343,6 +343,8 @@ pub fn ui_config() -> UiConfig {
         has_seen_direction_hint: Some(false),
         workspaces: workspaces(),
         active_workspace_index: 0,
+        // The picker. Opening straight into one workspace is a choice made in Workspaces.
+        default_workspace_id: None,
         appearance_theme: Some(Theme::Black),
         radial_selection_mode: Some(SelectionMode::Area),
         // The shares are aimed by but not drawn, which is the wheel every existing profile already

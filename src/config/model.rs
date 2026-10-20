@@ -395,6 +395,14 @@ pub struct Workspace {
     ///   `Some(k)`  — that key, as the single upper-case character the layout prints.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub hotkey_key: Option<String>,
+    /// A system-wide accelerator that opens the wheel straight into this workspace, in the same
+    /// grammar as `UiConfig::global_shortcut`: `Ctrl+Alt+1`, `Super+F2`.
+    ///
+    /// Not the same thing as `hotkey_key` above, and the two never compete: that one is a bare key
+    /// registered only while the wheel is UP, this one always carries a modifier and is live
+    /// whenever the triggers are. Absent or empty means none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub global_shortcut: Option<String>,
     #[serde(default = "yes")]
     pub enabled: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -420,6 +428,7 @@ impl Default for Workspace {
             apps: Vec::new(),
             hotkey: 0,
             hotkey_key: None,
+            global_shortcut: None,
             enabled: true,
             color: None,
             picker_icon_name: None,
@@ -660,6 +669,15 @@ pub struct UiConfig {
     pub workspaces: Vec<Workspace>,
     #[serde(default)]
     pub active_workspace_index: usize,
+    /// The workspace the wheel opens INTO, skipping the picker. Absent means the picker, which is
+    /// what every config written before this existed gets.
+    ///
+    /// By id and not by index, unlike `active_workspace_index` beside it: this one is a choice the
+    /// user made once and expects to keep, and an index is quietly re-pointed by every reorder and
+    /// every delete above it. An id that names nothing — the workspace was deleted, or turned off —
+    /// reads as the picker rather than as an error: see `UiConfig::default_workspace`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub default_workspace_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub appearance_theme: Option<Theme>,
     #[serde(default, skip_serializing_if = "Option::is_none")]

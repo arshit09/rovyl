@@ -8,6 +8,8 @@ pub mod store;
 
 pub use model::*;
 
+use crate::input::hotkey::{self, Hotkey};
+
 // ─── Derived reads ──────────────────────────────────────────────────────────
 //
 // Questions about the config that more than one part of the app asks. They live here rather than
@@ -202,6 +204,19 @@ impl UiConfig {
         self.workspaces.get(self.active_workspace_index)
     }
 
+    /// The workspace the wheel opens into, as an index — or `None` for the picker.
+    ///
+    /// A stored id that names nothing, or names a workspace that is switched off, is the picker:
+    /// opening into a space the picker itself hides would be a wheel nobody can find their way
+    /// back to.
+    pub fn default_workspace(&self) -> Option<usize> {
+        let id = self.default_workspace_id.as_deref().filter(|id| !id.is_empty())?;
+        self.workspaces
+            .iter()
+            .position(|w| w.id == id)
+            .filter(|&index| self.workspaces[index].enabled)
+    }
+
     /// Whether the overlay window has to reach the screen edges instead of opening as a box around
     /// the wheel.
     ///
@@ -316,6 +331,58 @@ pub fn workspace_key_bindings(config: &UiConfig) -> Vec<(String, usize)> {
     bindings
 }
 
+// ─── Workspace shortcuts ────────────────────────────────────────────────────
+
+/// Every workspace that can be opened from anywhere: the accelerator to register, and its index.
+///
+/// Only an enabled workspace answers. A space that is switched off is one the picker hides, and a
+/// shortcut into it would open a wheel whose hub leads back to a list it is not in.
+///
+/// Two workspaces cannot share an accelerator, and a workspace cannot share the wheel's own
+/// trigger — the recorder refuses both, so this only settles what arrived some other way: a hand
+/// edit, a pasted workspace, the trigger switched back on over a key a workspace took while it was
+/// off. The trigger wins over any workspace, and between workspaces the earlier one does, the same
+/// fixed rule `workspace_key_bindings` follows.
+pub fn workspace_shortcut_bindings(config: &UiConfig) -> Vec<(Hotkey, usize)> {
+    let trigger = if config.keyboard_trigger_on() {
+        hotkey::parse(&config.global_shortcut)
+    } else {
+        None
+    };
+    let mut bindings: Vec<(Hotkey, usize)> = Vec::new();
+    for (index, workspace) in config.workspaces.iter().enumerate() {
+        if !workspace.enabled {
+            continue;
+        }
+        let Some(parsed) = workspace.global_shortcut.as_deref().and_then(hotkey::parse) else {
+            continue;
+        };
+        if Some(parsed) == trigger || bindings.iter().any(|(held, _)| *held == parsed) {
+            continue;
+        }
+        bindings.push((parsed, index));
+    }
+    bindings
+}
+
+/// Take `accelerator` away from every workspace but `keep`, so it is bound once.
+///
+/// Compared as PARSED keys, not as text: `Ctrl+Alt+K` and `Alt+Control+k` are one combination, and
+/// a string comparison would leave both bound and one of them silently dead.
+pub fn take_workspace_shortcut(config: &mut UiConfig, accelerator: &str, keep: Option<usize>) {
+    let Some(wanted) = hotkey::parse(accelerator) else {
+        return;
+    };
+    for (index, workspace) in config.workspaces.iter_mut().enumerate() {
+        if Some(index) == keep {
+            continue;
+        }
+        if workspace.global_shortcut.as_deref().and_then(hotkey::parse) == Some(wanted) {
+            workspace.global_shortcut = None;
+        }
+    }
+}
+
 // ─── Colour ─────────────────────────────────────────────────────────────────
 
 /// `#rrggbb` as `0x00RRGGBB`. `None` for anything else, so a caller supplies its own fallback
@@ -371,6 +438,64 @@ mod tests {
         // Absent follows the position instead.
         let ws = Workspace { hotkey_key: None, ..Workspace::default() };
         assert_eq!(workspace_key_at(&ws, 0), "1");
+    }
+
+    #[test]
+    fn the_default_workspace_is_found_by_id_and_only_while_it_is_on() {
+        let mut cfg = defaults::ui_config();
+        cfg.workspaces = vec![
+            Workspace { id: "a".into(), ..Workspace::default() },
+            Workspace { id: "b".into(), ..Workspace::default() },
+        ];
+        assert_eq!(cfg.default_workspace(), None, "absent means the picker");
+        cfg.default_workspace_id = Some("b".into());
+        assert_eq!(cfg.default_workspace(), Some(1));
+        // A reorder moves the index and not the choice.
+        cfg.workspaces.swap(0, 1);
+        assert_eq!(cfg.default_workspace(), Some(0));
+        // Switched off, or gone, is the picker -- never a wheel opened into a hidden space.
+        cfg.workspaces[0].enabled = false;
+        assert_eq!(cfg.default_workspace(), None);
+        cfg.default_workspace_id = Some("deleted".into());
+        assert_eq!(cfg.default_workspace(), None);
+    }
+
+    #[test]
+    fn workspace_shortcuts_give_way_to_the_trigger_and_to_each_other() {
+        let mut cfg = defaults::ui_config();
+        cfg.global_shortcut = "Alt+Z".into();
+        cfg.workspaces = vec![
+            Workspace { id: "a".into(), global_shortcut: Some("Ctrl+Alt+1".into()), ..Workspace::default() },
+            // The same combination spelled differently: one key, so the earlier workspace keeps it.
+            Workspace { id: "b".into(), global_shortcut: Some("Alt+Control+1".into()), ..Workspace::default() },
+            Workspace { id: "c".into(), global_shortcut: Some("Alt+Z".into()), ..Workspace::default() },
+            Workspace { id: "d".into(), global_shortcut: Some("Ctrl+Alt+4".into()), enabled: false, ..Workspace::default() },
+            Workspace { id: "e".into(), global_shortcut: Some("nonsense".into()), ..Workspace::default() },
+            Workspace { id: "f".into(), global_shortcut: Some("Super+F6".into()), ..Workspace::default() },
+        ];
+        let live: Vec<usize> = workspace_shortcut_bindings(&cfg).into_iter().map(|(_, i)| i).collect();
+        assert_eq!(live, vec![0, 5]);
+        // With the keyboard trigger off, its combination is free for a workspace to use.
+        cfg.enable_keyboard_trigger = Some(false);
+        let live: Vec<usize> = workspace_shortcut_bindings(&cfg).into_iter().map(|(_, i)| i).collect();
+        assert_eq!(live, vec![0, 2, 5]);
+    }
+
+    #[test]
+    fn taking_a_workspace_shortcut_clears_every_other_spelling_of_it() {
+        let mut cfg = defaults::ui_config();
+        cfg.workspaces = vec![
+            Workspace { id: "a".into(), global_shortcut: Some("Ctrl+Alt+K".into()), ..Workspace::default() },
+            Workspace { id: "b".into(), global_shortcut: Some("Alt+Ctrl+k".into()), ..Workspace::default() },
+            Workspace { id: "c".into(), global_shortcut: Some("Ctrl+Alt+J".into()), ..Workspace::default() },
+        ];
+        take_workspace_shortcut(&mut cfg, "Ctrl+Alt+K", Some(1));
+        assert_eq!(cfg.workspaces[0].global_shortcut, None);
+        assert_eq!(cfg.workspaces[1].global_shortcut.as_deref(), Some("Alt+Ctrl+k"));
+        assert_eq!(cfg.workspaces[2].global_shortcut.as_deref(), Some("Ctrl+Alt+J"));
+        // Taken by the wheel's own trigger, nobody keeps it.
+        take_workspace_shortcut(&mut cfg, "Ctrl+Alt+J", None);
+        assert_eq!(cfg.workspaces[2].global_shortcut, None);
     }
 
     #[test]

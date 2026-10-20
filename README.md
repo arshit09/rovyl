@@ -81,7 +81,7 @@ never puts a window between you and your work.
 - **Launch anything** — applications, folders, files, websites, custom commands
 - **Automatic discovery** — reads your Start Menu and extracts real app icons
 - **Custom icons** — any workspace or shortcut can wear a glyph, a picture (PNG, JPG, SVG, WebP, ICO…) or any icon inside an EXE or DLL
-- **Workspaces** — separate wheels for work, games, streaming; switch from the picker or with a number key
+- **Workspaces** — separate wheels for work, games, streaming; switch from the picker or with a number key, open straight into the one you use most, or give each its own global shortcut
 - **Workspace peek** — optional: rest on a workspace and its shortcuts fan out around it, so one can be run without entering it
 - **Your trigger** — middle mouse button, a side button, a global hotkey, or both; each can be turned off
 - **Three aiming modes** — by direction for speed, by pointer for precision, or by area with each slice's share drawn on screen
@@ -155,6 +155,8 @@ cancel without launching anything.
 
 By default the wheel opens on a picker of your workspaces. Prefer number keys? General →
 **Workspace switching** → **Keys**, and 1–9 move between them while the wheel is open.
+Mostly use one? Workspaces → **Open the wheel on** skips the picker, and the hub still leads
+back to it. A workspace's **Global shortcut** opens the wheel inside it from anywhere.
 
 </td>
 </tr>

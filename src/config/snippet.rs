@@ -79,6 +79,7 @@ const KEY_ORDER: &[&str] = &[
     "name",
     "enabled",
     "hotkeyKey",
+    "globalShortcut",
     "color",
     "pickerIconName",
     "pickerIconUrl",
@@ -258,6 +259,30 @@ pub fn parse(text: &str, identity: &Workspace) -> Result<Parsed, Problem> {
                 });
             }
             workspace.hotkey_key = Some(normalized);
+        }
+    }
+
+    // The workspace's own shortcut is written back the way the recorder writes it, and one this
+    // build could never register is dropped and said so — kept, it would sit in the editor's row
+    // looking bound and open nothing.
+    if let Some(stored) = workspace.global_shortcut.clone() {
+        let trimmed = stored.trim();
+        match crate::input::hotkey::parse(trimmed) {
+            _ if trimmed.is_empty() => workspace.global_shortcut = None,
+            Some(parsed) => {
+                let canonical = crate::input::hotkey::format(&parsed);
+                if canonical != stored {
+                    healed.push(format!("\"globalShortcut\": {stored:?} became {canonical:?}"));
+                }
+                workspace.global_shortcut = Some(canonical);
+            }
+            None => {
+                healed.push(format!(
+                    "\"globalShortcut\": {stored:?} is not a combination Rovyl can listen for \
+                     (it needs Ctrl, Alt, Shift or Win and one key), so it was dropped"
+                ));
+                workspace.global_shortcut = None;
+            }
         }
     }
 
@@ -569,6 +594,22 @@ mod tests {
         // So does "follow the position".
         let absent = parse(r#"{ "name": "x" }"#, &ws).expect("valid");
         assert_eq!(absent.workspace.hotkey_key, None);
+    }
+
+    #[test]
+    fn a_global_shortcut_is_written_the_recorders_way_or_dropped() {
+        let ws = workspace();
+        let parsed = parse(r#"{ "globalShortcut": "control+alt+k" }"#, &ws).expect("valid");
+        assert_eq!(parsed.workspace.global_shortcut.as_deref(), Some("Ctrl+Alt+K"));
+        assert!(parsed.healed.iter().any(|note| note.contains("became")));
+
+        // A bare key would take that key from every program on the machine, so it never binds.
+        let bare = parse(r#"{ "globalShortcut": "K" }"#, &ws).expect("valid");
+        assert_eq!(bare.workspace.global_shortcut, None);
+        assert!(bare.healed.iter().any(|note| note.contains("dropped")));
+
+        let canonical = parse(r#"{ "globalShortcut": "Ctrl+Alt+K" }"#, &ws).expect("valid");
+        assert!(canonical.healed.is_empty(), "{:?}", canonical.healed);
     }
 
     #[test]

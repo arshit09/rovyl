@@ -93,6 +93,10 @@ pub struct Wheel {
 
     /// Folder stack. Empty means the root level.
     stack: Vec<Level>,
+    /// How deep the stack was when the wheel opened: one when it opened INTO a workspace over the
+    /// picker, zero otherwise. A hold's release on the hub at or above this depth is the gesture's
+    /// "never mind", not a step back to a level the user never saw — see [`Wheel::release`].
+    opened_depth: usize,
     /// The root, rebuilt whenever the workspace or the config changes.
     root: Level,
     /// What has been typed on the wheel.
@@ -250,6 +254,7 @@ impl Wheel {
             viewport: (0.0, 0.0),
             scale: 1.0,
             stack: Vec::new(),
+            opened_depth: 0,
             root,
             filter: String::new(),
             active: None,
@@ -447,7 +452,8 @@ impl Wheel {
 
     // ── Opening and closing ─────────────────────────────────────────────────
 
-    /// Open the wheel. `center` and `viewport` are in the overlay's client pixels.
+    /// Open the wheel on the level the configuration asks for: its default workspace if it has
+    /// one, the root otherwise. `center` and `viewport` are in the overlay's client pixels.
     pub fn open(
         &mut self,
         config: &UiConfig,
@@ -455,6 +461,28 @@ impl Wheel {
         center: (f32, f32),
         viewport: (f32, f32),
         scale: f32,
+    ) {
+        self.open_on(config, source, center, viewport, scale, config.default_workspace());
+    }
+
+    /// Open the wheel already inside workspace `into`, or on the root for `None`.
+    ///
+    /// The workspace is PUSHED over the picker rather than made the root, so the wheel is exactly
+    /// the one a pick from the picker leaves behind: the pill names the workspace, the hub says
+    /// Back, and the other workspaces are one press away. Making it the root instead would be
+    /// quicker to write and would strand every other workspace behind the scroll wheel.
+    ///
+    /// The caller makes `into` the active workspace first. The mouse wheel cycles from the active
+    /// one, and a wheel showing one workspace while the config names another would cycle from the
+    /// wrong place.
+    pub fn open_on(
+        &mut self,
+        config: &UiConfig,
+        source: TriggerSource,
+        center: (f32, f32),
+        viewport: (f32, f32),
+        scale: f32,
+        into: Option<usize>,
     ) {
         self.root = build_root(config);
         self.stack.clear();
@@ -487,6 +515,22 @@ impl Wheel {
         self.pointer = None;
         self.active = None;
         self.center_active = true;
+
+        // Before the layout, so the ring is sized for the workspace's shortcuts and not for the
+        // picker underneath them — and so the dimming's pool is painted at its final size from the
+        // first frame, instead of gliding there from the picker's.
+        if let Some(workspace) = into
+            .filter(|_| self.root_is_picker(config))
+            .and_then(|index| config.workspaces.get(index))
+            .filter(|w| w.enabled)
+        {
+            self.stack.push(Level {
+                label: workspace.name.clone(),
+                items: workspace.apps.clone(),
+                parent: None,
+            });
+        }
+        self.opened_depth = self.stack.len();
 
         self.relayout(config);
         // The tiles mount collapsed at the hub and expand from there, so the open reads as a bloom
@@ -1312,6 +1356,11 @@ impl Wheel {
             self.level_changed(config);
             return Action::Redraw;
         }
+        self.root_center(config)
+    }
+
+    /// What the hub does at the root: cancel, or run the centre button's target.
+    fn root_center(&mut self, config: &UiConfig) -> Action {
         match config.center_button.kind {
             // `Widget` is a removed feature kept only so old configs parse; it closes like `None`.
             CenterKind::None | CenterKind::Cancel | CenterKind::Widget => {
@@ -1409,9 +1458,25 @@ impl Wheel {
 
     // ── Confirmation ────────────────────────────────────────────────────────
 
-    /// Confirm whatever the LIVE pointer is on. The release of a held trigger, and the click of a
-    /// tile, both come here.
+    /// Confirm whatever the LIVE pointer is on: the click of a tile, the click of the hub, Enter.
     pub fn confirm(&mut self, config: &mut UiConfig) -> Action {
+        self.confirm_as(config, false)
+    }
+
+    /// The release of a HELD trigger — the mouse button or the keyboard shortcut in hold mode.
+    ///
+    /// The same as a click everywhere but one place: the hub, on the level the wheel opened on.
+    /// Letting go without aiming is how a hold says "never mind", and it has to keep meaning that
+    /// when the wheel opens inside a workspace. As a click it would step back to the picker, and
+    /// with the trigger already up that leaves a wheel on screen that the user was dismissing.
+    ///
+    /// Deeper than that — a folder entered, or a workspace picked by resting on it — the hub is a
+    /// Back the user can see they are aiming at, and it goes back.
+    pub fn release(&mut self, config: &mut UiConfig) -> Action {
+        self.confirm_as(config, true)
+    }
+
+    fn confirm_as(&mut self, config: &mut UiConfig, release: bool) -> Action {
         if self.closing || self.consumed {
             return Action::Idle;
         }
@@ -1424,6 +1489,9 @@ impl Wheel {
             }
         }
         match self.resolve_live(config) {
+            Aim::Center if release && self.stack.len() <= self.opened_depth => {
+                self.root_center(config)
+            }
             Aim::Center => self.center_activate(config),
             Aim::Slice(index) => self.activate(config, index),
             Aim::Peek(index) => self.activate_peek(config, index),
@@ -2293,6 +2361,113 @@ mod tests {
         assert_eq!(wheel.breadcrumb(&cfg), vec!["Two"]);
         // And the hub now goes back out to the picker.
         assert_eq!(wheel.center_label(&cfg), "Back");
+    }
+
+    // ── Opening into a workspace ────────────────────────────────────────────
+
+    fn two_spaces_with_a_folder() -> UiConfig {
+        config_with(vec![
+            Workspace { id: "w1".into(), name: "One".into(), enabled: true, apps: vec![app("a", "A")], ..Workspace::default() },
+            Workspace {
+                id: "w2".into(),
+                name: "Two".into(),
+                enabled: true,
+                apps: vec![app("b", "B"), folder("f", "Media", vec![app("x", "Spotify")])],
+                ..Workspace::default()
+            },
+        ])
+    }
+
+    #[test]
+    fn a_default_workspace_skips_the_picker() {
+        let mut cfg = two_spaces_with_a_folder();
+        cfg.default_workspace_id = Some("w2".into());
+        let mut wheel = Wheel::new(&cfg);
+        wheel.open(&cfg, TriggerSource::Shortcut, (500.0, 500.0), (1000.0, 1000.0), 1.0);
+        // The workspace's own shortcuts on the first frame, named in the pill.
+        assert_eq!(wheel.items()[0].id, "b");
+        assert_eq!(wheel.breadcrumb(&cfg), vec!["Two"]);
+        // Over the picker, not instead of it: the hub leads out to the rest.
+        assert_eq!(wheel.center_label(&cfg), "Back");
+        assert_eq!(wheel.confirm(&mut cfg), Action::Redraw);
+        assert!(wheel.is_root() && wheel.root_is_picker(&cfg));
+    }
+
+    #[test]
+    fn a_workspace_shortcut_outranks_the_default() {
+        let mut cfg = two_spaces_with_a_folder();
+        cfg.default_workspace_id = Some("w2".into());
+        let mut wheel = Wheel::new(&cfg);
+        wheel.open_on(&cfg, TriggerSource::Shortcut, (500.0, 500.0), (1000.0, 1000.0), 1.0, Some(0));
+        assert_eq!(wheel.items()[0].id, "a");
+        assert_eq!(wheel.breadcrumb(&cfg), vec!["One"]);
+    }
+
+    #[test]
+    fn the_ring_is_sized_for_the_workspace_it_opened_into() {
+        let mut cfg = config_with(vec![
+            Workspace { id: "w1".into(), name: "One".into(), enabled: true, ..Workspace::default() },
+            Workspace {
+                id: "w2".into(),
+                name: "Two".into(),
+                enabled: true,
+                apps: (0..12).map(|i| app(&format!("a{i}"), "A")).collect(),
+                ..Workspace::default()
+            },
+        ]);
+        let mut wheel = Wheel::new(&cfg);
+        wheel.open(&cfg, TriggerSource::Shortcut, (500.0, 500.0), (1000.0, 1000.0), 1.0);
+        let picker = wheel.layout().radius;
+        cfg.default_workspace_id = Some("w2".into());
+        wheel.open(&cfg, TriggerSource::Shortcut, (500.0, 500.0), (1000.0, 1000.0), 1.0);
+        assert_eq!(wheel.item_count(), 12);
+        assert!(wheel.layout().radius > picker, "twelve shortcuts need the wider ring");
+        // And the dimming is already there, not gliding out from the picker's.
+        assert_eq!(wheel.backdrop_radius(&cfg), wheel.pool_radius(&cfg));
+    }
+
+    #[test]
+    fn letting_go_of_a_hold_on_the_hub_where_it_opened_cancels() {
+        // "Never mind" for a hold is letting go without aiming. Read as a click it would step back
+        // to the picker -- and leave a wheel on screen after the trigger the user let go of.
+        let mut cfg = two_spaces_with_a_folder();
+        cfg.default_workspace_id = Some("w2".into());
+        let mut wheel = Wheel::new(&cfg);
+        wheel.open(&cfg, TriggerSource::MouseHold, (500.0, 500.0), (1000.0, 1000.0), 1.0);
+        assert_eq!(wheel.release(&mut cfg), Action::Close);
+    }
+
+    #[test]
+    fn letting_go_on_the_hub_inside_a_folder_still_steps_back() {
+        let mut cfg = two_spaces_with_a_folder();
+        cfg.default_workspace_id = Some("w2".into());
+        let mut wheel = Wheel::new(&cfg);
+        wheel.open(&cfg, TriggerSource::MouseHold, (500.0, 500.0), (1000.0, 1000.0), 1.0);
+        wheel.activate(&mut cfg, 1);
+        assert_eq!(wheel.items()[0].id, "x");
+        // The folder is a level the user went into, so its Back is a Back.
+        assert_eq!(wheel.release(&mut cfg), Action::Redraw);
+        assert_eq!(wheel.items()[0].id, "b");
+    }
+
+    #[test]
+    fn a_release_at_the_picker_cancels_exactly_as_it_always_has() {
+        let mut cfg = two_spaces_with_a_folder();
+        let mut wheel = Wheel::new(&cfg);
+        wheel.open(&cfg, TriggerSource::MouseHold, (500.0, 500.0), (1000.0, 1000.0), 1.0);
+        assert_eq!(wheel.release(&mut cfg), Action::Close);
+    }
+
+    #[test]
+    fn one_workspace_has_no_picker_to_open_over() {
+        let mut cfg = one_space();
+        cfg.default_workspace_id = Some("w".into());
+        let mut wheel = Wheel::new(&cfg);
+        wheel.open(&cfg, TriggerSource::Shortcut, (500.0, 500.0), (1000.0, 1000.0), 1.0);
+        // Already the root, so nothing is pushed and the hub keeps cancelling.
+        assert!(wheel.is_root());
+        assert_eq!(wheel.items().len(), 3);
+        assert_eq!(wheel.confirm(&mut cfg), Action::Close);
     }
 
     #[test]

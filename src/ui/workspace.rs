@@ -275,6 +275,8 @@ pub fn editor(
     request: &mut super::settings::Request,
 ) -> bool {
     if index >= config.workspaces.len() {
+        // A recording for a workspace that is gone would keep every global shortcut released.
+        stop_shortcut_recording(state);
         return false;
     }
 
@@ -301,6 +303,7 @@ pub fn editor(
         0.0
     } else {
         opening_height(f, config.workspaces[index].apps.len(), true)
+            + shortcut_note_height(f, state, config, index)
     };
     let mut dialog = dialog_open(
         f,
@@ -323,6 +326,8 @@ pub fn editor(
         identity(f, state, config, index);
         f.gap(12.0);
         key_row(f, state, config, index);
+        f.gap(8.0);
+        shortcut_row(f, state, config, index);
         // Two gaps, not one: the identity block closes with a padding of its own, and the
         // shortcuts are the next section down. Collapsing them pulls "Shortcuts" up against the key.
         f.gap(24.0);
@@ -359,6 +364,7 @@ pub fn editor(
             state.editing_item = None;
             state.draft = Draft::default();
             state.recording_key = None;
+            stop_shortcut_recording(state);
             state.editor_height = 0.0;
             f.want_frame();
         }
@@ -668,8 +674,16 @@ fn opening_height(f: &Frame, count: usize, with_identity: bool) -> f32 {
     }
     if with_identity {
         let identity = f.px(48.0).max(line_h(f, 11.5) + f.px(8.0) + f.px(32.0));
-        // Identity, the key row, the two gaps between them, and the delete button at the end.
-        total += identity + f.px(12.0) + f.px(32.0) + f.px(24.0) + f.px(12.0) + f.px(23.0);
+        // Identity, the two key rows, the gaps between the three, the gap down to the shortcuts,
+        // and the delete button at the end.
+        total += identity
+            + f.px(12.0)
+            + f.px(32.0)
+            + f.px(8.0)
+            + f.px(32.0)
+            + f.px(24.0)
+            + f.px(12.0)
+            + f.px(23.0);
     }
     total
 }
@@ -704,6 +718,7 @@ fn dialog_close(f: &mut Frame, state: &mut super::settings::SettingsUi, dialog: 
         state.editing_item = None;
         state.icon_picker = None;
         state.recording_key = None;
+        stop_shortcut_recording(state);
         state.draft = Draft::default();
         state.editor_height = 0.0;
         // The code buffer goes with them. By the time this runs, text that was worth keeping has
@@ -1025,6 +1040,7 @@ fn delete_workspace(
             if config.active_workspace_index >= config.workspaces.len() {
                 config.active_workspace_index = config.workspaces.len().saturating_sub(1);
             }
+            super::settings::forget_default(config, &gone.id);
             state.confirming = None;
             f.ui.toast(format!("Deleted {}", gone.name));
             f.mark_dirty();
@@ -1580,7 +1596,8 @@ fn key_row(
     );
 
     // The slot. Pressing it starts listening; pressing it again gives up.
-    let slot = Rect::new(row.left + label_w + f.px(8.0), row.top, row.left + label_w + f.px(8.0) + f.px(96.0), row.bottom);
+    let column = key_label_column(f);
+    let slot = Rect::new(row.left + column + f.px(8.0), row.top, row.left + column + f.px(8.0) + f.px(96.0), row.bottom);
     let hovered = f.hovered(slot);
     if hovered {
         f.set_cursor(Cursor::Hand);
@@ -1637,6 +1654,8 @@ fn key_row(
     }
     if f.clicked("ws-key-slot", slot) {
         state.recording_key = if recording { None } else { Some(index) };
+        // One recorder listening at a time: both read the same keystrokes.
+        stop_shortcut_recording(state);
         f.want_frame();
     }
 
@@ -1656,12 +1675,14 @@ fn key_row(
     if key != config::WORKSPACE_KEY_NONE && !key.is_empty() {
         let width = f.p.measure("Remove", &w::control_style(f.scale, f.rtl)).0 + f.px(24.0);
         let at = Rect::new(x, row.top, x + width, row.bottom);
+        x = at.right + f.px(8.0);
         if w::button_at(f, "ws-key-clear", at, "Remove", ButtonKind::Quiet, true) {
             state.recording_key = None;
             config.workspaces[index].hotkey_key = Some(String::new());
             f.mark_dirty();
         }
     }
+    row_hint(f, row, x, "Picks this workspace while the wheel is open");
 
     if recording {
         // The settings window has the keyboard, so the key arrives as an ordinary message: no hook
@@ -1718,6 +1739,257 @@ fn take_key_from_others(config: &mut UiConfig, keep: usize, key: &str) {
         if config::workspace_key_at(workspace, at).eq_ignore_ascii_case(key) {
             workspace.hotkey_key = Some(String::new());
         }
+    }
+}
+
+/// How wide the column the two key rows' labels share is, so their slots line up under each other.
+fn key_label_column(f: &Frame) -> f32 {
+    let style = item_name_style(f.scale, f.rtl);
+    f.p.measure("Wheel key", &style)
+        .0
+        .max(f.p.measure("Global shortcut", &style).0)
+}
+
+/// A quiet sentence at the end of a key row, saying what the key is FOR. Only when it fits whole:
+/// a hint cut off mid-word explains nothing.
+fn row_hint(f: &mut Frame, row: Rect, x: f32, text: &str) {
+    let style = chip_text_style(f.scale, f.rtl);
+    let (tw, th) = f.p.measure(text, &style);
+    let left = x + f.px(4.0);
+    if left + tw > row.right {
+        return;
+    }
+    f.p.text(
+        text,
+        Rect::new(left, row.center().1 - th / 2.0, left + tw, row.bottom),
+        &style,
+        f.theme.text_3,
+    );
+}
+
+/// End a workspace-shortcut recording, if one is running. The host notices and re-registers.
+fn stop_shortcut_recording(state: &mut super::settings::SettingsUi) {
+    if matches!(state.recording, Some(super::settings::Recording::WorkspaceShortcut(_))) {
+        state.recording = None;
+    }
+}
+
+/// The line under the shortcut row, when there is something the cap cannot say by itself — and
+/// whether it is a FAULT, which is drawn in the danger colour, or only an explanation.
+fn shortcut_note(
+    state: &super::settings::SettingsUi,
+    config: &UiConfig,
+    index: usize,
+) -> Option<(String, bool)> {
+    use super::settings::Recording;
+    if state.recording == Some(Recording::WorkspaceShortcut(index)) {
+        return Some((
+            "Hold Ctrl, Alt, Shift or Win and press a key. Escape cancels, Backspace removes."
+                .into(),
+            false,
+        ));
+    }
+    let workspace = &config.workspaces[index];
+    let stored = workspace.global_shortcut.as_deref().map(str::trim).filter(|s| !s.is_empty())?;
+    if crate::input::hotkey::parse(stored).is_none() {
+        return Some((
+            format!("{stored} is not a combination Rovyl can listen for. Record it again."),
+            true,
+        ));
+    }
+    if !workspace.enabled {
+        return Some((
+            "This workspace is turned off, so its shortcut waits until it is back on.".into(),
+            false,
+        ));
+    }
+    if state.workspace_shortcuts_taken.contains(&workspace.id) {
+        return Some((
+            format!("{stored} is held by another program, so it does nothing here. Record a different one."),
+            true,
+        ));
+    }
+    let live = config::workspace_shortcut_bindings(config)
+        .iter()
+        .any(|(_, at)| *at == index);
+    if !live {
+        // Only a hand edit gets here: the recorder refuses both of these.
+        return Some((
+            format!("{stored} already opens the wheel or another workspace, so it does nothing here."),
+            true,
+        ));
+    }
+    None
+}
+
+/// What `shortcut_note` adds to the dialog's height, for the opening frame's measurement.
+fn shortcut_note_height(
+    f: &Frame,
+    state: &super::settings::SettingsUi,
+    config: &UiConfig,
+    index: usize,
+) -> f32 {
+    match shortcut_note(state, config, index) {
+        Some((note, _)) => f.px(8.0) + f.p.measure(&note, &chip_text_style(f.scale, f.rtl)).1,
+        None => 0.0,
+    }
+}
+
+/// The workspace's global shortcut: a combination that opens the wheel inside it from anywhere.
+///
+/// Laid out like the wheel key above it — label, cap, quiet buttons — and in the same column,
+/// because the two are read together and the difference between them is the whole story: one
+/// works while the wheel is up, the other is how it comes up.
+fn shortcut_row(
+    f: &mut Frame,
+    state: &mut super::settings::SettingsUi,
+    config: &mut UiConfig,
+    index: usize,
+) {
+    use super::settings::{Recorded, Recording};
+    let recording = state.recording == Some(Recording::WorkspaceShortcut(index));
+    let stored = config.workspaces[index]
+        .global_shortcut
+        .clone()
+        .filter(|s| !s.trim().is_empty());
+
+    let h = f.px(32.0);
+    let row = Rect::new(f.bounds.left, f.y, f.bounds.right, f.y + h);
+    f.y = row.bottom;
+
+    let label_style = item_name_style(f.scale, f.rtl);
+    let (label_w, label_ink) = f.p.measure("Global shortcut", &label_style);
+    f.p.text(
+        "Global shortcut",
+        Rect::new(row.left, row.center().1 - label_ink / 2.0, row.left + label_w, row.bottom),
+        &label_style,
+        f.theme.text_2,
+    );
+
+    // Wider than the wheel key's slot: this holds `Ctrl+Alt+Shift+F12`, not one character.
+    let column = key_label_column(f);
+    let shown = if recording {
+        "Press a combination\u{2026}".to_string()
+    } else {
+        stored.clone().unwrap_or_else(|| "None".to_string())
+    };
+    let style = if recording { w::control_style(f.scale, f.rtl) } else { kbd_style(f.scale, f.rtl) };
+    let (tw, th) = f.p.measure(&shown, &style);
+    // As wide as the prompt it turns into, so starting a recording does not shove the buttons and
+    // the hint sideways under the pointer that pressed it.
+    let prompt_w = f.p.measure("Press a combination\u{2026}", &w::control_style(f.scale, f.rtl)).0;
+    let slot_w = (tw.max(prompt_w) + f.px(40.0)).max(f.px(140.0));
+    let slot = Rect::new(row.left + column + f.px(8.0), row.top, row.left + column + f.px(8.0) + slot_w, row.bottom);
+    let hovered = f.hovered(slot);
+    if hovered {
+        f.set_cursor(Cursor::Hand);
+    }
+    f.p.fill_round_rect(slot, f.px(8.0), if hovered || recording { f.theme.raised } else { f.theme.sunken });
+    f.p.stroke_round_rect(
+        slot.inflate(-0.5),
+        f.px(8.0),
+        if recording {
+            f.theme.solid
+        } else if hovered {
+            f.theme.line_strong
+        } else {
+            f.theme.line
+        },
+        1.0,
+    );
+    if recording {
+        f.p.text(
+            &shown,
+            Rect::new(slot.center().0 - tw / 2.0, slot.center().1 - th / 2.0, slot.right, slot.bottom),
+            &style,
+            f.theme.text,
+        );
+    } else {
+        let unset = stored.is_none();
+        let cap_w = (tw + f.px(16.0)).max(f.px(28.0));
+        let cap = Rect::centred(slot.center().0, slot.center().1, cap_w, f.px(24.0));
+        if unset {
+            super::settings::dashed_round_rect(f, cap.inflate(-0.5), f.px(6.0), f.theme.line_strong);
+        } else {
+            f.p.fill_round_rect(cap, f.px(6.0), f.theme.raised);
+            f.p.stroke_round_rect(cap.inflate(-0.5), f.px(6.0), f.theme.line_strong, 1.0);
+        }
+        f.p.text(
+            &shown,
+            Rect::new(cap.left, cap.center().1 - th / 2.0, cap.right, cap.bottom),
+            &style,
+            if unset { f.theme.text_3 } else { f.theme.text },
+        );
+    }
+    if f.clicked("ws-shortcut-slot", slot) {
+        state.recording = if recording { None } else { Some(Recording::WorkspaceShortcut(index)) };
+        // One recorder listening at a time: both read the same keystrokes.
+        state.recording_key = None;
+        f.want_frame();
+    }
+
+    let mut x = slot.right + f.px(8.0);
+    if stored.is_some() {
+        let width = f.p.measure("Remove", &w::control_style(f.scale, f.rtl)).0 + f.px(24.0);
+        let at = Rect::new(x, row.top, x + width, row.bottom);
+        x = at.right + f.px(8.0);
+        if w::button_at(f, "ws-shortcut-clear", at, "Remove", ButtonKind::Quiet, true) {
+            stop_shortcut_recording(state);
+            config.workspaces[index].global_shortcut = None;
+            f.mark_dirty();
+        }
+    }
+    row_hint(f, row, x, "Opens the wheel inside this workspace from anywhere");
+
+    if recording {
+        // The settings window has the keyboard, so the combination arrives as ordinary messages —
+        // and the host has let go of every registered shortcut for as long as this lasts, so the
+        // one being replaced is recorded instead of opening the wheel over the panel.
+        let bare = !(f.input.ctrl || f.input.alt || f.input.shift || f.input.win);
+        let clears = bare && f.input.keys.iter().any(|&vk| vk == 0x08 || vk == 0x2E);
+        if clears {
+            state.recording = None;
+            config.workspaces[index].global_shortcut = None;
+            f.mark_dirty();
+            f.ui.toast("Shortcut removed");
+        } else {
+            match super::settings::read_shortcut(f.input) {
+                Recorded::Nothing => {}
+                Recorded::Cancelled => state.recording = None,
+                Recorded::Modifierless => f.ui.toast("A shortcut needs Ctrl, Alt, Shift or Win"),
+                Recorded::Taken(accelerator) => {
+                    state.recording = None;
+                    let trigger = config
+                        .keyboard_trigger_on()
+                        .then(|| crate::input::hotkey::parse(&config.global_shortcut))
+                        .flatten();
+                    if trigger.is_some() && crate::input::hotkey::parse(&accelerator) == trigger {
+                        // Refused rather than taken: the trigger is the one way into the wheel
+                        // that does not depend on a workspace, and a workspace that took it
+                        // would leave nothing opening the picker from the keyboard.
+                        f.ui.toast(format!("{accelerator} already opens the wheel"));
+                    } else {
+                        config::take_workspace_shortcut(config, &accelerator, Some(index));
+                        config.workspaces[index].global_shortcut = Some(accelerator);
+                        f.mark_dirty();
+                    }
+                }
+            }
+        }
+        f.want_frame();
+    }
+
+    if let Some((note, fault)) = shortcut_note(state, config, index) {
+        let style = chip_text_style(f.scale, f.rtl);
+        let (_, th) = f.p.measure(&note, &style);
+        f.y += f.px(8.0);
+        f.p.text(
+            &note,
+            Rect::new(f.bounds.left, f.y, f.bounds.right, f.y + th),
+            &style,
+            if fault { pal::DANGER } else { f.theme.text_2 },
+        );
+        f.y += th;
     }
 }
 

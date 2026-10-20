@@ -139,6 +139,10 @@ pub enum UpdateState {
 pub enum Recording {
     Shortcut,
     MouseButton,
+    /// The global shortcut of the workspace at this index. A recording of its own rather than
+    /// `recording_key`, because it is a SYSTEM-wide combination: the host has to let go of every
+    /// registered shortcut while it lasts, exactly as it does for the trigger's.
+    WorkspaceShortcut(usize),
 }
 
 pub struct SettingsUi {
@@ -205,6 +209,8 @@ pub struct SettingsUi {
     pub selected_apps: Vec<String>,
     /// Set by the host when the configured shortcut could not be registered.
     pub shortcut_taken: bool,
+    /// Set by the host: the ids of workspaces whose own shortcut another program holds.
+    pub workspace_shortcuts_taken: Vec<String>,
     /// A program or library the picker is showing the icons of, and how many it holds.
     pub icon_library: Option<(std::path::PathBuf, u32)>,
     /// How far down that grid has been scrolled, in rows.
@@ -260,6 +266,7 @@ impl Default for SettingsUi {
             multi_select: false,
             selected_apps: Vec::new(),
             shortcut_taken: false,
+            workspace_shortcuts_taken: Vec::new(),
             icon_library: None,
             icon_library_row: 0,
             editing_dock: false,
@@ -487,8 +494,9 @@ fn scroll_and_furniture(
 /// what the settings are called that could fall out of step with the rows themselves, and a row
 /// added to Advanced next year is searchable the day it is written.
 ///
-/// Workspaces is not among them. Its page is a grid of pictures rather than a list of sentences,
-/// and a workspace is not a setting — searching for one is what the nav is for.
+/// Workspaces is not among them, bar its one row. Its page is a grid of pictures rather than a list
+/// of sentences, and a workspace is not a setting — searching for one is what the nav is for. What
+/// the wheel opens on IS a setting, so `opening` is run with the rest.
 fn results(
     f: &mut Frame,
     state: &mut SettingsUi,
@@ -506,6 +514,7 @@ fn results(
     advanced(f, state, config, request);
     appearance(f, state, config);
     general(f, state, config, request, version);
+    opening(f, config);
     f.filter = None;
     // A heading whose rows were all filtered out never got drawn. Dropped rather than flushed:
     // it would otherwise appear at the bottom of the results with nothing under it.
@@ -1175,6 +1184,9 @@ fn activation(f: &mut Frame, state: &mut SettingsUi, config: &mut UiConfig, requ
                     crate::config::store::log_line(&format!("recording: took {accelerator}"));
                     state.recording = None;
                     request.record = None;
+                    // One combination, one meaning. A workspace that had it would otherwise go
+                    // quiet without saying so — the trigger outranks it at registration.
+                    config::take_workspace_shortcut(config, &accelerator, None);
                     config.global_shortcut = accelerator;
                     request.rearm = true;
                     f.mark_dirty();
@@ -2385,6 +2397,7 @@ fn workspaces(f: &mut Frame, state: &mut SettingsUi, config: &mut UiConfig) {
             for (at, ws) in config.workspaces.iter_mut().enumerate() {
                 ws.hotkey = if at < 9 { at as u32 + 1 } else { 0 };
             }
+            forget_default(config, &gone.id);
             // The same shape as the editor's "Removed <shortcut>": the panel says what it did
             // and names the thing, so an accidental confirmation is recognisable at a glance.
             f.ui.toast(format!("Deleted {}", gone.name));
@@ -2393,6 +2406,60 @@ fn workspaces(f: &mut Frame, state: &mut SettingsUi, config: &mut UiConfig) {
             f.ui.toast("The last workspace cannot be deleted");
         }
         state.confirming = None;
+    }
+
+    f.gap(28.0);
+    opening(f, config);
+}
+
+/// Which level the wheel opens on: the picker, or already inside one workspace.
+///
+/// On the Workspaces page because that is where somebody looking for it looks, and in the search
+/// results as well — the grid above it is not a list of settings, but this row is one.
+///
+/// A select over the workspaces rather than a flag on each one: there is exactly one answer, and a
+/// flag per workspace is a set of switches that can all be on.
+fn opening(f: &mut Frame, config: &mut UiConfig) {
+    w::group(f, "Opening");
+    let enabled = config.enabled_workspace_count() > 1;
+    let current = config
+        .default_workspace()
+        .map(|index| config.workspaces[index].id.clone())
+        .unwrap_or_default();
+    let description = if !enabled {
+        // Not a choice with one workspace on: the wheel already opens inside it.
+        "With one workspace on, the wheel already opens inside it."
+    } else if current.is_empty() {
+        "The wheel opens on your workspaces, and you pick one."
+    } else {
+        "The wheel opens inside this workspace. Its centre goes back to the others."
+    };
+    let r = w::row(f, "Open the wheel on", description, 190.0);
+    let mut choices = vec![Choice::new("", "Workspace picker")];
+    // Only the ones that are on: opening into a space the picker hides would leave its hub
+    // leading back to a list it is not in.
+    for workspace in config.workspaces.iter().filter(|w| w.enabled) {
+        let name = if workspace.name.trim().is_empty() {
+            "Untitled workspace"
+        } else {
+            workspace.name.as_str()
+        };
+        choices.push(Choice::new(&workspace.id, name));
+    }
+    w::select(f, "openOn", r.control, &choices, &current, enabled);
+    if let Some(value) = w::select_popup(f, "openOn", &choices, &current) {
+        config.default_workspace_id = (!value.is_empty()).then_some(value);
+        f.mark_dirty();
+    }
+}
+
+/// A deleted workspace cannot be the one the wheel opens into.
+///
+/// An id that names nothing already reads as the picker, so this is tidiness rather than a fix —
+/// but a stale id would come back to life the day a workspace happened to be given it again.
+pub(crate) fn forget_default(config: &mut UiConfig, id: &str) {
+    if config.default_workspace_id.as_deref() == Some(id) {
+        config.default_workspace_id = None;
     }
 }
 
@@ -2776,7 +2843,7 @@ pub(super) fn dashed_round_rect(f: &mut Frame, rect: Rect, radius: f32, colour: 
 }
 
 /// What one frame of input made of a recording in progress.
-enum Recorded {
+pub(crate) enum Recorded {
     Nothing,
     Cancelled,
     /// A key with no modifier on it. Refused rather than stored: registering a bare key takes it
@@ -2790,7 +2857,7 @@ enum Recorded {
 ///
 /// Modifier keys are skipped rather than recorded: somebody pressing `Ctrl+Alt+K` presses Ctrl
 /// first, and a recorder that took the first key event would store `Ctrl` and stop listening.
-fn read_shortcut(input: &crate::ui::Input) -> Recorded {
+pub(crate) fn read_shortcut(input: &crate::ui::Input) -> Recorded {
     use windows::Win32::UI::Input::KeyboardAndMouse as k;
     for &vk in &input.keys {
         if vk == k::VK_ESCAPE.0 {
