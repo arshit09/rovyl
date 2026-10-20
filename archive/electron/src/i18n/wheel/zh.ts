@@ -14,6 +14,21 @@ const zh: WheelStrings = {
   menuDirectionHint: '朝目标推过去即可打开，或按 %s 关闭轮盘。',
   hudOpenSettings: '打开 Rovyl 设置',
   hudSettingsTitle: 'Rovyl 设置',
+  dockNetWired: '有线网络',
+  dockNetNone: '无网络',
+  dockNetOther: '已连接',
+  dockNetWifiSignal: 'Wi-Fi — 信号 {percent}%',
+  dockNetWifi: 'Wi-Fi',
+  dockMute: '点击静音',
+  dockUnmute: '已静音 — 点击取消',
+  dockVolumeNone: '无音频设备',
+  dockVolumeLevel: '音量 {percent}%',
+  dockNetOpenSettings: '{name} — 点击打开 Windows 网络设置',
+  dockBatteryLevel: '电量 {percent}%',
+  dockBatteryCharging: '电量 {percent}% — 充电中',
+  dockBatteryAria: '电量百分之 {percent}',
+  dockMuteAria: '静音',
+  dockUnmuteAria: '取消静音',
 };
 
 export default zh;

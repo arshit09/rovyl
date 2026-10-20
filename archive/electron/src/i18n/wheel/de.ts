@@ -14,6 +14,21 @@ const de: WheelStrings = {
   menuDirectionHint: 'Zu einem Ziel schieben, um es zu öffnen — oder %s drücken, um das Rad zu schließen.',
   hudOpenSettings: 'Rovyl-Einstellungen öffnen',
   hudSettingsTitle: 'Rovyl-Einstellungen',
+  dockNetWired: 'Kabelnetzwerk',
+  dockNetNone: 'Kein Netzwerk',
+  dockNetOther: 'Verbunden',
+  dockNetWifiSignal: 'WLAN — {percent}% Signal',
+  dockNetWifi: 'WLAN',
+  dockMute: 'Klicken zum Stummschalten',
+  dockUnmute: 'Stumm — klicken zum Aufheben',
+  dockVolumeNone: 'Kein Audiogerät',
+  dockVolumeLevel: 'Lautstärke {percent}%',
+  dockNetOpenSettings: '{name} — klicken für die Netzwerkeinstellungen von Windows',
+  dockBatteryLevel: 'Akku {percent}%',
+  dockBatteryCharging: 'Akku {percent}% — lädt',
+  dockBatteryAria: 'Akku {percent} Prozent',
+  dockMuteAria: 'Stummschalten',
+  dockUnmuteAria: 'Stummschaltung aufheben',
 };
 
 export default de;
