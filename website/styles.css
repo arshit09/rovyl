@@ -55,6 +55,8 @@
   --font-display: "Space Grotesk", sans-serif;
   --font-ui: "Inter", system-ui, sans-serif;
   --font-radial: "Instrument Sans", "Inter", sans-serif;
+  /* Only the margin note beside the settings panel; each page loads its own. */
+  --font-hand: "Caveat", "Yomogi", cursive;
 
   --page: 1080px;
 }
@@ -1580,10 +1582,35 @@ a { color: inherit; text-decoration: none; }
 }
 .wheel-caption { margin: var(--zn-2) 0 0; color: var(--zn-text-3); font-size: 10.5px; }
 
-.section-note {
-  margin: calc(var(--zn-6) * -1) 0 var(--zn-8);
-  color: var(--zn-text-2); font-size: 13px; text-align: center;
+/* The one thing on the page the app does not have: a note in the margin,
+   pointing at the panel. It is an aside, so it is written by hand rather than
+   set as a subtitle, and the arrow draws itself once the note scrolls in. */
+.scribble {
+  display: flex; justify-content: flex-end; align-items: flex-end; gap: 2px;
+  margin: calc(var(--zn-6) * -1) 9% var(--zn-1) 0;
+  color: var(--zn-text-2);
+  pointer-events: none;
 }
+.scribble p {
+  margin: 0 0 var(--zn-3);
+  font: 500 clamp(20px, 2.6vw, 26px)/1.05 var(--font-hand);
+  text-align: right;
+  transform: rotate(-4deg);
+}
+/* Kana and kanji fill the em box Latin script leaves half empty. */
+.scribble p:lang(ja) { font-size: clamp(16px, 2vw, 20px); line-height: 1.25; }
+.scribble-arrow {
+  flex: none; width: 64px; height: 44px; margin-bottom: -6px;
+  fill: none; stroke: currentColor; stroke-width: 1.5;
+  stroke-linecap: round; stroke-linejoin: round;
+}
+/* pathLength="1": a dash of 1 is the whole stroke, offset past it is none. */
+.scribble-arrow path {
+  stroke-dasharray: 1 2; stroke-dashoffset: 1.1;
+  transition: stroke-dashoffset .55s cubic-bezier(.45, 0, .25, 1) .3s;
+}
+.scribble-arrow path + path { transition-duration: .2s; transition-delay: .8s; }
+.scribble.is-in .scribble-arrow path { stroke-dashoffset: 0; }
 
 /* ── Privacy ──────────────────────────────────────────────────────────────── */
 
@@ -1703,6 +1730,7 @@ a { color: inherit; text-decoration: none; }
   .slice.is-fired .tile, .slice.is-fired .wave,
   .slice.is-dwelling .dwell path { animation: none !important; }
   .slice.is-fired .wave { display: none; }
+  .scribble-arrow path { stroke-dashoffset: 0; transition: none; }
 }
 
 /* ── 2.0.0: the native rebuild ────────────────────────────────────────────── */
