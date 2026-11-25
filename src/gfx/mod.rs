@@ -1,3 +1,4 @@
+pub mod compose;
 pub mod device;
 pub mod encode;
 pub mod fonts;

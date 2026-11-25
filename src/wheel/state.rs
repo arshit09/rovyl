@@ -1525,6 +1525,24 @@ impl Wheel {
         });
     }
 
+    /// Whether the echo is all that is still moving, so the rest of it can be painted once and
+    /// handed to the compositor. Anything else in motion — a bloom a fast hand confirmed through, a
+    /// fan still opening, a close — is drawn frame by frame until it has settled.
+    pub fn echo_alone(&self) -> bool {
+        self.echo.is_some()
+            && self.exiting_since.is_none()
+            && !self.bloom.animating()
+            && !self.scrim.animating()
+            && !self.pool.animating()
+            && !self.peek.as_ref().is_some_and(|p| p.bloom.animating())
+    }
+
+    /// When the echo ends, if one is running.
+    pub fn echo_ends_at(&self) -> Option<Instant> {
+        let echo = self.echo?;
+        Some(echo.at + std::time::Duration::from_secs_f32(anim::ECHO_MS / 1000.0))
+    }
+
     /// Whether the echo has run its course, so the command may be dispatched and the window hidden.
     pub fn echo_done(&self) -> bool {
         self.echo

@@ -65,6 +65,16 @@ const TIMER_HOLD: usize = 1;
 /// Short enough that a deliberate hold does not feel laggy.
 const HOLD_OPEN_DELAY_MS: u32 = 200;
 
+/// What a wheel frame reads from outside the wheel. Sampled once and shared by every picture of a
+/// composed echo, so the pictures agree with each other.
+#[derive(Clone, Copy)]
+struct FrameInputs {
+    pointer: Option<(f32, f32)>,
+    status: crate::sys::status::Status,
+    update_ready: bool,
+    direction_hint: bool,
+}
+
 pub struct App {
     hwnd: HWND,
     gpu: Gpu,
@@ -138,6 +148,14 @@ pub struct App {
     held_shortcut: Option<hotkey::Hotkey>,
     /// What is waiting on the launch echo to finish.
     pending_launch: Option<Box<config::AppItem>>,
+    /// The rest of the launch echo, when the compositor is playing it instead of the frame loop.
+    /// See `gfx::compose`.
+    echo_layers: Option<crate::gfx::compose::Composition>,
+    /// When to give the overlay its own frames back after a composed echo: once the window is
+    /// certainly hidden.
+    echo_teardown_at: Option<Instant>,
+    /// The compositor refused a composed echo once this session; echoes are drawn frame by frame.
+    echo_compose_off: bool,
     /// Where a tray menu should open once every mouse button is released.
     pending_menu_at: Option<POINT>,
     /// What the last frame drew in the corners, and what pressing each of them means.
@@ -286,6 +304,9 @@ impl App {
             suppress_release: false,
             held_shortcut: None,
             pending_launch: None,
+            echo_layers: None,
+            echo_teardown_at: None,
+            echo_compose_off: false,
             pending_menu_at: None,
             dock_targets: Vec::new(),
             pointer_down: false,
@@ -532,6 +553,9 @@ impl App {
     /// Open the wheel inside workspace `into` — a workspace's own shortcut — or, for `None`, on
     /// the level the configuration opens on.
     fn open_wheel_on(&mut self, source: TriggerSource, into: Option<usize>) {
+        // A launch's pictures that are still up — a reopen inside the teardown's grace — come down
+        // before this open draws anything. The window is hidden, so nobody sees them go.
+        self.drop_echo_layers();
         let display = monitor::target_display(self.config.monitor_choice(), self.config.placement());
         // Asked of the system, like the display above, rather than of the hook's cache: the
         // screen and the point on it come from the same answer, and a hook that was down while
@@ -654,6 +678,12 @@ impl App {
     fn finish_close(&mut self) {
         self.wheel.close_now();
         self.overlay.hide();
+        if self.echo_layers.is_some() {
+            // Not now: the hide is posted, and restoring the swapchain to a window that is still
+            // on screen would show the frame from before the echo again. A quarter of a second
+            // is long past the hide; an open that comes sooner takes them down itself.
+            self.echo_teardown_at = Some(Instant::now() + std::time::Duration::from_millis(250));
+        }
         hook::end_blocking();
         self.arm_workspace_keys(false);
         self.first_paint = None;
@@ -2191,8 +2221,29 @@ impl App {
             return;
         }
         let display = monitor::from_window(self.overlay.hwnd);
+        let inputs = self.frame_inputs();
+        let Ok(painter) = Painter::new(&self.gpu, &self.glyphs, &self.text) else {
+            return;
+        };
+        let frame = self.frame(inputs, None);
         // The shadows are baked outside the frame: baking re-targets the device context, and a
         // nested draw on one context is invalid.
+        let at = std::time::Instant::now();
+        render::prebake(&painter, &self.wheel, &frame);
+        let bake = at.elapsed().as_secs_f32() * 1000.0;
+
+        let Ok(_target) = self.overlay.surface.begin_frame(&self.gpu, display.dpi) else {
+            return;
+        };
+        let targets = render::draw(&painter, &self.wheel, &frame);
+        drop(_target);
+        drop(frame);
+        self.split_bake = bake;
+        self.dock_targets = targets;
+    }
+
+    /// What a wheel frame reads from outside the wheel, sampled once for the frame.
+    fn frame_inputs(&mut self) -> FrameInputs {
         // Anything the workers have finished is uploaded before the frame, never during it: a
         // D2D bitmap is a device allocation, and the device is single-threaded by construction.
         self.icons.pump(&self.gpu);
@@ -2214,38 +2265,133 @@ impl App {
         }
         let bounds = self.overlay.bounds();
         let cursor = hook::cursor();
-        // Asked before the frame is built, because asking STARTS the clock that decides when the
-        // hint has been on screen long enough to count as read.
-        let direction_hint = self.wheel.direction_hint_visible(&self.config);
-        let frame = Frame {
-            config: &self.config,
-            icons: &self.icons,
-            shadows: &self.shadows,
+        FrameInputs {
             pointer: Some((
                 (cursor.x - bounds.left) as f32,
                 (cursor.y - bounds.top) as f32,
             )),
-            pointer_down: self.pointer_down,
             status: crate::sys::status::latest(),
             update_ready: self.update_ready(),
-            discovering: false,
-            direction_hint,
-            clear_first: true,
-        };
-        let Ok(painter) = Painter::new(&self.gpu, &self.glyphs, &self.text) else {
-            return;
-        };
-        // Pre-bake anything the frame will need, before `BeginDraw`.
-        let at = std::time::Instant::now();
-        render::prebake(&painter, &self.wheel, &frame);
-        self.split_bake = at.elapsed().as_secs_f32() * 1000.0;
+            // Asked before the frame is built, because asking STARTS the clock that decides when
+            // the hint has been on screen long enough to count as read.
+            direction_hint: self.wheel.direction_hint_visible(&self.config),
+        }
+    }
 
-        let Ok(_target) = self.overlay.surface.begin_frame(&self.gpu, display.dpi) else {
-            return;
+    fn frame<'a>(&'a self, inputs: FrameInputs, echo_pass: Option<render::EchoPass<'a>>) -> Frame<'a> {
+        Frame {
+            config: &self.config,
+            icons: &self.icons,
+            shadows: &self.shadows,
+            pointer: inputs.pointer,
+            pointer_down: self.pointer_down,
+            status: inputs.status,
+            update_ready: inputs.update_ready,
+            discovering: false,
+            direction_hint: inputs.direction_hint,
+            // A composed layer is recorded, not drawn onto a surface, and a recorded clear covers
+            // the whole plane — it would make every picture the size of infinity.
+            clear_first: echo_pass.is_none(),
+            echo_pass,
+        }
+    }
+
+    /// Paint the rest of the launch echo once, as pictures, and give them to the compositor to
+    /// play. See `gfx::compose` for why.
+    ///
+    /// `false` leaves the echo to the frame loop, which can always draw it. A failure turns the
+    /// handover off for the session: whatever refused is a property of the device, and retrying
+    /// would repaint every picture on every frame.
+    fn compose_echo(&mut self) -> bool {
+        use crate::gfx::compose::{self, Composition, Layer};
+        if self.echo_layers.is_some() {
+            return true;
+        }
+        if self.echo_compose_off {
+            return false;
+        }
+        let Some((_, progress)) = self.wheel.echo() else {
+            return false;
         };
-        let targets = render::draw(&painter, &self.wheel, &frame);
-        drop(_target);
-        self.dock_targets = targets;
+        let (width, height) = self.overlay.size();
+        if width < 1.0 || height < 1.0 {
+            return false;
+        }
+        let display = monitor::from_window(self.overlay.hwnd);
+        let inputs = self.frame_inputs();
+        let Ok(painter) = Painter::new(&self.gpu, &self.glyphs, &self.text) else {
+            return false;
+        };
+        render::prebake(&painter, &self.wheel, &self.frame(inputs, None));
+
+        let pictures = (|| -> windows::core::Result<Vec<Layer>> {
+            let waves = std::cell::RefCell::new(Vec::new());
+            let mut layers = Vec::with_capacity(10);
+            for layer in render::EchoLayer::ALL {
+                let opacity = layer.fade_from(progress);
+                // A group that has already gone needs no picture.
+                if opacity.is_some_and(|ramp| ramp.from <= 0.0) {
+                    continue;
+                }
+                let frame = self.frame(inputs, Some(render::EchoPass { layer, waves: &waves }));
+                let image = compose::record(&self.gpu, || {
+                    render::draw(&painter, &self.wheel, &frame);
+                })?;
+                layers.push(Layer { image, opacity, scale: None });
+            }
+            // The rings go over everything, as the frame loop draws them. Each is painted at the
+            // size it ends at, and the compositor shrinks it back to where it is now.
+            for wave in waves.borrow().iter() {
+                for delay in render::WAVE_DELAYS {
+                    let Some((opacity, scale)) = render::ring_from(progress, delay) else {
+                        continue;
+                    };
+                    let grown = 1.0 + render::WAVE_GROWTH;
+                    let size = wave.size * grown;
+                    let image = compose::record(&self.gpu, || {
+                        painter.antialias_on();
+                        painter.stroke_round_rect(
+                            crate::gfx::painter::Rect::centred(wave.center.0, wave.center.1, size, size),
+                            wave.radius * grown,
+                            wave.color,
+                            wave.stroke * grown,
+                        );
+                    })?;
+                    layers.push(Layer {
+                        image,
+                        opacity: Some(opacity),
+                        scale: Some((scale, wave.center)),
+                    });
+                }
+            }
+            Ok(layers)
+        })();
+
+        let shown = pictures.and_then(|layers| {
+            Composition::show(&self.gpu, &self.overlay.surface, &layers, (width, height), display.dpi)
+        });
+        match shown {
+            Ok(composition) => {
+                self.echo_layers = Some(composition);
+                perf::note("launch echo handed to the compositor");
+                true
+            }
+            Err(error) => {
+                self.echo_compose_off = true;
+                config::store::log_line(&format!(
+                    "launch echo: the compositor refused it ({error}); drawing it frame by frame"
+                ));
+                false
+            }
+        }
+    }
+
+    /// Give the overlay its own frames back after a composed echo. Only while it is hidden.
+    fn drop_echo_layers(&mut self) {
+        self.echo_teardown_at = None;
+        if let Some(layers) = self.echo_layers.take() {
+            layers.dismiss(&self.gpu);
+        }
     }
 
     /// Advance everything that moves on its own, and say whether another frame is wanted.
@@ -2313,6 +2459,11 @@ impl App {
                 self.finish_close();
                 return false;
             }
+            // Once nothing else on the wheel is moving, the compositor plays the rest. The frame
+            // loop has nothing left to draw until the echo ends.
+            if self.wheel.echo_alone() && self.compose_echo() {
+                return false;
+            }
             return true;
         }
 
@@ -2326,7 +2477,7 @@ impl App {
 
     /// Whether the loop should ask for frames at all.
     fn needs_frames(&self) -> bool {
-        self.wheel.open
+        self.wheel.open && self.echo_layers.is_none()
     }
 
     /// Open and close the wheel repeatedly, reporting how long the open took.
@@ -2530,6 +2681,15 @@ impl App {
             let settings_wants_more = self.settings_frame();
             let card_wants_more = self.card_frame();
 
+            // A composed echo draws nothing. It only has to end on time, and its pictures have to
+            // come down once the window has gone.
+            if self.echo_layers.is_some() && self.wheel.open && self.wheel.echo_done() {
+                self.finish_close();
+            }
+            if self.echo_teardown_at.is_some_and(|at| Instant::now() >= at) {
+                self.drop_echo_layers();
+            }
+
             // The wheel draws only when the display can show a new frame — not whenever the loop
             // wakes, which while the pointer is over it is a thousand times a second. See
             // `Surface::frame_ready`. Everything `tick` advances is measured in time, so a wake-up
@@ -2606,6 +2766,15 @@ impl App {
         // which is as precise as a label reading "12 min left" needs to be.
         if self.paused_until.is_some() {
             sooner(Instant::now() + std::time::Duration::from_secs(1));
+        }
+        // A composed echo has no frames to pace, only an end, and then pictures to take down.
+        if self.echo_layers.is_some() && self.wheel.open {
+            if let Some(end) = self.wheel.echo_ends_at() {
+                sooner(end);
+            }
+        }
+        if let Some(at) = self.echo_teardown_at {
+            sooner(at);
         }
 
         let Some(index) = self.clock.sleep(&signals[..count], until) else {

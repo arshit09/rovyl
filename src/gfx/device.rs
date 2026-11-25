@@ -263,6 +263,11 @@ impl Surface {
         })
     }
 
+    /// The visual the swapchain is the content of — the window's whole picture.
+    pub fn visual(&self) -> &IDCompositionVisual2 {
+        &self._visual
+    }
+
     /// Pace this surface to a display that refreshes `hz` times a second.
     pub fn set_refresh(&self, hz: u32) {
         self.interval.set(refresh_interval(hz));

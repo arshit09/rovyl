@@ -16,6 +16,7 @@ use super::scrim;
 use super::sectors;
 use super::state::{is_workspace_pick, workspace_pick_index, Wheel};
 use crate::config::{self, AppItem, UiConfig};
+use crate::gfx::compose::Ramp;
 use crate::gfx::painter::{Painter, Rect, ShadowCache, Stop};
 use crate::gfx::palette as pal;
 use crate::gfx::text::{Align, Family, Style};
@@ -48,6 +49,167 @@ pub struct Frame<'a> {
     /// panel that has already painted a stand-in desktop under the wheel — a clear there takes
     /// the desktop with it, and leaves a transparent hole the size of the picture.
     pub clear_first: bool,
+    /// One layer of a composed launch echo, when this frame is that rather than a frame.
+    pub echo_pass: Option<EchoPass<'a>>,
+}
+
+impl Frame<'_> {
+    /// Whether this frame paints what belongs to `layer`. An ordinary frame paints everything.
+    fn paints(&self, layer: EchoLayer) -> bool {
+        self.echo_pass.as_ref().map_or(true, |pass| pass.layer == layer)
+    }
+
+    /// The echo as this frame draws it. A composed layer is painted as it stands at the echo's
+    /// first instant — fully opaque — because its fading is the compositor's to do.
+    fn echo(&self, wheel: &Wheel) -> Option<(Option<usize>, f32)> {
+        let composed = self.echo_pass.is_some();
+        wheel.echo().map(|(fired, progress)| (fired, if composed { 0.0 } else { progress }))
+    }
+
+    fn peek_echo(&self, wheel: &Wheel) -> Option<(usize, f32)> {
+        let composed = self.echo_pass.is_some();
+        wheel.peek_echo().map(|(fired, progress)| (fired, if composed { 0.0 } else { progress }))
+    }
+}
+
+/// The launch echo's parts, grouped by how they leave, in back-to-front order.
+///
+/// Normally the echo is painted frame by frame like everything else. When it can be, it is instead
+/// painted ONCE, as one picture per group, and the compositor fades and grows those pictures on
+/// its own clock — see [`crate::gfx::compose`] for why. Each group is a rate, and the rates are the
+/// numbers the frame-by-frame path fades by, so the two cannot drift apart.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EchoLayer {
+    /// What holds still for the whole echo and sits behind the wheel: the scrim, the wedges, the
+    /// filter line and the corners.
+    Backdrop,
+    /// The hub, when something other than the hub was chosen.
+    Hub,
+    /// Every tile that was not chosen, with its label — the picker's and a peeked fan's.
+    Tiles,
+    /// What was chosen: the confirmed tile, or the hub when that was the target.
+    Fired,
+    /// The confirmed tile's own label, which goes last of all.
+    Label,
+    /// The breadcrumb pill, which goes first.
+    Pill,
+}
+
+impl EchoLayer {
+    pub const ALL: [EchoLayer; 6] = [
+        EchoLayer::Backdrop,
+        EchoLayer::Hub,
+        EchoLayer::Tiles,
+        EchoLayer::Fired,
+        EchoLayer::Label,
+        EchoLayer::Pill,
+    ];
+
+    /// How many times faster than the echo this group fades: it is gone `1 / rate` of the way
+    /// through. Zero holds.
+    pub fn rate(self) -> f32 {
+        match self {
+            EchoLayer::Backdrop | EchoLayer::Fired => 0.0,
+            // The other tiles leave in the first half: the echo isolates what was chosen.
+            EchoLayer::Tiles => 2.0,
+            // Faster: the hub is the only other large opaque object, and it competes hardest.
+            EchoLayer::Hub => 3.0,
+            // Fastest: where you are in the wheel stops being information the moment you leave.
+            EchoLayer::Pill => 4.0,
+            EchoLayer::Label => 1.0,
+        }
+    }
+
+    /// This group's opacity `progress` of the way through the echo.
+    pub fn fade(self, progress: f32) -> f32 {
+        (1.0 - progress * self.rate()).max(0.0)
+    }
+
+    /// The rest of this group's fade from `progress` on, as the compositor's curve, in seconds
+    /// from now. `None` for a group that holds.
+    pub fn fade_from(self, progress: f32) -> Option<Ramp> {
+        let rate = self.rate();
+        if rate <= 0.0 {
+            return None;
+        }
+        let from = self.fade(progress);
+        let gone = ((1.0 / rate - progress) as f64 * echo_seconds()).max(0.0);
+        Some(Ramp {
+            before: from,
+            from,
+            to: 0.0,
+            start: 0.0,
+            end: gone,
+        })
+    }
+}
+
+fn echo_seconds() -> f64 {
+    super::anim::ECHO_MS as f64 / 1000.0
+}
+
+/// The rest of the ring that leaves at `delay`, from `progress` on: its opacity, and its scale
+/// relative to the size it ends at. `None` once it has gone.
+///
+/// Relative to its LAST size, so the compositor only ever shrinks the picture of it. That costs
+/// the stroke: it thickens with the ring, from `stroke` at birth to `1 + WAVE_GROWTH` times that,
+/// over a life in which it is fading to nothing — where a picture grown from its first size would
+/// blur instead, and be at its blurriest when it is most visible.
+pub fn ring_from(progress: f32, delay: f32) -> Option<(Ramp, Ramp)> {
+    if progress >= 1.0 {
+        return None;
+    }
+    let t = echo_seconds();
+    let start = ((delay - progress) as f64 * t).max(0.0);
+    let end = (1.0 - progress) as f64 * t;
+    let local = ((progress - delay) / (1.0 - delay)).max(0.0);
+    let scale = |local: f32| (1.0 + WAVE_GROWTH * local) / (1.0 + WAVE_GROWTH);
+    let opacity = Ramp {
+        before: 0.0,
+        from: WAVE_ALPHA * (1.0 - local),
+        to: 0.0,
+        start,
+        end,
+    };
+    let size = Ramp {
+        before: scale(local),
+        from: scale(local),
+        to: 1.0,
+        start,
+        end,
+    };
+    Some((opacity, size))
+}
+
+/// One source of the launch wave, at the moment of its birth.
+///
+/// Two rings come out of it, the second leaving halfway through the first (`WAVE_DELAYS`); each
+/// grows by `WAVE_GROWTH` of its size and fades from `WAVE_ALPHA` to nothing.
+#[derive(Debug, Clone, Copy)]
+pub struct Wave {
+    pub center: (f32, f32),
+    pub size: f32,
+    pub radius: f32,
+    pub stroke: f32,
+    pub color: D2D1_COLOR_F,
+}
+
+pub const WAVE_DELAYS: [f32; 2] = [0.0, 0.5];
+pub const WAVE_GROWTH: f32 = 0.6;
+pub const WAVE_ALPHA: f32 = 0.8;
+
+/// How far through its own life a ring that left at `delay` is, `progress` of the way through the
+/// echo: `None` before it is born and after it has gone.
+pub fn ring_life(progress: f32, delay: f32) -> Option<f32> {
+    let local = ((progress - delay) / (1.0 - delay)).clamp(0.0, 1.0);
+    (local > 0.0 && local < 1.0).then_some(local)
+}
+
+/// A composed echo's layer: which group to paint, and where to put the wave's sources instead of
+/// painting them — the compositor draws the rings.
+pub struct EchoPass<'a> {
+    pub layer: EchoLayer,
+    pub waves: &'a std::cell::RefCell<Vec<Wave>>,
 }
 
 /// How the renderer asks for a bitmap icon.
@@ -165,12 +327,15 @@ pub fn draw(p: &Painter, wheel: &Wheel, frame: &Frame) -> Vec<super::docks::Targ
     let hover_text = pal::rgb(config::readable_foreground(config.hover_color()));
     let bloom = wheel.bloom();
     let items = wheel.items();
+    let backdrop = frame.paints(EchoLayer::Backdrop);
 
-    draw_scrim(p, wheel, config);
+    if backdrop {
+        draw_scrim(p, wheel, config);
+    }
 
     // 1. ORDER: the wedges go under the tiles. They are a lit region of the desktop, and a tile is
     //    an object sitting on it — drawn over, the wedge's edge gradient crosses the plate.
-    if config.area_wedges() && items.len() > 1 {
+    if backdrop && config.area_wedges() && items.len() > 1 {
         draw_wedges(p, wheel, config, items.len(), hover);
     }
 
@@ -192,13 +357,18 @@ pub fn draw(p: &Painter, wheel: &Wheel, frame: &Frame) -> Vec<super::docks::Targ
     //    it across the neighbouring slice; drawn per tile it would be painted over by the next one.
     if config.show_labels {
         for (index, item) in items.iter().enumerate() {
-            draw_label(p, wheel, config, index, item, items.len(), hover, hover_text);
+            draw_label(p, wheel, frame, index, item, items.len(), hover, hover_text);
         }
-        draw_peek_labels(p, wheel, config, hover, hover_text);
+        draw_peek_labels(p, wheel, frame, hover, hover_text);
     }
 
-    if config.show_pill() {
-        draw_pill(p, wheel, config);
+    if config.show_pill() && frame.paints(EchoLayer::Pill) {
+        draw_pill(p, wheel, frame);
+    }
+    if !backdrop {
+        // A composed layer has no corners: they are the backdrop's, which is the only one of the
+        // pictures whose targets the wheel goes on hit-testing against.
+        return Vec::new();
     }
     if !wheel.filter().is_empty() {
         draw_filter(p, wheel, items.len(), &config.language);
@@ -428,7 +598,7 @@ fn draw_tile(
     let config = frame.config;
     let l = wheel.layout();
     let bloom = wheel.bloom();
-    let echo = wheel.echo();
+    let echo = frame.echo(wheel);
 
     // During the echo the highlight is the CONFIRMED TARGET, not the aim. The two diverge: the
     // pointer goes on producing events over a wheel that is already leaving, and one of them used
@@ -439,6 +609,9 @@ fn draw_tile(
         None => wheel.active() == Some(index),
     };
     let is_faded = matches!(echo, Some((fired, _)) if fired != Some(index));
+    if !frame.paints(if is_faded { EchoLayer::Tiles } else { EchoLayer::Fired }) {
+        return;
+    }
 
     let distance = aim::angular_distance(index, wheel.active(), count);
     let (presence_opacity, presence_scale) = layout::slice_presence(distance);
@@ -464,8 +637,8 @@ fn draw_tile(
     );
 
     let echo_fade = match echo {
-        Some((fired, progress)) if fired == Some(index) => 1.0,
-        Some((_, progress)) => (1.0 - progress * 2.0).max(0.0),
+        Some((fired, progress)) if fired == Some(index) => EchoLayer::Fired.fade(progress),
+        Some((_, progress)) => EchoLayer::Tiles.fade(progress),
         None => 1.0,
     };
     let opacity = presence_opacity * travel * echo_fade;
@@ -509,7 +682,7 @@ fn draw_tile(
     // than repetition.
     if let Some((fired, progress)) = echo {
         if fired == Some(index) {
-            draw_launch_wave(p, wheel, plate, radius, progress, hover);
+            launch_wave(p, frame, tile_wave(wheel, plate, radius, hover), progress);
         }
     }
 }
@@ -781,34 +954,41 @@ fn draw_dwell_arc(
     );
 }
 
-fn draw_launch_wave(
-    p: &Painter,
-    wheel: &Wheel,
-    plate: Rect,
-    radius: f32,
-    progress: f32,
-    hover: D2D1_COLOR_F,
-) {
+/// The wave that comes out of a tile.
+///
+/// Born with the TILE's shape, not as a circle: it comes out of the silhouette of the icon the
+/// user just aimed at, and it is that continuity that makes it read as "this came from here" rather
+/// than as an effect pasted on top. As it grows the radius grows with it, so the shape opens into
+/// an ever rounder square.
+fn tile_wave(wheel: &Wheel, plate: Rect, radius: f32, hover: D2D1_COLOR_F) -> Wave {
     let s = wheel.scale;
-    for (phase, delay) in [(0.0f32, 0.0f32), (1.0, 0.5)] {
-        let _ = phase;
-        let local = ((progress - delay) / (1.0 - delay)).clamp(0.0, 1.0);
-        if local <= 0.0 || local >= 1.0 {
+    Wave {
+        center: plate.center(),
+        size: plate.width() + 6.0 * s,
+        radius: radius + 3.0 * s,
+        stroke: 2.0 * s,
+        color: hover,
+    }
+}
+
+/// Paint the launch wave — or, in a composed echo, hand its source to the compositor, which draws
+/// the rings itself.
+fn launch_wave(p: &Painter, frame: &Frame, wave: Wave, progress: f32) {
+    if let Some(pass) = frame.echo_pass.as_ref() {
+        pass.waves.borrow_mut().push(wave);
+        return;
+    }
+    for delay in WAVE_DELAYS {
+        let Some(local) = ring_life(progress, delay) else {
             continue;
-        }
-        // Born with the TILE's shape, not as a circle: it comes out of the silhouette of the icon
-        // the user just aimed at, and it is that continuity that makes it read as "this came from
-        // here" rather than as an effect pasted on top. As it grows the radius grows with it, so
-        // the shape opens into an ever rounder square.
-        let grow = 1.0 + local * 0.6;
-        let size = (plate.width() + 6.0 * s) * grow;
-        let alpha = (1.0 - local) * 0.8;
-        let (cx, cy) = plate.center();
+        };
+        let grow = 1.0 + local * WAVE_GROWTH;
+        let size = wave.size * grow;
         p.stroke_round_rect(
-            Rect::centred(cx, cy, size, size),
-            (radius + 3.0 * s) * grow,
-            fade(hover, alpha),
-            2.0 * s,
+            Rect::centred(wave.center.0, wave.center.1, size, size),
+            wave.radius * grow,
+            fade(wave.color, (1.0 - local) * WAVE_ALPHA),
+            wave.stroke,
         );
     }
 }
@@ -818,7 +998,7 @@ fn draw_launch_wave(
 fn draw_label(
     p: &Painter,
     wheel: &Wheel,
-    config: &UiConfig,
+    frame: &Frame,
     index: usize,
     item: &AppItem,
     count: usize,
@@ -841,12 +1021,17 @@ fn draw_label(
     if fanned == Some(index) {
         return;
     }
+    let config = frame.config;
     let bloom = wheel.bloom();
-    let echo = wheel.echo();
+    let echo = frame.echo(wheel);
     let is_active = match echo {
         Some((fired, _)) => fired == Some(index),
         None => wheel.active() == Some(index),
     };
+    let fired = matches!(echo, Some((fired, _)) if fired == Some(index));
+    if !frame.paints(if echo.is_some() && !fired { EchoLayer::Tiles } else { EchoLayer::Label }) {
+        return;
+    }
     let always = config.always_show_app_labels;
 
     // The label's plate has its own background too: dimming it to 0.72 faded the TEXT, not the
@@ -859,8 +1044,8 @@ fn draw_label(
         0.0
     };
     let echo_fade = match echo {
-        Some((fired, progress)) if fired == Some(index) => (1.0 - progress).max(0.0),
-        Some((_, progress)) => (1.0 - progress * 2.0).max(0.0),
+        Some((fired, progress)) if fired == Some(index) => EchoLayer::Label.fade(progress),
+        Some((_, progress)) => EchoLayer::Tiles.fade(progress),
         None => 1.0,
     };
     let opacity = base_opacity * bloom * echo_fade;
@@ -1034,10 +1219,13 @@ fn draw_peek(
     };
 
     let from = peek_origin(wheel, slice);
-    let echo = wheel.echo();
-    let fired = wheel.peek_echo();
+    let echo = frame.echo(wheel);
+    let fired = frame.peek_echo(wheel);
 
     for (index, item) in items.iter().enumerate().take(shape.count) {
+        if !frame.paints(peek_layer(echo, fired, index)) {
+            continue;
+        }
         let Some((center, size, opacity, is_active)) =
             peek_tile_geometry(wheel, &shape, from, bloom, index, echo, fired)
         else {
@@ -1058,9 +1246,23 @@ fn draw_peek(
         );
         if let Some((fired_index, progress)) = fired {
             if fired_index == index {
-                draw_launch_wave(p, wheel, plate, radius, progress, hover);
+                launch_wave(p, frame, tile_wave(wheel, plate, radius, hover), progress);
             }
         }
+    }
+}
+
+/// Which part of a composed echo a peeked shortcut belongs to: the one launched holds, the rest go
+/// with the picker's tiles.
+fn peek_layer(
+    echo: Option<(Option<usize>, f32)>,
+    fired: Option<(usize, f32)>,
+    index: usize,
+) -> EchoLayer {
+    match (echo, fired) {
+        (Some(_), Some((fired_index, _))) if fired_index == index => EchoLayer::Fired,
+        (Some(_), _) => EchoLayer::Tiles,
+        (None, _) => EchoLayer::Fired,
     }
 }
 
@@ -1068,10 +1270,11 @@ fn draw_peek(
 fn draw_peek_labels(
     p: &Painter,
     wheel: &Wheel,
-    config: &UiConfig,
+    frame: &Frame,
     hover: D2D1_COLOR_F,
     hover_text: D2D1_COLOR_F,
 ) {
+    let config = frame.config;
     let Some(shape) = wheel.peek_shape(config) else {
         return;
     };
@@ -1080,12 +1283,12 @@ fn draw_peek_labels(
     };
 
     let from = peek_origin(wheel, slice);
-    let echo = wheel.echo();
-    let fired = wheel.peek_echo();
+    let echo = frame.echo(wheel);
+    let fired = frame.peek_echo(wheel);
     let always = config.always_show_app_labels;
 
     for (index, item) in items.iter().enumerate().take(shape.count) {
-        if item.label.is_empty() {
+        if item.label.is_empty() || !frame.paints(peek_layer(echo, fired, index)) {
             continue;
         }
         let Some((center, _, tile_opacity, is_active)) =
@@ -1161,10 +1364,10 @@ fn peek_tile_geometry(
 
     let echo_fade = match (fired, echo) {
         // The one that was launched holds, whatever else the wheel is doing.
-        (Some((fired_index, _)), _) if fired_index == index => 1.0,
+        (Some((fired_index, progress)), _) if fired_index == index => EchoLayer::Fired.fade(progress),
         // Anything else confirmed on this wheel takes the whole fan with it, at twice the rate —
         // including a launch off the picker itself, which the peek is not part of.
-        (_, Some((_, progress))) => (1.0 - progress * 2.0).max(0.0),
+        (_, Some((_, progress))) => EchoLayer::Tiles.fade(progress),
         _ => 1.0,
     };
 
@@ -1201,15 +1404,19 @@ fn draw_hub(
     if grow <= 0.001 {
         return;
     }
-    let echo = wheel.echo();
+    let echo = frame.echo(wheel);
     let center_fired = wheel.echo_is_center();
     let active = wheel.center_active();
+    let fading = echo.is_some() && !center_fired;
+    if !frame.paints(if fading { EchoLayer::Hub } else { EchoLayer::Fired }) {
+        return;
+    }
 
     // A slice launching fades the hub, just as it fades the other slices: the echo isolates what
     // was chosen, and the hub is the part of the wheel that would compete hardest with it — it is
     // the only other large opaque object on screen.
     let opacity = match echo {
-        Some((_, progress)) if !center_fired => (1.0 - progress * 3.0).max(0.0),
+        Some((_, progress)) if fading => EchoLayer::Hub.fade(progress),
         _ => 1.0,
     } * grow;
     if opacity <= 0.004 {
@@ -1305,19 +1512,17 @@ fn draw_hub(
     if center_fired {
         if let Some((_, progress)) = echo {
             // The same wave as a tile's, around the hub — circular, because the hub is circular, so
-            // it still comes out of the silhouette of what was confirmed.
-            for delay in [0.0f32, 0.5] {
-                let local = ((progress - delay) / (1.0 - delay)).clamp(0.0, 1.0);
-                if local <= 0.0 || local >= 1.0 {
-                    continue;
-                }
-                p.stroke_circle(
-                    center,
-                    (r + 3.0 * s) * (1.0 + local * 0.6),
-                    fade(hover, (1.0 - local) * 0.8),
-                    2.0 * s,
-                );
-            }
+            // it still comes out of the silhouette of what was confirmed. A square whose corners
+            // are half its side IS the circle.
+            let reach = r + 3.0 * s;
+            let wave = Wave {
+                center,
+                size: reach * 2.0,
+                radius: reach,
+                stroke: 2.0 * s,
+                color: hover,
+            };
+            launch_wave(p, frame, wave, progress);
         }
     }
 }
@@ -1403,11 +1608,12 @@ fn draw_update_badge(p: &Painter, wheel: &Wheel, center: (f32, f32), diameter: f
 
 // ─── The pill, the filter, the empty notice ─────────────────────────────────
 
-fn draw_pill(p: &Painter, wheel: &Wheel, config: &UiConfig) {
+fn draw_pill(p: &Painter, wheel: &Wheel, frame: &Frame) {
+    let config = frame.config;
     let bloom = wheel.bloom();
     // Where you are in the wheel stops being information the moment you leave it.
-    let opacity = match wheel.echo() {
-        Some((_, progress)) => (1.0 - progress * 4.0).max(0.0),
+    let opacity = match frame.echo(wheel) {
+        Some((_, progress)) => EchoLayer::Pill.fade(progress),
         None => 1.0,
     } * bloom;
     if opacity <= 0.01 {
@@ -1626,6 +1832,54 @@ mod tests {
         // Clamped, so a bloom value slightly past 1 cannot produce alpha above 1.
         assert_eq!(fade(c, 2.0).a, 0.8);
         assert_eq!(fade(c, -1.0).a, 0.0);
+    }
+
+    /// The compositor's curve, read at the echo's own progress.
+    fn at_progress(ramp: &Ramp, from: f32, progress: f32) -> f32 {
+        ramp.at((progress - from) as f64 * echo_seconds())
+    }
+
+    #[test]
+    fn a_composed_layer_fades_exactly_as_a_drawn_one() {
+        // Handed over at any point of the echo, the rest of each fade is the same curve.
+        for layer in EchoLayer::ALL {
+            for handover in [0.0f32, 0.07, 0.2, 0.31] {
+                let Some(ramp) = layer.fade_from(handover) else {
+                    assert_eq!(layer.rate(), 0.0, "{layer:?} has a rate and no curve");
+                    continue;
+                };
+                for step in 0..=20 {
+                    let progress = handover + (1.0 - handover) * step as f32 / 20.0;
+                    let composed = at_progress(&ramp, handover, progress);
+                    let drawn = layer.fade(progress);
+                    assert!((composed - drawn).abs() < 1e-4, "{layer:?} at {progress}: {composed} vs {drawn}");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_composed_ring_is_the_drawn_ring() {
+        for delay in WAVE_DELAYS {
+            for handover in [0.0f32, 0.1, 0.6] {
+                let (opacity, scale) = ring_from(handover, delay).unwrap();
+                // Between steps, not on them: at the instant of its birth the drawn ring is not yet
+                // there and the curve already is, which is the same picture a frame later.
+                for step in 0..20 {
+                    let progress = handover + (1.0 - handover) * (step as f32 + 0.5) / 20.0;
+                    let (alpha, size) = match ring_life(progress, delay) {
+                        Some(local) => ((1.0 - local) * WAVE_ALPHA, 1.0 + local * WAVE_GROWTH),
+                        None => (0.0, 1.0),
+                    };
+                    assert!((at_progress(&opacity, handover, progress) - alpha).abs() < 1e-4);
+                    if alpha > 0.0 {
+                        let composed = at_progress(&scale, handover, progress) * (1.0 + WAVE_GROWTH);
+                        assert!((composed - size).abs() < 1e-4, "{delay} at {progress}: {composed} vs {size}");
+                    }
+                }
+            }
+        }
+        assert!(ring_from(1.0, 0.0).is_none());
     }
 
     #[test]

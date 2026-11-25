@@ -117,6 +117,7 @@ pub fn draw(f: &mut Frame, config: &UiConfig) {
         direction_hint: false,
         // The desk under it has already been painted; a clear would take it away.
         clear_first: false,
+        echo_pass: None,
     };
 
     let painter = f.p;

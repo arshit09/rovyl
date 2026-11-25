@@ -299,6 +299,7 @@ pub fn render_to_file(options: &Options, config: &UiConfig) -> Result<()> {
         // on configuration the probe is being pointed at.
         direction_hint: wheel.direction_hint_visible(&config),
         clear_first: true,
+        echo_pass: None,
     };
     let painter = Painter::new(&gpu, &glyphs, &text)?;
     render::prebake(&painter, &wheel, &frame);
