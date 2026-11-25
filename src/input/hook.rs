@@ -205,7 +205,8 @@ struct State {
 
     /// Latest cursor position, packed. Read once per frame by the renderer rather than posted per
     /// move: a 1000 Hz mouse would otherwise cost a thousand messages a second to tell the wheel
-    /// something it can only act on once per refresh.
+    /// something it can only act on once per refresh. Zero while the hook is down or has not seen
+    /// a move yet: see [`cursor`].
     cursor: AtomicI64,
     /// Mouse moves seen since the performance trace last asked: the mouse's polling rate, while it
     /// is moving. Counted unconditionally — one uncontended atomic add is noise beside the cost of
@@ -356,8 +357,8 @@ pub fn set_recording(on: bool) {
 
 /// The freshest cursor position the hook has seen.
 ///
-/// Falls back to `GetCursorPos` before the first move, so an open that happens before the mouse has
-/// moved at all still knows where the pointer is.
+/// Falls back to `GetCursorPos` whenever the hook has no sample of its own: before it is installed,
+/// after it is released, and between its installation and the first move it sees.
 pub fn cursor() -> POINT {
     let packed = state().cursor.load(Ordering::Relaxed);
     if packed == 0 {
@@ -803,6 +804,12 @@ fn reconcile_hooks() {
         let want_mouse = mouse_hook_wanted();
         let have_mouse = MOUSE_HOOK.load(Ordering::Relaxed);
         if want_mouse && have_mouse == 0 {
+            // The sample is forgotten on both edges of the hook's life, so `cursor` never answers
+            // with a point no live hook saw. Without a mouse trigger the hook is only up while the
+            // wheel is, and the pointer moved freely in between: the stale sample opened every
+            // wheel where the last one had closed. No callback can race the store — they run on
+            // this thread, and only while it pumps.
+            state().cursor.store(0, Ordering::Relaxed);
             // A NULL module with a thread id of 0 is the documented form for a low-level hook: the
             // callback lives in this process and the system marshals every event to this thread.
             if let Ok(hook) = SetWindowsHookExW(WH_MOUSE_LL, Some(mouse_proc), None, 0) {
@@ -811,6 +818,7 @@ fn reconcile_hooks() {
         } else if !want_mouse && have_mouse != 0 {
             let _ = UnhookWindowsHookEx(HHOOK(have_mouse as _));
             MOUSE_HOOK.store(0, Ordering::Relaxed);
+            state().cursor.store(0, Ordering::Relaxed);
         }
 
         let want_keys = keyboard_hook_wanted();

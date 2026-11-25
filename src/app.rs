@@ -533,7 +533,10 @@ impl App {
     /// the level the configuration opens on.
     fn open_wheel_on(&mut self, source: TriggerSource, into: Option<usize>) {
         let display = monitor::target_display(self.config.monitor_choice(), self.config.placement());
-        let cursor = hook::cursor();
+        // Asked of the system, like the display above, rather than of the hook's cache: the
+        // screen and the point on it come from the same answer, and a hook that was down while
+        // the pointer moved has nothing true to say about where it is now.
+        let cursor = monitor::cursor_position();
         let refresh = monitor::refresh_hz(display.handle);
         self.overlay.surface.set_refresh(refresh);
         perf::note(&format!("wheel opens on a {refresh} Hz display"));
