@@ -34,7 +34,7 @@ dependencies = [
 
 [[package]]
 name = "rovyl"
-version = "2.6.1"
+version = "2.6.2"
 dependencies = [
  "serde",
  "serde_json",
